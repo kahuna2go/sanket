@@ -1,121 +1,120 @@
-# Nocturne: AI Trading Agent on Hyperliquid
+# Hyperliquid AI Trading Agent
 
-This project implements an AI-powered trading agent that leverages LLM models to analyze real-time market data from TAAPI, make informed trading decisions, and execute trades on the Hyperliquid decentralized exchange. The agent runs in a continuous loop, monitoring specified cryptocurrency assets at configurable intervals, using technical indicators to decide on buy/sell/hold actions, and manages positions with take-profit and stop-loss orders.
+An AI-powered trading agent that uses Claude to analyze markets and execute perpetual futures trades on Hyperliquid. Supports crypto, stocks, commodities, indices, and forex via HIP-3 markets.
 
-## Table of Contents
+## What It Does
 
-- [Disclaimer](#disclaimer)
-- [Architecture](#architecture)
-- [Nocturne Live Agents](#nocturne-live-agents)
-- [Structure](#structure)
-- [Env Configuration](#env-configuration)
-- [Usage](#usage)
-- [Tool Calling](#tool-calling)
-- [Deployment to EigenCloud](#deployment-to-eigencloud)
+1. Fetches real-time candle data and computes technical indicators (EMA, RSI, MACD, ATR, BBands, ADX, OBV, VWAP) locally from Hyperliquid
+2. Sends full market context to Claude, which decides buy/sell/hold for each asset
+3. Executes trades with take-profit and stop-loss orders
+4. Hard-coded safety guards enforce position limits, leverage caps, and loss protection
 
-## Disclaimer
+## Tradeable Markets
 
-There is no guarantee of any returns. This code has not been audited. Please use at your own risk.
+All 229+ Hyperliquid perp markets plus HIP-3 tradfi assets:
 
-## Architecture
+- **Crypto**: BTC, ETH, SOL, HYPE, AVAX, SUI, ARB, LINK, and 200+ more
+- **Stocks**: xyz:TSLA, xyz:NVDA, xyz:AAPL, xyz:GOOGL, xyz:AMZN, xyz:META, xyz:MSFT, xyz:COIN, xyz:PLTR...
+- **Commodities**: xyz:GOLD, xyz:SILVER, xyz:BRENTOIL, xyz:CL, xyz:COPPER, xyz:NATGAS, xyz:PLATINUM
+- **Indices**: xyz:SP500, xyz:XYZ100
+- **Forex**: xyz:EUR, xyz:JPY
 
-See the full [Architecture Documentation](docs/ARCHITECTURE.md) for subsystems, data flow, and design principles.
+## Safety Guards
 
-![Architecture Diagram](docs/architecture.png)
+All enforced in code, not just LLM prompts. Configurable via `.env`:
 
-## Nocturne Live Agents 
+| Guard | Default | Description |
+|-------|---------|-------------|
+| Max Position Size | 10% | Single position capped at 10% of portfolio |
+| Force Close | -20% | Auto-close positions at 20% loss |
+| Max Leverage | 10x | Hard leverage cap |
+| Total Exposure | 50% | All positions combined capped at 50% |
+| Daily Circuit Breaker | -10% | Stops new trades at 10% daily drawdown |
+| Mandatory Stop-Loss | 5% | Auto-set SL if LLM doesn't provide one |
+| Max Positions | 10 | Concurrent position limit |
+| Balance Reserve | 20% | Don't trade below 20% of initial balance |
 
-- GPT-5 Pro: [Portfolio Dashboard](https://hypurrscan.io/address/0xa049db4b3dfcb25c3092891010a629d987d26113) | [Live Logs](https://35.190.43.182/logs/0xC0BE8E55f469c1a04c0F6d04356828C5793d8a9D) (Seeded with $200)
-- DeepSeek R1: [Portfolio Dashboard](https://hypurrscan.io/address/0xa663c80d86fd7c045d9927bb6344d7a5827d31db) | [Live Logs](https://35.190.43.182/logs/0x4da68B78ef40D12f378b8498120f2F5A910Af1aD) (Seeded with $100) -- PAUSED
-- Grok 4: [Portfolio Dashboard](https://hypurrscan.io/address/0x3c71f3cf324d0133558c81d42543115ef1a2be79) | [Live Logs](https://35.190.43.182/logs/0xe6a9f97f99847215ea5813812508e9354a22A2e0) (Seeded with $100) -- PAUSED
-
-## Structure
-- `src/main.py`: Entry point, handles user input and main trading loop.
-- `src/agent/decision_maker.py`: LLM logic for trade decisions (OpenRouter with tool calling for TAAPI indicators).
-- `src/indicators/taapi_client.py`: Fetches indicators from TAAPI.
-- `src/trading/hyperliquid_api.py`: Executes trades on Hyperliquid.
-- `src/config_loader.py`: Centralized config loaded from `.env`.
-
-## Env Configuration
-Populate `.env` (use `.env.example` as reference):
-- TAAPI_API_KEY
-- HYPERLIQUID_PRIVATE_KEY (or LIGHTER_PRIVATE_KEY)
-- OPENROUTER_API_KEY
-- LLM_MODEL 
-- Optional: OPENROUTER_BASE_URL (`https://openrouter.ai/api/v1`), OPENROUTER_REFERER, OPENROUTER_APP_TITLE
-
-### Obtaining API Keys
-- **TAAPI_API_KEY**: Sign up at [TAAPI.io](https://taapi.io/) and generate an API key from your dashboard.
-- **HYPERLIQUID_PRIVATE_KEY**: Generate an Ethereum-compatible private key for Hyperliquid. Use tools like MetaMask or `eth_account` library. For security, never share this key.
-- **OPENROUTER_API_KEY**: Create an account at [OpenRouter.ai](https://openrouter.ai/), then generate an API key in your account settings.
-- **LLM_MODEL**: No key needed; specify a model name like "x-ai/grok-4" (see OpenRouter models list).
-
-## Usage
-Run: `poetry run python src/main.py --assets BTC ETH --interval 1h`
-
-### Local API Endpoints
-When the agent runs, it also serves a minimal API:
-- `GET /diary?limit=200` — returns recent JSONL diary entries as JSON.
-- `GET /logs?path=llm_requests.log&limit=2000` — tails the specified log file.
-
-Configure bind host/port via env:
-- `API_HOST` (default `0.0.0.0`)
-- `API_PORT` or `APP_PORT` (default `3000`)
-
-Docker:
-```bash
-docker build --platform linux/amd64 -t trading-agent .
-docker run --rm -p 3000:3000 --env-file .env trading-agent
-# Now: curl http://localhost:3000/diary
-```
-
-## Tool Calling
-The agent can dynamically fetch any TAAPI indicator (e.g., EMA, RSI) via tool calls. See [TAAPI Indicators](https://taapi.io/indicators/) and [EMA Example](https://taapi.io/indicators/exponential-moving-average/) for details.
-
-## Deployment to EigenCloud
-
-EigenCloud (via EigenX CLI) allows deploying this trading agent in a Trusted Execution Environment (TEE) with secure key management.
+## Setup
 
 ### Prerequisites
-- Allowlisted Ethereum account (Sepolia for testnet). Request onboarding at [EigenCloud Onboarding](https://onboarding.eigencloud.xyz).
-- Docker installed.
-- Sepolia ETH for deployments.
+- Python 3.12+
+- Anthropic API key
+- Hyperliquid wallet (agent wallet as signer + main wallet with funds)
 
-### Installation
-#### macOS/Linux
-```bash
-curl -fsSL https://eigenx-scripts.s3.us-east-1.amazonaws.com/install-eigenx.sh | bash
-```
+### Configuration
 
-#### Windows
-```bash
-curl -fsSL https://eigenx-scripts.s3.us-east-1.amazonaws.com/install-eigenx.ps1 | powershell -
-```
-
-### Initial Setup
-```bash
-docker login
-eigenx auth login  # Or eigenx auth generate --store (if you don't have a eth account, keep this account separate from your trading account)
-```
-
-### Deploy the Agent
-From the project directory:
 ```bash
 cp .env.example .env
-# Edit .env: set ASSETS, INTERVAL, API keys
-eigenx app deploy
+# Edit .env with your keys
 ```
 
-### Monitoring
+Required environment variables:
+- `ANTHROPIC_API_KEY` — Claude API key
+- `HYPERLIQUID_PRIVATE_KEY` — Agent/API wallet private key (signer only)
+- `HYPERLIQUID_VAULT_ADDRESS` — Main wallet address (holds funds)
+- `ASSETS` — Space-separated list of assets to trade
+- `INTERVAL` — Trading loop interval (e.g. `5m`, `1h`)
+
+### Install & Run
+
 ```bash
-eigenx app info --watch
-eigenx app logs --watch
+pip install hyperliquid-python-sdk anthropic python-dotenv aiohttp requests
+python3 src/main.py
 ```
 
-### Updates
-Edit code or .env, then:
+Or with CLI args:
 ```bash
-eigenx app upgrade <app-name>
+python3 src/main.py --assets "BTC ETH SOL xyz:GOLD xyz:TSLA" --interval 5m
 ```
 
-For full CLI reference, see the [EigenX Documentation](https://github.com/Layr-Labs/eigenx-cli).
+### Agent Wallet Setup
+
+1. Go to app.hyperliquid.xyz → Settings → API Wallets
+2. Add your agent wallet address as an authorized signer
+3. Set `HYPERLIQUID_VAULT_ADDRESS` to your main wallet address in `.env`
+
+The agent wallet signs trades on behalf of your main wallet. It cannot withdraw funds.
+
+## Structure
+
+```
+src/
+  main.py                  # Entry point, trading loop, API server
+  config_loader.py         # Environment config with defaults
+  risk_manager.py          # Safety guards (position limits, loss protection)
+  agent/
+    decision_maker.py      # Claude API integration, tool calling
+  indicators/
+    local_indicators.py    # EMA, RSI, MACD, ATR, BBands, ADX, OBV, VWAP
+    taapi_client.py        # Legacy (unused) — kept for reference
+  trading/
+    hyperliquid_api.py     # Order execution, candles, state queries
+  utils/
+    formatting.py          # Number formatting
+    prompt_utils.py        # JSON serialization helpers
+```
+
+## How It Works
+
+Each loop iteration:
+1. Fetches account state (balance, positions, PnL)
+2. Force-closes any position at >= 20% loss
+3. Gathers candle data and computes indicators for all assets
+4. Sends everything to Claude with risk limits
+5. Claude returns buy/sell/hold decisions with allocation, TP/SL
+6. Risk manager validates each trade (caps allocation, enforces SL)
+7. Executes approved trades (market or limit orders)
+
+## API Endpoints
+
+When running, serves a local API:
+- `GET /diary` — Recent trade diary entries as JSON
+- `GET /logs` — LLM request logs
+
+## Dashboard
+
+A separate Next.js dashboard is available for real-time PnL and trade monitoring. See the `dashboard/` directory or deploy to Vercel.
+
+## License
+
+Use at your own risk. No guarantee of returns. This code has not been audited.
