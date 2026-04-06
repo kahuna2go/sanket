@@ -548,6 +548,7 @@ def main():
                 except Exception as e:
                     import traceback
                     add_event(f"Execution error {asset}: {e}")
+                    add_event(f"Traceback: {traceback.format_exc()}")
 
             await asyncio.sleep(get_interval_seconds(args.interval))
 

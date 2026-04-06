@@ -235,6 +235,9 @@ class RiskManager:
         if not ok:
             # Cap allocation instead of rejecting
             max_alloc = account_value * (self.max_position_pct / 100.0)
+            # But never below Hyperliquid's $10 minimum
+            if max_alloc < 11.0:
+                max_alloc = 11.0
             logging.warning("RISK: Capping allocation from $%.2f to $%.2f", alloc_usd, max_alloc)
             alloc_usd = max_alloc
             trade = {**trade, "allocation_usd": alloc_usd}
