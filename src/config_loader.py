@@ -80,7 +80,7 @@ CONFIG = {
     "anthropic_api_key": _get_env("ANTHROPIC_API_KEY", required=True),
     "llm_model": _get_env("LLM_MODEL", "claude-sonnet-4-20250514"),
     "sanitize_model": _get_env("SANITIZE_MODEL", "claude-haiku-4-5-20251001"),
-    "max_tokens": _get_int("MAX_TOKENS", 4096),
+    "max_tokens": _get_int("MAX_TOKENS", 8192),
     "enable_tool_calling": _get_bool("ENABLE_TOOL_CALLING", False),
 
     # Extended thinking (Claude)

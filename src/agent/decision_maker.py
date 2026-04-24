@@ -249,6 +249,10 @@ class TradingAgent:
                 for block in response.content:
                     if block.type == "text":
                         content += block.text
+                if not content.strip().startswith("{"):
+                    brace_pos = content.find("{")
+                    if brace_pos >= 0:
+                        content = content[brace_pos:]
                 parsed = json.loads(content)
                 if isinstance(parsed, dict) and "trade_decisions" in parsed:
                     return parsed

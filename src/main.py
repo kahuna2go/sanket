@@ -100,6 +100,8 @@ def main():
         for dex in hip3_dexes:
             await hyperliquid.get_meta_and_ctxs(dex=dex)
             add_event(f"Loaded HIP-3 meta for dex: {dex}")
+        if hip3_dexes:
+            hyperliquid.register_perp_dexs(list(hip3_dexes))
 
         while True:
             invocation_count += 1
@@ -372,7 +374,7 @@ def main():
             if _is_failed_outputs(outputs):
                 add_event("Retrying LLM once due to invalid/parse-error output")
                 context_retry_payload = OrderedDict([
-                    ("retry_instruction", "Return ONLY the JSON array per schema with no prose."),
+                    ("retry_instruction", "Return ONLY a JSON object with exactly two keys: \"reasoning\" (string) and \"trade_decisions\" (array of per-asset objects). No prose, no markdown, no code fences."),
                     ("original_context", context_payload)
                 ])
                 context_retry = json.dumps(context_retry_payload, default=json_default)

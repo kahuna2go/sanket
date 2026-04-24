@@ -48,6 +48,7 @@ class HyperliquidAPI:
         """
         self._meta_cache = None
         self._hip3_meta_cache = {}  # {dex_name: meta_response}
+        self._perp_dexs: list = []  # HIP-3 dex names; populated via register_perp_dexs
         if "hyperliquid_private_key" in CONFIG and CONFIG["hyperliquid_private_key"]:
             self.wallet = Account.from_key(CONFIG["hyperliquid_private_key"])
         elif "mnemonic" in CONFIG and CONFIG["mnemonic"]:
@@ -73,8 +74,20 @@ class HyperliquidAPI:
 
     def _build_clients(self):
         """Instantiate exchange and info client instances for the active base URL."""
-        self.info = Info(self.base_url)
-        self.exchange = Exchange(self.wallet, self.base_url, account_address=self.account_address)
+        dexs = self._perp_dexs if self._perp_dexs else None
+        self.info = Info(self.base_url, perp_dexs=dexs)
+        self.exchange = Exchange(self.wallet, self.base_url, account_address=self.account_address, perp_dexs=dexs)
+
+    def register_perp_dexs(self, dexes: list):
+        """Register HIP-3 dex names and rebuild SDK clients so orders can be placed on dex assets.
+
+        Must be called after HIP-3 meta is loaded (get_meta_and_ctxs) and before any
+        order is placed for a dex:asset symbol. Also called implicitly by _reset_clients
+        via _build_clients, so reconnection preserves dex awareness.
+        """
+        self._perp_dexs = dexes
+        self._build_clients()
+        logging.info("SDK clients rebuilt with perp_dexs=%s", dexes)
 
     def _reset_clients(self):
         """Recreate SDK clients after connection failures while logging failures."""
