@@ -321,6 +321,12 @@ class TradingAgent:
             if cleaned.endswith("```"):
                 cleaned = cleaned[:-3].rstrip()
 
+            # If Claude prefaced the JSON with prose, skip to the first '{'
+            if not cleaned.startswith("{"):
+                brace_pos = cleaned.find("{")
+                if brace_pos >= 0:
+                    cleaned = cleaned[brace_pos:]
+
             try:
                 parsed = json.loads(cleaned)
                 if not isinstance(parsed, dict):
