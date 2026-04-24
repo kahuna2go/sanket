@@ -103,6 +103,56 @@ def main():
         if hip3_dexes:
             hyperliquid.register_perp_dexs(list(hip3_dexes))
 
+        # Reconstruct active_trades from diary so TP/SL order IDs survive restarts.
+        # Replay: buy/sell = open, reconcile_close/risk_force_close = closed.
+        # Then cross-reference against live positions to drop anything that closed
+        # while the agent was down (TP/SL hit, manual close, etc.).
+        try:
+            diary_trades = {}  # asset -> latest open trade diary entry
+            if os.path.exists(diary_path):
+                with open(diary_path, "r") as _df:
+                    for _line in _df:
+                        _line = _line.strip()
+                        if not _line:
+                            continue
+                        try:
+                            _entry = json.loads(_line)
+                        except json.JSONDecodeError:
+                            continue
+                        _asset = _entry.get("asset")
+                        _action = _entry.get("action")
+                        if not _asset:
+                            continue
+                        if _action in ("buy", "sell"):
+                            diary_trades[_asset] = _entry
+                        elif _action in ("reconcile_close", "risk_force_close"):
+                            diary_trades.pop(_asset, None)
+            if diary_trades:
+                _live = await hyperliquid.get_user_state()
+                _live_coins = {
+                    pos.get("coin")
+                    for pos in _live.get("positions", [])
+                    if abs(float(pos.get("szi", 0) or 0)) > 0
+                }
+                for _asset, _entry in diary_trades.items():
+                    if _asset in _live_coins:
+                        active_trades.append({
+                            "asset": _asset,
+                            "is_long": _entry.get("action") == "buy",
+                            "amount": _entry.get("amount"),
+                            "entry_price": _entry.get("entry_price"),
+                            "tp_oid": _entry.get("tp_oid"),
+                            "sl_oid": _entry.get("sl_oid"),
+                            "exit_plan": _entry.get("exit_plan", ""),
+                            "opened_at": _entry.get("opened_at"),
+                        })
+                        add_event(
+                            f"Restored active_trade from diary: {_asset} "
+                            f"tp_oid={_entry.get('tp_oid')} sl_oid={_entry.get('sl_oid')}"
+                        )
+        except Exception as _restore_err:
+            add_event(f"active_trades restore failed (non-fatal): {_restore_err}")
+
         while True:
             invocation_count += 1
             minutes_since_start = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
