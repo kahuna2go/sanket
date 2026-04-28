@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SANKET</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:          #060810;
+      --surface:     #0c0e1a;
+      --surface-alt: #111428;
+      --border:      #181c32;
+      --border-2:    #252a45;
+      --profit:      #00e676;
+      --profit-bg:   rgba(0,230,118,.07);
+      --loss:        #ff4040;
+      --loss-bg:     rgba(255,64,64,.07);
+      --accent:      #4d8cff;
+      --accent-bg:   rgba(77,140,255,.1);
+      --gold:        #ffc142;
+      --gold-bg:     rgba(255,193,66,.08);
+      --text:        #dce0ef;
+      --muted:       #454870;
+      --dim:         #1e2138;
+      --font-num:    'Orbitron', monospace;
+      --font-data:   'JetBrains Mono', monospace;
+      --font-label:  'Barlow Condensed', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-data);
+      font-size: 12px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* Dot-grid background */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background-image: radial-gradient(circle, var(--dim) 1px, transparent 1px);
+      background-size: 24px 24px;
+      pointer-events: none;
+    }
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 0;
+      background: radial-gradient(ellipse 100% 55% at 50% 0%, transparent 30%, var(--bg) 100%);
+      pointer-events: none;
+    }
+
+    .app { position: relative; z-index: 1; max-width: 1640px; margin: 0 auto; padding: 20px 24px 40px; }
+
+    /* ─── HEADER ─────────────────────────────── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-bottom: 16px; margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-family: var(--font-num); font-size: 18px; font-weight: 900;
+      letter-spacing: .2em; color: var(--text);
+    }
+    .logo em { color: var(--accent); font-style: normal; }
+
+    .header-right { display: flex; align-items: center; gap: 28px; }
+
+    .status-live {
+      display: flex; align-items: center; gap: 7px;
+      font-family: var(--font-label); font-size: 11px; font-weight: 600;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--profit);
+    }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--profit);
+      animation: blink 2.2s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .header-meta {
+      display: flex; gap: 20px;
+      font-family: var(--font-label); font-size: 11px; font-weight: 500;
+      letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+    }
+    .header-meta span { color: var(--text); }
+
+    .refresh-wrap { display: flex; align-items: center; gap: 8px; }
+    .refresh-track {
+      width: 48px; height: 2px; background: var(--border-2); overflow: hidden;
+    }
+    .refresh-fill {
+      height: 100%; background: var(--accent); width: 0%;
+    }
+    .refresh-label {
+      font-family: var(--font-label); font-size: 10px; letter-spacing: .06em;
+      color: var(--muted);
+    }
+
+    /* ─── METRICS STRIP ──────────────────────── */
+    .metrics {
+      display: grid; grid-template-columns: repeat(6,1fr); gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .mc {
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 16px 18px; position: relative; overflow: hidden;
+      animation: rise .4s ease both;
+    }
+    .mc::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: var(--border-2);
+    }
+    .mc.p::after { background: var(--profit); }
+    .mc.l::after { background: var(--loss); }
+    .mc.a::after { background: var(--accent); }
+    .mc.g::after { background: var(--gold); }
+    .mc.p { background: linear-gradient(175deg, var(--profit-bg) 0%, var(--surface) 50%); }
+    .mc.l { background: linear-gradient(175deg, var(--loss-bg) 0%, var(--surface) 50%); }
+
+    .mc:nth-child(1){animation-delay:.04s} .mc:nth-child(2){animation-delay:.08s}
+    .mc:nth-child(3){animation-delay:.12s} .mc:nth-child(4){animation-delay:.16s}
+    .mc:nth-child(5){animation-delay:.20s} .mc:nth-child(6){animation-delay:.24s}
+
+    .ml {
+      font-family: var(--font-label); font-size: 10px; font-weight: 600;
+      letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .mv {
+      font-family: var(--font-num); font-size: 20px; font-weight: 700;
+      letter-spacing: .02em; line-height: 1;
+    }
+    .mv.p { color: var(--profit); }
+    .mv.l { color: var(--loss); }
+    .mv.g { color: var(--gold); }
+    .msub {
+      font-family: var(--font-data); font-size: 10px; color: var(--muted);
+      margin-top: 5px;
+    }
+
+    /* ─── LAYOUT GRID ────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      grid-template-rows: auto auto auto auto;
+      gap: 10px;
+    }
+    .g-pos     { grid-column:1; grid-row:1; }
+    .g-side    { grid-column:2; grid-row:1/4; display:flex; flex-direction:column; gap:10px; }
+    .g-fills   { grid-column:1; grid-row:2; }
+    .g-history { grid-column:1; grid-row:3; }
+    .g-dec     { grid-column:1/3; grid-row:4; }
+
+    /* ─── CARD ───────────────────────────────── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      animation: rise .5s ease both;
+    }
+    .card-head {
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-title {
+      font-family: var(--font-label); font-size: 10px; font-weight: 700;
+      letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+    }
+    .card-badge {
+      font-family: var(--font-data); font-size: 10px; color: var(--muted);
+    }
+
+    /* ─── TABLE ──────────────────────────────── */
+    .tbl { width: 100%; border-collapse: collapse; }
+    .tbl th {
+      font-family: var(--font-label); font-size: 10px; font-weight: 600;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+      padding: 9px 16px; text-align: right; border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .tbl th:first-child { text-align: left; }
+    .tbl td {
+      font-family: var(--font-data); font-size: 12px; color: var(--text);
+      padding: 9px 16px; text-align: right; border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .tbl td:first-child { text-align: left; }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl tbody tr:hover td { background: var(--surface-alt); }
+
+    .sym { font-weight: 600; font-size: 13px; }
+    .pill {
+      display: inline-block; padding: 1px 7px;
+      font-family: var(--font-label); font-size: 9px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
+    }
+    .pill-l { background: var(--profit-bg); color: var(--profit); border: 1px solid rgba(0,230,118,.2); }
+    .pill-s { background: var(--loss-bg);   color: var(--loss);   border: 1px solid rgba(255,64,64,.2);  }
+    .pill-b { background: var(--profit-bg); color: var(--profit); border: 1px solid rgba(0,230,118,.2); }
+    .pill-e { background: var(--loss-bg);   color: var(--loss);   border: 1px solid rgba(255,64,64,.2);  }
+
+    .p  { color: var(--profit) !important; }
+    .l  { color: var(--loss)   !important; }
+    .ac { color: var(--accent) !important; }
+    .gd { color: var(--gold)   !important; }
+    .mu { color: var(--muted)  !important; }
+
+    .empty {
+      padding: 28px 16px; text-align: center;
+      font-family: var(--font-label); font-size: 11px; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--muted);
+    }
+
+    /* ─── SIDEBAR: MODEL USAGE ───────────────── */
+    .model-body { padding: 14px 16px; }
+    .model-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+    .model-item-label {
+      font-family: var(--font-label); font-size: 10px; font-weight: 600;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+      margin-bottom: 3px;
+    }
+    .model-item-val {
+      font-family: var(--font-num); font-size: 18px; font-weight: 700;
+    }
+    .model-item-val.ac { color: var(--accent); }
+    .model-bar-track {
+      height: 4px; background: var(--border-2); margin: 4px 0 10px;
+    }
+    .model-bar-fill {
+      height: 100%; background: var(--accent); transition: width .6s ease;
+    }
+
+    /* ─── DECISIONS ──────────────────────────── */
+    .dec-row {
+      display: flex; align-items: flex-start; gap: 14px;
+      padding: 9px 16px; border-bottom: 1px solid var(--border);
+    }
+    .dec-row:last-child { border-bottom: none; }
+    .dec-row:hover { background: var(--surface-alt); }
+    .dec-meta {
+      flex-shrink: 0; min-width: 110px;
+      font-family: var(--font-label); font-size: 10px; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--muted); line-height: 1.8;
+    }
+    .dec-meta b { display: block; color: var(--text); font-weight: 600; }
+    .dec-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; background: var(--surface-alt);
+      border: 1px solid var(--border-2);
+      font-family: var(--font-data); font-size: 10px; cursor: default;
+      transition: border-color .15s;
+    }
+    .chip:hover { border-color: var(--border-2); background: var(--bg); }
+    .chip-asset { color: var(--text); font-weight: 600; font-size: 11px; }
+    .chip-action {
+      font-family: var(--font-label); font-size: 9px; font-weight: 700;
+      letter-spacing: .07em; text-transform: uppercase;
+    }
+    .chip-action.buy   { color: var(--profit); }
+    .chip-action.sell  { color: var(--loss); }
+    .chip-action.hold  { color: var(--muted); }
+    .chip-action.cancel_limits { color: var(--gold); }
+
+    /* ─── CONNECTING OVERLAY ─────────────────── */
+    #overlay {
+      position: fixed; inset: 0; background: var(--bg); z-index: 99;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 20px; transition: opacity .4s;
+    }
+    #overlay.gone { opacity: 0; pointer-events: none; }
+    .ov-logo {
+      font-family: var(--font-num); font-size: 32px; font-weight: 900;
+      letter-spacing: .2em;
+    }
+    .ov-logo em { color: var(--accent); font-style: normal; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 2px solid var(--border-2); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ov-msg {
+      font-family: var(--font-label); font-size: 11px; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--muted);
+    }
+
+    /* ─── ANIMATIONS ─────────────────────────── */
+    @keyframes rise {
+      from { opacity:0; transform: translateY(6px); }
+      to   { opacity:1; transform: translateY(0); }
+    }
+    .flash { animation: flash .35s ease; }
+    @keyframes flash { 0%{opacity:.4} 100%{opacity:1} }
+  </style>
+</head>
+<body>
+
+<div id="overlay">
+  <div class="ov-logo">SAN<em>KET</em></div>
+  <div class="spinner"></div>
+  <div class="ov-msg">Connecting to agent…</div>
+</div>
+
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">SAN<em>KET</em></div>
+    <div class="header-right">
+      <div class="status-live"><div class="dot"></div>LIVE</div>
+      <div class="header-meta">
+        UPTIME&nbsp;<span id="uptime">—</span>
+        &nbsp;&nbsp;CYCLE&nbsp;<span id="cycle">—</span>
+        &nbsp;&nbsp;UPDATED&nbsp;<span id="updated">—</span>
+      </div>
+      <div class="refresh-wrap">
+        <div class="refresh-track"><div class="refresh-fill" id="rfill"></div></div>
+        <div class="refresh-label">10s</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Metrics strip -->
+  <div class="metrics">
+    <div class="mc a" id="mc-bal">
+      <div class="ml">Balance</div>
+      <div class="mv" id="v-bal">—</div>
+    </div>
+    <div class="mc a" id="mc-av">
+      <div class="ml">Account Value</div>
+      <div class="mv" id="v-av">—</div>
+    </div>
+    <div class="mc" id="mc-spnl">
+      <div class="ml">Session P&amp;L <small style="font-size:9px;letter-spacing:.06em">(net of fees)</small></div>
+      <div class="mv" id="v-spnl">—</div>
+      <div class="msub" id="v-spnl-pct">—</div>
+    </div>
+    <div class="mc" id="mc-upnl">
+      <div class="ml">Unrealized P&amp;L</div>
+      <div class="mv" id="v-upnl">—</div>
+    </div>
+    <div class="mc g">
+      <div class="ml">Fees Paid (fills)</div>
+      <div class="mv gd" id="v-fees">—</div>
+      <div class="msub" id="v-fees-sub">from recent fills</div>
+    </div>
+    <div class="mc" id="mc-atpnl">
+      <div class="ml">All-Time P&amp;L <small style="font-size:9px;letter-spacing:.06em">(realized)</small></div>
+      <div class="mv" id="v-atpnl">—</div>
+      <div class="msub" id="v-atpnl-sub">— trades</div>
+    </div>
+  </div>
+
+  <!-- Main grid -->
+  <div class="grid">
+
+    <!-- Positions -->
+    <div class="card g-pos">
+      <div class="card-head">
+        <span class="card-title">Active Positions</span>
+        <span class="card-badge" id="pos-badge">0 positions</span>
+      </div>
+      <div id="pos-body"><div class="empty">No open positions</div></div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="g-side">
+
+      <!-- Limit orders -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Resting Limit Orders</span>
+          <span class="card-badge" id="ord-badge">0 orders</span>
+        </div>
+        <div id="ord-body"><div class="empty">No resting orders</div></div>
+      </div>
+
+      <!-- Model usage -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Model Usage</span>
+        </div>
+        <div class="model-body">
+          <div class="model-row">
+            <div>
+              <div class="model-item-label">Sonnet</div>
+              <div class="model-item-val ac" id="m-sonnet">0</div>
+            </div>
+            <div style="text-align:right">
+              <div class="model-item-label">Haiku</div>
+              <div class="model-item-val mu" id="m-haiku">0</div>
+            </div>
+          </div>
+          <div class="model-bar-track">
+            <div class="model-bar-fill" id="m-bar" style="width:0%"></div>
+          </div>
+          <div class="model-row" style="margin-bottom:0">
+            <div>
+              <div class="model-item-label">Total Calls</div>
+              <div style="font-family:var(--font-data);font-size:12px" id="m-total">0</div>
+            </div>
+            <div style="text-align:right">
+              <div class="model-item-label">Sonnet %</div>
+              <div style="font-family:var(--font-data);font-size:12px" id="m-pct">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /sidebar -->
+
+    <!-- Fills -->
+    <div class="card g-fills">
+      <div class="card-head">
+        <span class="card-title">Recent Fills</span>
+        <span class="card-badge">fee in <span class="gd">amber</span></span>
+      </div>
+      <div id="fills-body"><div class="empty">No fills yet</div></div>
+    </div>
+
+    <!-- Completed trades -->
+    <div class="card g-history">
+      <div class="card-head">
+        <span class="card-title">Completed Trades</span>
+        <span class="card-badge" id="hist-badge">all-time · excl. BTC</span>
+      </div>
+      <div id="hist-body"><div class="empty">No completed trades with known P&L</div></div>
+    </div>
+
+    <!-- Decisions -->
+    <div class="card g-dec">
+      <div class="card-head">
+        <span class="card-title">Agent Decisions</span>
+        <span class="card-badge">hover chip for rationale</span>
+      </div>
+      <div id="dec-body"><div class="empty">No decisions yet</div></div>
+    </div>
+
+  </div><!-- /grid -->
+</div><!-- /app -->
+
+<script>
+  const API = 'http://localhost:3000';
+  const INTERVAL = 10000;
+  let progressAnim = null;
+
+  // ── Formatters ───────────────────────────────
+  const f = (v, d=2) => v == null || isNaN(+v) ? '—' : (+v).toFixed(d);
+  const fAbs  = (v,d=2) => v == null ? '—' : '$' + Math.abs(+v).toFixed(d);
+  const fSign = (v,d=2) => v == null ? '—' : ((+v>=0)?'+$':'-$') + Math.abs(+v).toFixed(d);
+  const fPct  = v => v == null ? '—' : ((+v>=0)?'+':'') + (+v).toFixed(2) + '%';
+  const fTime = ts => { try { return new Date(ts).toLocaleTimeString('en-GB',{hour12:false}); } catch{return ts||'—';} };
+  const fDateTime = ts => {
+    try {
+      const d = new Date(ts);
+      const date = d.toLocaleDateString('en-GB',{month:'2-digit',day:'2-digit'});
+      const time = d.toLocaleTimeString('en-GB',{hour12:false});
+      return `${date} ${time}`;
+    } catch { return ts||'—'; }
+  };
+  const fUptime = m => { if(!m) return '—'; const h=Math.floor(m/60),mm=Math.floor(m%60); return h?`${h}h ${mm}m`:`${mm}m`; };
+
+  function setTxt(id, val) {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = val; }
+  }
+
+  function pClass(v) { return +v >= 0 ? 'p' : 'l'; }
+
+  // ── Metrics ──────────────────────────────────
+  function renderMetrics(d) {
+    const acc = d.account || {};
+    const bal  = acc.balance;
+    const av   = acc.account_value;
+    const init = d.initial_account_value;
+    const spnl = (av != null && init != null) ? av - init : null;
+    const spct = (spnl != null && init) ? spnl / init * 100 : null;
+
+    const positions = (acc.positions || []).filter(p => p.symbol !== 'BTC');
+    const upnl = positions.reduce((s,p) => s + (+p.unrealized_pnl||0), 0);
+
+    const fills = (acc.recent_fills || []).filter(f2 => f2.coin !== 'BTC');
+    const fees  = fills.reduce((s,f2) => s + Math.abs(+f2.fee||0), 0);
+
+    setTxt('v-bal', fAbs(bal));
+    setTxt('v-av',  fAbs(av));
+
+    // Session PnL card
+    const spnlEl = document.getElementById('v-spnl');
+    const spnlCard = document.getElementById('mc-spnl');
+    if (spnlEl) {
+      spnlEl.textContent = spnl != null ? fSign(spnl) : '—';
+      spnlEl.className = 'mv ' + (spnl != null ? pClass(spnl) : '');
+      if (spnlCard) spnlCard.className = 'mc ' + (spnl != null ? pClass(spnl) : '');
+    }
+    setTxt('v-spnl-pct', spct != null ? fPct(spct) : '—');
+
+    const upnlEl = document.getElementById('v-upnl');
+    const upnlCard = document.getElementById('mc-upnl');
+    if (upnlEl) {
+      upnlEl.textContent = fSign(upnl);
+      upnlEl.className = 'mv ' + pClass(upnl);
+      if (upnlCard) upnlCard.className = 'mc ' + pClass(upnl);
+    }
+
+    setTxt('v-fees', fees > 0 ? '-$' + fees.toFixed(4) : '$0.00');
+    setTxt('v-fees-sub', `${fills.length} fills shown`);
+
+    setTxt('uptime',  fUptime(d.uptime_minutes));
+    setTxt('cycle',   '#' + (d.invocation_count || '—'));
+    setTxt('updated', fTime(d.last_updated));
+  }
+
+  // ── All-Time P&L ─────────────────────────────
+  function renderHistory(h) {
+    if (!h) return;
+    const pnl = h.total_realized_pnl;
+    const count = h.completed_trades || 0;
+    const unknown = h.unknown_pnl_trades || 0;
+
+    const atEl = document.getElementById('v-atpnl');
+    const atCard = document.getElementById('mc-atpnl');
+    if (atEl) {
+      atEl.textContent = pnl != null ? fSign(pnl) : '—';
+      atEl.className = 'mv ' + (pnl != null ? pClass(pnl) : '');
+      if (atCard) atCard.className = 'mc ' + (pnl != null ? pClass(pnl) : '');
+    }
+    const subParts = [`${count} closed`];
+    if (unknown > 0) subParts.push(`${unknown} unknown`);
+    setTxt('v-atpnl-sub', subParts.join(' · '));
+    setTxt('hist-badge', `all-time · excl. BTC · ${count + unknown} total`);
+
+    const trades = h.trades || [];
+    if (!trades.length) {
+      document.getElementById('hist-body').innerHTML = '<div class="empty">No completed trades with known P&L</div>';
+      return;
+    }
+    const rows = trades.slice(0, 30).map(t => {
+      const long = t.direction === 'long';
+      const pnlVal = +t.pnl || 0;
+      return `<tr>
+        <td class="mu" style="white-space:nowrap">${fDateTime(t.closed_at)}</td>
+        <td><span class="sym">${t.asset||'—'}</span></td>
+        <td>${long ? '<span class="pill pill-l">Long</span>' : '<span class="pill pill-s">Short</span>'}</td>
+        <td class="mu">${fAbs(t.entry_price)}</td>
+        <td>${fAbs(t.exit_price)}</td>
+        <td class="mu">${f(t.amount,4)}</td>
+        <td class="${pClass(pnlVal)}">${fSign(pnlVal)}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('hist-body').innerHTML = `
+      <table class="tbl">
+        <thead><tr>
+          <th>Closed</th><th>Asset</th><th>Dir</th>
+          <th>Entry</th><th>Exit</th><th>Size</th><th>P&amp;L</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  // ── Positions ────────────────────────────────
+  function renderPositions(d) {
+    const acc = d.account || {};
+    const positions = (acc.positions||[]).filter(p => Math.abs(+p.quantity||0) > 0 && p.symbol !== 'BTC');
+    const trades = acc.active_trades || [];
+
+    document.getElementById('pos-badge').textContent =
+      positions.length + (positions.length===1?' position':' positions');
+
+    if (!positions.length) {
+      document.getElementById('pos-body').innerHTML = '<div class="empty">No open positions</div>';
+      return;
+    }
+
+    const rows = positions.map(p => {
+      const long = +p.quantity > 0;
+      const upnl = +p.unrealized_pnl || 0;
+      const entry = +p.entry_price || 0;
+      const curr  = +p.current_price || 0;
+      const qty   = Math.abs(+p.quantity||0);
+      const notional = qty * entry;
+      const chg = entry ? (curr - entry) / entry * 100 : 0;
+      const t = trades.find(t => t.asset === p.symbol) || {};
+      return `<tr>
+        <td><span class="sym">${p.symbol||'—'}</span></td>
+        <td>${long ? '<span class="pill pill-l">Long</span>' : '<span class="pill pill-s">Short</span>'}</td>
+        <td>${f(qty,4)}</td>
+        <td class="mu">${fAbs(notional)}</td>
+        <td class="mu">${fAbs(entry)}</td>
+        <td>${fAbs(curr)}</td>
+        <td class="${pClass(chg)}">${fPct(chg)}</td>
+        <td class="${pClass(upnl)}">${fSign(upnl)}</td>
+        <td class="mu" style="font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis">${t.exit_plan||'—'}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('pos-body').innerHTML = `
+      <table class="tbl">
+        <thead><tr>
+          <th>Asset</th><th>Dir</th><th>Size</th><th>Notional</th>
+          <th>Entry</th><th>Current</th><th>Chg%</th><th>Unrlzd P&L</th><th>Plan</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  // ── Limit Orders ─────────────────────────────
+  function renderOrders(d) {
+    const orders = (d.account?.open_orders||[]).filter(o => !o.trigger_price);
+    document.getElementById('ord-badge').textContent =
+      orders.length + (orders.length===1?' order':' orders');
+
+    if (!orders.length) {
+      document.getElementById('ord-body').innerHTML = '<div class="empty">No resting orders</div>';
+      return;
+    }
+
+    const rows = orders.map(o => {
+      const notional = (Math.abs(+o.size||0)) * (+o.price||0);
+      return `<tr>
+        <td><span class="sym">${o.coin||'—'}</span></td>
+        <td>${o.is_buy ? '<span class="pill pill-b">Buy</span>' : '<span class="pill pill-e">Sell</span>'}</td>
+        <td>${f(o.size,4)}</td>
+        <td class="ac">${fAbs(o.price)}</td>
+        <td class="mu">${fAbs(notional)}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('ord-body').innerHTML = `
+      <table class="tbl">
+        <thead><tr><th>Asset</th><th>Side</th><th>Size</th><th>Limit</th><th>Notional</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  // ── Fills ────────────────────────────────────
+  function renderFills(d) {
+    const fills = [...(d.account?.recent_fills||[])].filter(f2 => f2.coin !== 'BTC').reverse();
+    if (!fills.length) {
+      document.getElementById('fills-body').innerHTML = '<div class="empty">No fills yet</div>';
+      return;
+    }
+
+    const rows = fills.map(f2 => {
+      const notional = (Math.abs(+f2.size||0)) * (+f2.price||0);
+      const fee = +f2.fee;
+      const feeStr = (!isNaN(fee) && fee > 0) ? `-$${Math.abs(fee).toFixed(4)}` : '—';
+      return `<tr>
+        <td class="mu" style="white-space:nowrap">${fDateTime(f2.timestamp)}</td>
+        <td><span class="sym">${f2.coin||'—'}</span></td>
+        <td>${f2.is_buy ? '<span class="pill pill-b">Buy</span>' : '<span class="pill pill-e">Sell</span>'}</td>
+        <td>${f(f2.size,4)}</td>
+        <td>${fAbs(f2.price)}</td>
+        <td class="mu">${fAbs(notional)}</td>
+        <td class="gd">${feeStr}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('fills-body').innerHTML = `
+      <table class="tbl">
+        <thead><tr>
+          <th>Time</th><th>Asset</th><th>Side</th>
+          <th>Size</th><th>Price</th><th>Notional</th><th>Fee</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
+  // ── Decisions ────────────────────────────────
+  function renderDecisions(d) {
+    const decisions = [...(d.recent_decisions||[])].reverse().slice(0,15);
+    if (!decisions.length) {
+      document.getElementById('dec-body').innerHTML = '<div class="empty">No decisions yet</div>';
+      return;
+    }
+
+    const rows = decisions.map(dec => {
+      const chips = (dec.decisions||[]).map(item => {
+        const ac = item.action || 'hold';
+        const rationale = (item.rationale||'').replace(/"/g,'&quot;');
+        return `<div class="chip" title="${rationale}">
+          <span class="chip-asset">${item.asset}</span>
+          <span class="chip-action ${ac}">${ac}</span>
+        </div>`;
+      }).join('');
+      return `<div class="dec-row">
+        <div class="dec-meta">
+          Cycle <b>#${dec.cycle||'—'}</b>
+          ${fTime(dec.timestamp)}
+        </div>
+        <div class="dec-chips">${chips}</div>
+      </div>`;
+    }).join('');
+
+    document.getElementById('dec-body').innerHTML = rows;
+  }
+
+  // ── Model usage ──────────────────────────────
+  function renderModel(d) {
+    const u = d.model_usage || {};
+    const s = u.sonnet || 0, h = u.haiku || 0, total = s + h;
+    const pct = total ? Math.round(s/total*100) : 0;
+    setTxt('m-sonnet', s);
+    setTxt('m-haiku', h);
+    setTxt('m-total', total);
+    setTxt('m-pct', total ? pct + '%' : '—');
+    document.getElementById('m-bar').style.width = pct + '%';
+  }
+
+  // ── Refresh progress bar ─────────────────────
+  function startProgress() {
+    if (progressAnim) cancelAnimationFrame(progressAnim);
+    const el = document.getElementById('rfill');
+    const start = performance.now();
+    function step(now) {
+      const p = Math.min((now - start) / INTERVAL * 100, 100);
+      el.style.width = p + '%';
+      if (p < 100) progressAnim = requestAnimationFrame(step);
+    }
+    progressAnim = requestAnimationFrame(step);
+  }
+
+  // ── Fetch & render ───────────────────────────
+  async function fetchState() {
+    try {
+      const [stateResp, histResp] = await Promise.all([
+        fetch(`${API}/state`),
+        fetch(`${API}/history`),
+      ]);
+      if (!stateResp.ok) throw new Error(stateResp.status);
+      const data = await stateResp.json();
+      const hist = histResp.ok ? await histResp.json() : null;
+
+      document.getElementById('overlay').classList.add('gone');
+
+      renderMetrics(data);
+      renderPositions(data);
+      renderOrders(data);
+      renderFills(data);
+      renderHistory(hist);
+      renderDecisions(data);
+      renderModel(data);
+      startProgress();
+    } catch (e) {
+      console.warn('Fetch failed:', e);
+      setTxt('updated', 'offline');
+    }
+  }
+
+  fetchState();
+  setInterval(fetchState, INTERVAL);
+  startProgress();
+</script>
+</body>
+</html>

@@ -186,6 +186,11 @@ class HyperliquidAPI:
             Raw SDK response from :meth:`Exchange.market_open`.
         """
         amount = self.round_size(asset, amount)
+        if ":" in asset:
+            # HIP-3 assets are not in all_mids(); pre-fetch price so the SDK
+            # can apply slippage without calling all_mids() internally.
+            px = await self.get_current_price(asset)
+            return await self._retry(lambda: self.exchange.market_open(asset, True, amount, px, slippage))
         return await self._retry(lambda: self.exchange.market_open(asset, True, amount, None, slippage))
 
     async def place_sell_order(self, asset, amount, slippage=0.01):
@@ -200,6 +205,9 @@ class HyperliquidAPI:
             Raw SDK response from :meth:`Exchange.market_open`.
         """
         amount = self.round_size(asset, amount)
+        if ":" in asset:
+            px = await self.get_current_price(asset)
+            return await self._retry(lambda: self.exchange.market_open(asset, False, amount, px, slippage))
         return await self._retry(lambda: self.exchange.market_open(asset, False, amount, None, slippage))
 
     async def place_limit_buy(self, asset, amount, limit_price, tif="Gtc"):
@@ -281,18 +289,50 @@ class HyperliquidAPI:
         """
         return await self._retry(lambda: self.exchange.cancel(asset, oid))
 
+    def _coin_matches(self, order_coin: str, asset: str) -> bool:
+        """Match order coin against asset, handling HIP-3 short names (e.g. 'CL' vs 'xyz:CL')."""
+        if order_coin == asset:
+            return True
+        if ":" in asset:
+            return order_coin == asset.split(":", 1)[1]
+        return False
+
     async def cancel_all_orders(self, asset):
         """Cancel every open order for ``asset`` owned by the configured wallet."""
         try:
             open_orders = await self._retry(lambda: self.info.frontend_open_orders(self.query_address))
+            cancelled = 0
             for order in open_orders:
-                if order.get("coin") == asset:
-                    oid = order.get("oid")
-                    if oid:
-                        await self.cancel_order(asset, oid)
-            return {"status": "ok", "cancelled_count": len([o for o in open_orders if o.get("coin") == asset])}
+                if not self._coin_matches(order.get("coin", ""), asset):
+                    continue
+                oid = order.get("oid")
+                if oid:
+                    await self.cancel_order(asset, oid)
+                    cancelled += 1
+            return {"status": "ok", "cancelled_count": cancelled}
         except (RuntimeError, ValueError, KeyError, ConnectionError) as e:
             logging.error("Cancel all orders error for %s: %s", asset, e)
+            return {"status": "error", "message": str(e)}
+
+    async def cancel_limit_orders(self, asset):
+        """Cancel only resting limit orders for asset — preserves TP/SL trigger orders."""
+        try:
+            open_orders = await self._retry(lambda: self.info.frontend_open_orders(self.query_address))
+            cancelled = 0
+            for order in open_orders:
+                if not self._coin_matches(order.get("coin", ""), asset):
+                    continue
+                oid = order.get("oid")
+                if not oid:
+                    continue
+                ot = order.get("orderType")
+                if isinstance(ot, dict) and "trigger" in ot:
+                    continue
+                await self.cancel_order(asset, oid)
+                cancelled += 1
+            return {"status": "ok", "cancelled_count": cancelled}
+        except (RuntimeError, ValueError, KeyError, ConnectionError) as e:
+            logging.error("Cancel limit orders error for %s: %s", asset, e)
             return {"status": "error", "message": str(e)}
 
     async def get_open_orders(self):
@@ -340,6 +380,24 @@ class HyperliquidAPI:
             return []
         except (RuntimeError, ValueError, KeyError, ConnectionError, AttributeError) as e:
             logging.error("Get recent fills error: %s", e)
+            return []
+
+    async def get_all_fills(self):
+        """Return the complete fill history for the account.
+
+        Returns:
+            List of all fill dictionaries or an empty list if unsupported.
+        """
+        try:
+            if hasattr(self.info, 'user_fills'):
+                fills = await self._retry(lambda: self.info.user_fills(self.query_address))
+            elif hasattr(self.info, 'fills'):
+                fills = await self._retry(lambda: self.info.fills(self.query_address))
+            else:
+                return []
+            return fills if isinstance(fills, list) else []
+        except (RuntimeError, ValueError, KeyError, ConnectionError, AttributeError) as e:
+            logging.error("Get all fills error: %s", e)
             return []
 
     def extract_oids(self, order_result):
