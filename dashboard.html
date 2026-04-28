@@ -236,6 +236,22 @@
     .model-bar-fill {
       height: 100%; background: var(--accent); transition: width .6s ease;
     }
+    .llm-cost-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-2);
+    }
+    .llm-cost-input-wrap {
+      display: flex; align-items: center; gap: 3px;
+      font-family: var(--font-num); font-size: 14px; font-weight: 600; color: var(--text);
+    }
+    .llm-cost-input-wrap span { color: var(--muted); font-size: 12px; }
+    #llm-cost-input {
+      width: 72px; background: var(--border-2); border: 1px solid var(--border-2);
+      border-radius: 4px; color: var(--text); font-family: var(--font-num);
+      font-size: 14px; font-weight: 600; padding: 2px 5px; text-align: right;
+      outline: none;
+    }
+    #llm-cost-input:focus { border-color: var(--accent); }
 
     /* ─── DECISIONS ──────────────────────────── */
     .dec-row {
@@ -412,6 +428,14 @@
               <div style="font-family:var(--font-data);font-size:12px" id="m-pct">—</div>
             </div>
           </div>
+          <div class="llm-cost-row">
+            <div class="model-item-label">LLM Cost</div>
+            <div class="llm-cost-input-wrap">
+              <span>$</span>
+              <input id="llm-cost-input" type="number" min="0" step="0.01"
+                     placeholder="0.00" title="Enter total LLM spend manually">
+            </div>
+          </div>
         </div>
       </div>
 
@@ -475,6 +499,21 @@
 
   function pClass(v) { return +v >= 0 ? 'p' : 'l'; }
 
+  // ── LLM Cost (localStorage) ───────────────────
+  const LLM_COST_KEY = 'sanket_llm_cost';
+  function getLlmCost() { return parseFloat(localStorage.getItem(LLM_COST_KEY) || '0') || 0; }
+  function initLlmCostInput() {
+    const input = document.getElementById('llm-cost-input');
+    if (!input) return;
+    input.value = getLlmCost() || '';
+    input.addEventListener('change', () => {
+      const val = parseFloat(input.value) || 0;
+      localStorage.setItem(LLM_COST_KEY, val);
+      // Re-render history card with updated cost (reuse last fetched data)
+      if (window._lastHist) renderHistory(window._lastHist);
+    });
+  }
+
   // ── Metrics ──────────────────────────────────
   function renderMetrics(d) {
     const acc = d.account || {};
@@ -527,10 +566,18 @@
       atEl.className = 'mv ' + (pnl != null ? pClass(pnl) : '');
       if (atCard) atCard.className = 'mc ' + (pnl != null ? pClass(pnl) : '');
     }
+    const llmCost = getLlmCost();
     const subLine = gross != null
-      ? `gross ${fSign(gross)} − fees ${fAbs(fees)}`
+      ? `gross ${fSign(gross)} − fees ${fAbs(fees)}${llmCost > 0 ? ` − llm ${fAbs(llmCost)}` : ''}`
       : `${count} closed`;
     setTxt('v-atpnl-sub', subLine);
+    // Adjust all-time card value to reflect LLM cost
+    if (atEl && pnl != null && llmCost > 0) {
+      const net = pnl - llmCost;
+      atEl.textContent = fSign(net);
+      atEl.className = 'mv ' + pClass(net);
+      if (atCard) atCard.className = 'mc ' + pClass(net);
+    }
     setTxt('hist-badge', `all-time · ${count} trades`);
 
     // Daily card
@@ -753,6 +800,7 @@
       renderPositions(data);
       renderOrders(data);
       renderFills(data);
+      window._lastHist = hist;
       renderHistory(hist);
       renderDecisions(data);
       renderModel(data);
@@ -763,6 +811,7 @@
     }
   }
 
+  initLlmCostInput();
   fetchState();
   setInterval(fetchState, INTERVAL);
   startProgress();
