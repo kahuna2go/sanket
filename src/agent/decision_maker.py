@@ -20,13 +20,14 @@ class TradingAgent:
         self.client = anthropic.Anthropic(api_key=CONFIG["anthropic_api_key"])
         self.hyperliquid = hyperliquid
         self.sanitize_model = CONFIG.get("sanitize_model") or "claude-haiku-4-5-20251001"
+        self.haiku_model = CONFIG.get("haiku_model") or "claude-haiku-4-5-20251001"
         self.max_tokens = int(CONFIG.get("max_tokens") or 4096)
 
-    def decide_trade(self, assets, context):
+    def decide_trade(self, assets, context, model=None):
         """Decide for multiple assets in one call."""
-        return self._decide(context, assets=assets)
+        return self._decide(context, assets=assets, model=model)
 
-    def _decide(self, context, assets):
+    def _decide(self, context, assets, model=None):
         """Dispatch decision request to Claude and enforce output contract."""
         system_prompt = (
             "You are a rigorous QUANTITATIVE TRADER and interdisciplinary MATHEMATICIAN-ENGINEER optimizing risk-adjusted returns for perpetual futures under real execution, margin, and funding constraints.\n"
@@ -49,8 +50,14 @@ class TradingAgent:
             "4) Funding is a tilt, not a trigger: Do NOT open/close/flip solely due to funding unless expected funding over your intended holding horizon meaningfully exceeds expected edge (e.g., > ~0.25×ATR). Consider that funding accrues discretely and slowly relative to 5m bars.\n"
             "5) Overbought/oversold ≠ reversal by itself: Treat RSI extremes as risk-of-pullback. You need structure + momentum confirmation to bet against trend. Prefer tightening stops or taking partial profits over instant flips.\n"
             "6) Prefer adjustments over exits: If the thesis weakens but is not invalidated, first consider: tighten stop (e.g., to a recent swing or ATR multiple), trail TP, or reduce size. Flip only on hard invalidation + fresh confluence.\n\n"
+            "Open limit order review\n"
+            "- account.open_orders lists all resting orders. For each asset, identify any resting limit orders (those with no trigger_price — these are NOT TP/SL).\n"
+            "- Explicitly assess whether the current market thesis still supports the price and direction of each resting limit.\n"
+            "  • Thesis still holds → set action to \"hold\". Do NOT place a duplicate limit.\n"
+            "  • Thesis invalidated → set action to \"cancel_limits\" to remove all resting limit orders for that asset. Explain in rationale.\n"
+            "  • Want to replace with a better price → set action to \"buy\" or \"sell\" with order_type \"limit\". Existing limits will be cancelled automatically before the new one is placed.\n\n"
             "Decision discipline (per asset)\n"
-            "- Choose one: buy / sell / hold.\n"
+            "- Choose one: buy / sell / hold / cancel_limits.\n"
             "- Proactively harvest profits when price action presents a clear, high-quality opportunity that aligns with your thesis.\n"
             "- You control allocation_usd (but the system will cap it — see risk limits below).\n"
             "- Order type: set order_type to \"market\" for immediate execution, or \"limit\" for resting orders.\n"
@@ -75,13 +82,15 @@ class TradingAgent:
             "- Structure (trend, EMAs slope/cross, HH/HL vs LH/LL), Momentum (MACD regime, RSI slope), Liquidity/volatility (ATR, volume), Positioning tilt (funding, OI).\n"
             "- Favor alignment across 4h and 5m. Counter-trend scalps require stronger intraday confirmation and tighter risk.\n\n"
             "Output contract\n"
-            "- Output ONLY a strict JSON object (no markdown, no code fences) with exactly two properties:\n"
-            "  • \"reasoning\": long-form string capturing detailed, step-by-step analysis.\n"
+            "- Output ONLY a strict JSON object (no markdown, no code fences) with exactly one property:\n"
             "  • \"trade_decisions\": array ordered to match the provided assets list.\n"
             "- Each item inside trade_decisions must contain the keys: asset, action, allocation_usd, order_type, limit_price, tp_price, sl_price, exit_plan, rationale.\n"
+            "  • action: \"buy\", \"sell\", \"hold\", or \"cancel_limits\"\n"
             "  • order_type: \"market\" (default) or \"limit\"\n"
             "  • limit_price: required if order_type is \"limit\", null otherwise\n"
-            "- Do not emit Markdown or any extra properties.\n"
+            "  • rationale: one concise sentence explaining the decision.\n"
+            "  • For cancel_limits: allocation_usd=0, order_type=\"market\", limit_price=null, tp_price=null, sl_price=null.\n"
+            "- Do not emit Markdown, a top-level reasoning field, or any extra properties.\n"
         )
 
         tools = [{
@@ -130,13 +139,14 @@ class TradingAgent:
                 f.write(f"Last message role: {last.get('role')}\n")
                 f.write(f"Last message content (truncated): {content_str}\n")
 
+        effective_model = model or self.model
         enable_tools = CONFIG.get("enable_tool_calling", False)
 
         def _call_claude(msgs, use_tools=True):
             """Make a Claude API call with optional tool use."""
-            _log_request(self.model, msgs)
+            _log_request(effective_model, msgs)
             kwargs = {
-                "model": self.model,
+                "model": effective_model,
                 "max_tokens": self.max_tokens,
                 "system": system_prompt,
                 "messages": msgs,
@@ -154,6 +164,11 @@ class TradingAgent:
             response = self.client.messages.create(**kwargs)
             logging.info("Claude response: stop_reason=%s, usage=%s",
                         response.stop_reason, response.usage)
+            if response.stop_reason == "max_tokens":
+                logging.warning(
+                    "Response truncated at max_tokens=%d (used %d output tokens) — increase MAX_TOKENS if JSON is cut off",
+                    kwargs["max_tokens"], response.usage.output_tokens,
+                )
             with open("llm_requests.log", "a", encoding="utf-8") as f:
                 f.write(f"Response stop_reason: {response.stop_reason}\n")
                 f.write(f"Usage: input={response.usage.input_tokens}, output={response.usage.output_tokens}\n")
@@ -232,10 +247,10 @@ class TradingAgent:
             try:
                 response = self.client.messages.create(
                     model=self.sanitize_model,
-                    max_tokens=2048,
+                    max_tokens=max(self.max_tokens, 4096),
                     system=(
-                        "You are a strict JSON normalizer. Return ONLY a JSON object with two keys: "
-                        "\"reasoning\" (string) and \"trade_decisions\" (array). "
+                        "You are a strict JSON normalizer. Return ONLY a JSON object with one key: "
+                        "\"trade_decisions\" (array). "
                         "Each trade_decisions item must have: asset, action (buy/sell/hold), "
                         "allocation_usd (number), order_type (\"market\" or \"limit\"), "
                         "limit_price (number or null), tp_price (number or null), sl_price (number or null), "

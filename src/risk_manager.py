@@ -58,13 +58,19 @@ class RiskManager:
         return True, ""
 
     def check_total_exposure(self, positions: list[dict], new_alloc: float,
-                              account_value: float) -> tuple[bool, str]:
-        """Sum of all position notionals + new allocation cannot exceed max_total_exposure_pct."""
+                              account_value: float,
+                              open_orders: list[dict] | None = None) -> tuple[bool, str]:
+        """Sum of all position notionals + resting limit notionals + new allocation cannot exceed max_total_exposure_pct."""
         current_exposure = 0.0
         for pos in positions:
             qty = abs(float(pos.get("quantity") or pos.get("szi") or 0))
             entry = float(pos.get("entry_price") or pos.get("entryPx") or 0)
             current_exposure += qty * entry
+        for order in (open_orders or []):
+            if order.get("trigger_price") is None:
+                size = abs(float(order.get("size") or 0))
+                price = float(order.get("price") or 0)
+                current_exposure += size * price
         total = current_exposure + new_alloc
         max_exposure = account_value * (self.max_total_exposure_pct / 100.0)
         if total > max_exposure:
@@ -187,7 +193,8 @@ class RiskManager:
     # ------------------------------------------------------------------
 
     def validate_trade(self, trade: dict, account_state: dict,
-                        initial_balance: float) -> tuple[bool, str, dict]:
+                        initial_balance: float,
+                        open_orders: list[dict] | None = None) -> tuple[bool, str, dict]:
         """Run all safety checks on a proposed trade.
 
         Args:
@@ -242,8 +249,8 @@ class RiskManager:
             alloc_usd = max_alloc
             trade = {**trade, "allocation_usd": alloc_usd}
 
-        # 4. Total exposure
-        ok, reason = self.check_total_exposure(positions, alloc_usd, account_value)
+        # 4. Total exposure (includes resting limit notional)
+        ok, reason = self.check_total_exposure(positions, alloc_usd, account_value, open_orders)
         if not ok:
             return False, reason, trade
 
