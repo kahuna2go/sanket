@@ -108,6 +108,14 @@ def main():
         if hip3_dexes:
             hyperliquid.register_perp_dexs(list(hip3_dexes))
 
+        # Reverse map: short coin name → full "dex:coin" form, e.g. "CL" → "xyz:CL"
+        # Hyperliquid user_state returns HIP-3 positions with just the short name.
+        hip3_coin_map = {a.split(":", 1)[1]: a for a in args.assets if ":" in a}
+
+        def _resolve_coin(raw_coin: str) -> str:
+            """Return the canonical asset name: maps 'CL' → 'xyz:CL' if needed."""
+            return hip3_coin_map.get(raw_coin, raw_coin)
+
         # Reconstruct active_trades from diary so TP/SL order IDs survive restarts.
         # Replay: buy/sell = open, reconcile_close/risk_force_close = closed.
         # Then cross-reference against live positions to drop anything that closed
@@ -135,7 +143,7 @@ def main():
             if diary_trades:
                 _live = await hyperliquid.get_user_state()
                 _live_coins = {
-                    pos.get("coin")
+                    _resolve_coin(pos.get("coin") or "")
                     for pos in _live.get("positions", [])
                     if abs(float(pos.get("szi", 0) or 0)) > 0
                 }
@@ -175,7 +183,7 @@ def main():
             positions = []
             for pos_wrap in state['positions']:
                 pos = pos_wrap
-                coin = pos.get('coin')
+                coin = _resolve_coin(pos.get('coin') or '')
                 current_px = await hyperliquid.get_current_price(coin) if coin else None
                 positions.append({
                     "symbol": coin,
@@ -228,15 +236,12 @@ def main():
             except Exception:
                 pass
 
-            # Map short coin names to full dex-prefixed names, e.g. "CL" → "xyz:CL"
-            _hip3_coin_map = {a.split(":", 1)[1]: a for a in args.assets if ":" in a}
-
             open_orders_struct = []
             try:
                 open_orders = await hyperliquid.get_open_orders()
                 for o in open_orders[:50]:
                     raw_coin = o.get('coin') or ''
-                    coin = _hip3_coin_map.get(raw_coin, raw_coin)
+                    coin = _resolve_coin(raw_coin)
                     open_orders_struct.append({
                         "coin": coin,
                         "oid": o.get('oid'),
@@ -269,9 +274,10 @@ def main():
                         is_buy = f_entry.get('isBuy')
                         if is_buy is None:
                             is_buy = f_entry.get('side') == 'B'
+                        raw_fc = f_entry.get('coin') or f_entry.get('asset') or ''
                         recent_fills_struct.append({
                             "timestamp": timestamp,
-                            "coin": f_entry.get('coin') or f_entry.get('asset'),
+                            "coin": _resolve_coin(raw_fc),
                             "is_buy": is_buy,
                             "size": round_or_none(f_entry.get('sz') or f_entry.get('size'), 6),
                             "price": round_or_none(f_entry.get('px') or f_entry.get('price'), 2),
@@ -288,7 +294,7 @@ def main():
                 for pos in state['positions']:
                     try:
                         if abs(float(pos.get('szi') or 0)) > 0:
-                            assets_with_positions.add(pos.get('coin'))
+                            assets_with_positions.add(_resolve_coin(pos.get('coin') or ''))
                     except Exception:
                         continue
                 assets_with_orders = {o.get('coin') for o in (open_orders or []) if o.get('coin')}
