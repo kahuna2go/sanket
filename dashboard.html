@@ -430,7 +430,7 @@
     <div class="card g-history">
       <div class="card-head">
         <span class="card-title">Completed Trades</span>
-        <span class="card-badge" id="hist-badge">all-time · excl. BTC</span>
+        <span class="card-badge" id="hist-badge">all-time</span>
       </div>
       <div id="hist-body"><div class="empty">No completed trades with known P&L</div></div>
     </div>
@@ -523,8 +523,9 @@
   function renderHistory(h) {
     if (!h) return;
     const pnl = h.total_realized_pnl;
+    const gross = h.gross_pnl;
+    const fees = h.total_fees;
     const count = h.completed_trades || 0;
-    const unknown = h.unknown_pnl_trades || 0;
 
     const atEl = document.getElementById('v-atpnl');
     const atCard = document.getElementById('mc-atpnl');
@@ -533,27 +534,29 @@
       atEl.className = 'mv ' + (pnl != null ? pClass(pnl) : '');
       if (atCard) atCard.className = 'mc ' + (pnl != null ? pClass(pnl) : '');
     }
-    const subParts = [`${count} closed`];
-    if (unknown > 0) subParts.push(`${unknown} unknown`);
-    setTxt('v-atpnl-sub', subParts.join(' · '));
-    setTxt('hist-badge', `all-time · excl. BTC · ${count + unknown} total`);
+    const subLine = gross != null
+      ? `gross ${fSign(gross)} − fees ${fAbs(fees)}`
+      : `${count} closed`;
+    setTxt('v-atpnl-sub', subLine);
+    setTxt('hist-badge', `all-time · ${count} trades`);
 
     const trades = h.trades || [];
     if (!trades.length) {
-      document.getElementById('hist-body').innerHTML = '<div class="empty">No completed trades with known P&L</div>';
+      document.getElementById('hist-body').innerHTML = '<div class="empty">No completed trades</div>';
       return;
     }
-    const rows = trades.slice(0, 30).map(t => {
-      const long = t.direction === 'long';
+    const rows = [...trades].reverse().slice(0, 30).map(t => {
+      const long = (t.dir || '').includes('Long');
       const pnlVal = +t.pnl || 0;
+      const feeVal = +t.fee || 0;
       return `<tr>
         <td class="mu" style="white-space:nowrap">${fDateTime(t.closed_at)}</td>
         <td><span class="sym">${t.asset||'—'}</span></td>
         <td>${long ? '<span class="pill pill-l">Long</span>' : '<span class="pill pill-s">Short</span>'}</td>
-        <td class="mu">${fAbs(t.entry_price)}</td>
+        <td class="mu">${t.entry_price != null ? fAbs(t.entry_price) : '—'}</td>
         <td>${fAbs(t.exit_price)}</td>
-        <td class="mu">${f(t.amount,4)}</td>
-        <td class="${pClass(pnlVal)}">${fSign(pnlVal)}</td>
+        <td class="mu">${f(t.size,4)}</td>
+        <td class="${pClass(pnlVal)}">${fSign(pnlVal)}<br><small style="opacity:.55">fee ${fAbs(feeVal)}</small></td>
       </tr>`;
     }).join('');
     document.getElementById('hist-body').innerHTML = `

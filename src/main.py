@@ -581,11 +581,11 @@ def main():
 
                         if order_type == "limit" and limit_price:
                             limit_price = float(limit_price)
-                            # Cancel any existing limit orders for this asset before replacing
-                            existing_limits = [o for o in open_orders_struct if o.get("coin") == asset and o.get("trigger_price") is None]
-                            if existing_limits:
-                                await hyperliquid.cancel_limit_orders(asset)
-                                add_event(f"Cancelled {len(existing_limits)} existing limit order(s) for {asset} before replacement")
+                            # Cancel all existing orders for this asset (limit + TP/SL) before replacing
+                            existing_orders = [o for o in open_orders_struct if hyperliquid._coin_matches(o.get("coin", ""), asset)]
+                            if existing_orders:
+                                await hyperliquid.cancel_all_orders(asset)
+                                add_event(f"Cancelled {len(existing_orders)} existing order(s) for {asset} before replacement")
                             if is_buy:
                                 order = await hyperliquid.place_limit_buy(asset, amount, limit_price)
                             else:
@@ -781,8 +781,9 @@ def main():
             return None
 
     async def handle_history(request):
-        """Return all-time realized P&L computed from diary.jsonl + Hyperliquid fills, excluding BTC."""
+        """Return all-time realized P&L directly from Hyperliquid fill history."""
         import time as _time
+        from collections import defaultdict, deque
         try:
             # Fetch full fill history, cached for 60 s
             now = _time.time()
@@ -793,182 +794,59 @@ def main():
             else:
                 all_fills = _fills_cache["data"] or []
 
-            # Index fills by short coin name (HIP-3 uses canonical short names in fills)
-            fills_by_coin: dict = {}
-            for fl in all_fills:
-                coin = fl.get("coin") or fl.get("asset") or ""
-                fills_by_coin.setdefault(coin, []).append(fl)
-
-            def _fill_coins_for(asset):
-                """Return the set of coin keys to look up in fills_by_coin for this asset."""
-                short = asset.split(":", 1)[1] if ":" in asset else asset
-                return {asset, short}
-
-            def fill_is_buy(fl):
-                """Determine fill direction — Hyperliquid uses side:'B'/'A', not isBuy."""
-                if "isBuy" in fl:
-                    return bool(fl["isBuy"])
-                return fl.get("side", "") == "B"
-
-            # Track fills already matched to a completed trade (by tid) to avoid double-counting
-            consumed_tids: set = set()
-
-            def _fill_tid(fl):
-                return fl.get("tid") or fl.get("hash") or id(fl)
-
-            def find_entry_fill(asset, open_ts, close_ts, is_long):
-                """Find the earliest unconsumed entry fill for this trade."""
-                coins = _fill_coins_for(asset)
-                # open_entry.timestamp is UTC-aware — no backward buffer needed
-                # Allow 30s before in case of sub-second timing between order place and diary write
-                window_start = (open_ts or 0) - 30
-                window_end = (close_ts or _time.time()) + 600
-                candidates = []
-                for coin in coins:
-                    for fl in fills_by_coin.get(coin, []):
-                        if _fill_tid(fl) in consumed_tids:
-                            continue
-                        fl_ts = _parse_ts(fl.get("time") or fl.get("timestamp"))
-                        if fl_ts is None or fl_ts < window_start or fl_ts > window_end:
-                            continue
-                        d = fl.get("dir", "")
-                        if "Open" not in d:
-                            continue
-                        if is_long and "Long" not in d:
-                            continue
-                        if not is_long and "Short" not in d:
-                            continue
-                        candidates.append((fl_ts, fl))
-                if not candidates:
-                    return None
-                candidates.sort(key=lambda x: x[0])
-                return candidates[0][1]
-
-            def find_closing_fills(asset, entry_fill_ts, is_long):
-                """Return closing fills for the position that opened at entry_fill_ts."""
-                coins = _fill_coins_for(asset)
-                results = []
-                window_start = entry_fill_ts - 1
-                window_end = entry_fill_ts + 86400 * 30
-                for coin in coins:
-                    for fl in fills_by_coin.get(coin, []):
-                        if _fill_tid(fl) in consumed_tids:
-                            continue
-                        fl_ts = _parse_ts(fl.get("time") or fl.get("timestamp"))
-                        if fl_ts is None or fl_ts < window_start or fl_ts > window_end:
-                            continue
-                        d = fl.get("dir", "")
-                        closed_pnl_raw = fl.get("closedPnl", "0")
-                        start_pos = fl.get("startPosition", "0")
-                        # Require dir "Close" AND non-zero startPosition (confirms position existed)
-                        is_close = "Close" in d and str(start_pos) not in ("0", "0.0", "", None)
-                        if not is_close:
-                            continue
-                        if is_long and fill_is_buy(fl):
-                            continue
-                        if not is_long and not fill_is_buy(fl):
-                            continue
-                        results.append((fl_ts, fl))
-                results.sort(key=lambda x: x[0])
-                if not results:
-                    return []
-                earliest_close_ts = results[0][0]
-                return [fl for ts, fl in results if ts <= earliest_close_ts + 5]
-
-            entries = []
-            if os.path.exists(diary_path):
-                with open(diary_path, "r") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            entries.append(json.loads(line))
-                        except json.JSONDecodeError:
-                            continue
-
-            # Only count trades opened on or after Sanket's start date
             SANKET_START_TS = _parse_ts("2026-04-24T00:00:00+00:00")
 
-            open_entries: dict = {}
-            completed = []
-            unknown_pnl = 0
+            # Sort all fills chronologically once
+            def _fl_ts(fl):
+                return _parse_ts(fl.get("time") or fl.get("timestamp")) or 0.0
+            sorted_fills = sorted(all_fills, key=_fl_ts)
 
-            for entry in entries:
-                asset = entry.get("asset") or ""
-                if asset == "BTC":
+            # Build FIFO open-fill stacks per asset (for entry price recovery)
+            open_stacks: dict = defaultdict(deque)
+            for fl in sorted_fills:
+                ts = _fl_ts(fl)
+                if ts < SANKET_START_TS:
                     continue
-                action = entry.get("action")
-                if action in ("buy", "sell"):
-                    entry_ts = _parse_ts(entry.get("timestamp"))
-                    if entry_ts is None or entry_ts < SANKET_START_TS:
-                        continue
-                    open_entries[asset] = entry
-                elif action in ("reconcile_close", "risk_force_close"):
-                    open_entry = open_entries.pop(asset, None)
-                    pnl = None
-                    exit_px = None
-                    entry_price = float(open_entry.get("entry_price") or 0) if open_entry else None
-                    amount = float(open_entry.get("amount") or 0) if open_entry else None
-                    is_long = (open_entry.get("action") == "buy") if open_entry else None
+                if "Open" in (fl.get("dir") or ""):
+                    coin = fl.get("coin") or fl.get("asset") or ""
+                    open_stacks[coin].append(fl)
 
-                    if action == "risk_force_close":
-                        raw_pnl = entry.get("pnl")
-                        if raw_pnl is not None:
-                            pnl = float(raw_pnl)
-                    elif action == "reconcile_close":
-                        # Try diary exit_price first (set for new closes)
-                        raw_exit = entry.get("exit_price")
-                        if raw_exit is not None and entry_price and amount:
-                            exit_px = float(raw_exit)
-                            pnl = (exit_px - entry_price) * amount if is_long else (entry_price - exit_px) * amount
-                        else:
-                            # Backfill from Hyperliquid fills history
-                            # Use open entry timestamp (UTC-aware) not opened_at (may be local time)
-                            open_ts = _parse_ts(open_entry.get("timestamp") if open_entry else None)
-                            close_ts = _parse_ts(entry.get("timestamp"))
-                            if is_long is not None:
-                                # Step 1: confirm position was actually opened
-                                entry_fill = find_entry_fill(asset, open_ts, close_ts, is_long)
-                                if entry_fill is not None:
-                                    entry_fill_ts = _parse_ts(entry_fill.get("time") or entry_fill.get("timestamp"))
-                                    consumed_tids.add(_fill_tid(entry_fill))
-                                    # Step 2: find closing fills after entry fill
-                                    closing_fills = find_closing_fills(asset, entry_fill_ts, is_long)
-                                    if closing_fills:
-                                        for cf in closing_fills:
-                                            consumed_tids.add(_fill_tid(cf))
-                                        pnl_sum = sum(float(fl.get("closedPnl") or 0) for fl in closing_fills)
-                                        # Only record PnL when fills confirm a real position close
-                                        # (closedPnl == 0 means the fill didn't close a position)
-                                        if pnl_sum != 0:
-                                            pnl = pnl_sum
-                                            total_sz = sum(float(fl.get("sz") or 0) for fl in closing_fills)
-                                            if total_sz > 0:
-                                                exit_px = sum(float(fl.get("px") or 0) * float(fl.get("sz") or 0) for fl in closing_fills) / total_sz
-                                # If no entry_fill: limit order never executed — no real PnL, skip silently
+            # Single pass: accumulate fees from all fills; record completed trades from closing fills
+            total_closed_pnl = 0.0
+            total_fees = 0.0
+            closing_trades = []
 
-                    if pnl is not None:
-                        completed.append({
-                            "asset": asset,
-                            "direction": "long" if is_long else "short",
-                            "entry_price": entry_price,
-                            "exit_price": round(exit_px, 4) if exit_px else None,
-                            "amount": amount,
-                            "pnl": round(pnl, 4),
-                            "opened_at": open_entry.get("opened_at") if open_entry else None,
-                            "closed_at": entry.get("timestamp"),
-                        })
-                    else:
-                        unknown_pnl += 1
+            for fl in sorted_fills:
+                ts = _fl_ts(fl)
+                if ts < SANKET_START_TS:
+                    continue
+                fee = float(fl.get("fee") or 0)
+                total_fees += fee
+                closed_pnl = float(fl.get("closedPnl") or 0)
+                if closed_pnl == 0:
+                    continue  # opening fill — counted fee already, no P&L to record
+                total_closed_pnl += closed_pnl
+                coin = fl.get("coin") or fl.get("asset") or ""
+                # Pop the earliest unmatched open fill to get entry price
+                entry_fill = open_stacks[coin].popleft() if open_stacks[coin] else None
+                entry_price = round_or_none(float(entry_fill.get("px") or 0), 4) if entry_fill else None
+                closing_trades.append({
+                    "closed_at": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
+                    "asset": coin,
+                    "dir": fl.get("dir") or "",
+                    "entry_price": entry_price,
+                    "exit_price": round_or_none(float(fl.get("px") or 0), 4),
+                    "size": round_or_none(float(fl.get("sz") or 0), 6),
+                    "pnl": round(closed_pnl, 4),
+                    "fee": round(fee, 6),
+                })
 
-            total_pnl = sum(t["pnl"] for t in completed)
-            completed.sort(key=lambda t: t.get("closed_at") or "", reverse=True)
             return web.json_response({
-                "total_realized_pnl": round(total_pnl, 4),
-                "completed_trades": len(completed),
-                "unknown_pnl_trades": unknown_pnl,
-                "trades": completed,
+                "total_realized_pnl": round(total_closed_pnl - total_fees, 4),
+                "gross_pnl": round(total_closed_pnl, 4),
+                "total_fees": round(total_fees, 4),
+                "completed_trades": len(closing_trades),
+                "trades": closing_trades,
             })
         except Exception as e:
             import traceback
