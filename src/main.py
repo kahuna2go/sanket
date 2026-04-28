@@ -11,7 +11,7 @@ from src.trading.hyperliquid_api import HyperliquidAPI
 import asyncio
 import logging
 from collections import deque, OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import math  # For Sharpe
 from dotenv import load_dotenv
 import os
@@ -811,9 +811,20 @@ def main():
                     coin = fl.get("coin") or fl.get("asset") or ""
                     open_stacks[coin].append(fl)
 
+            # Time windows for daily / weekly buckets (UTC)
+            now_dt = datetime.now(timezone.utc)
+            day_start_ts = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+            week_start_ts = (now_dt - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
             # Single pass: accumulate fees from all fills; record completed trades from closing fills
             total_closed_pnl = 0.0
             total_fees = 0.0
+            day_closed_pnl = 0.0
+            day_fees = 0.0
+            day_trades = 0
+            week_closed_pnl = 0.0
+            week_fees = 0.0
+            week_trades = 0
             closing_trades = []
 
             for fl in sorted_fills:
@@ -822,10 +833,20 @@ def main():
                     continue
                 fee = float(fl.get("fee") or 0)
                 total_fees += fee
+                if ts >= week_start_ts:
+                    week_fees += fee
+                if ts >= day_start_ts:
+                    day_fees += fee
                 closed_pnl = float(fl.get("closedPnl") or 0)
                 if closed_pnl == 0:
                     continue  # opening fill — counted fee already, no P&L to record
                 total_closed_pnl += closed_pnl
+                if ts >= week_start_ts:
+                    week_closed_pnl += closed_pnl
+                    week_trades += 1
+                if ts >= day_start_ts:
+                    day_closed_pnl += closed_pnl
+                    day_trades += 1
                 coin = fl.get("coin") or fl.get("asset") or ""
                 # Pop the earliest unmatched open fill to get entry price
                 entry_fill = open_stacks[coin].popleft() if open_stacks[coin] else None
@@ -846,6 +867,18 @@ def main():
                 "gross_pnl": round(total_closed_pnl, 4),
                 "total_fees": round(total_fees, 4),
                 "completed_trades": len(closing_trades),
+                "daily": {
+                    "net_pnl": round(day_closed_pnl - day_fees, 4),
+                    "gross_pnl": round(day_closed_pnl, 4),
+                    "fees": round(day_fees, 4),
+                    "trades": day_trades,
+                },
+                "weekly": {
+                    "net_pnl": round(week_closed_pnl - week_fees, 4),
+                    "gross_pnl": round(week_closed_pnl, 4),
+                    "fees": round(week_fees, 4),
+                    "trades": week_trades,
+                },
                 "trades": closing_trades,
             })
         except Exception as e:

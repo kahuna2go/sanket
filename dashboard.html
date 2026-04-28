@@ -338,19 +338,19 @@
       <div class="ml">Account Value</div>
       <div class="mv" id="v-av">—</div>
     </div>
-    <div class="mc" id="mc-spnl">
-      <div class="ml">Session P&amp;L <small style="font-size:9px;letter-spacing:.06em">(net of fees)</small></div>
-      <div class="mv" id="v-spnl">—</div>
-      <div class="msub" id="v-spnl-pct">—</div>
+    <div class="mc" id="mc-dpnl">
+      <div class="ml">Today P&amp;L <small style="font-size:9px;letter-spacing:.06em">(net of fees)</small></div>
+      <div class="mv" id="v-dpnl">—</div>
+      <div class="msub" id="v-dpnl-sub">—</div>
     </div>
     <div class="mc" id="mc-upnl">
       <div class="ml">Unrealized P&amp;L</div>
       <div class="mv" id="v-upnl">—</div>
     </div>
-    <div class="mc g">
-      <div class="ml">Fees Paid (fills)</div>
-      <div class="mv gd" id="v-fees">—</div>
-      <div class="msub" id="v-fees-sub">from recent fills</div>
+    <div class="mc" id="mc-wpnl">
+      <div class="ml">Week P&amp;L <small style="font-size:9px;letter-spacing:.06em">(net of fees, 7d)</small></div>
+      <div class="mv" id="v-wpnl">—</div>
+      <div class="msub" id="v-wpnl-sub">—</div>
     </div>
     <div class="mc" id="mc-atpnl">
       <div class="ml">All-Time P&amp;L <small style="font-size:9px;letter-spacing:.06em">(realized)</small></div>
@@ -480,28 +480,12 @@
     const acc = d.account || {};
     const bal  = acc.balance;
     const av   = acc.account_value;
-    const init = d.initial_account_value;
-    const spnl = (av != null && init != null) ? av - init : null;
-    const spct = (spnl != null && init) ? spnl / init * 100 : null;
 
     const positions = (acc.positions || []).filter(p => p.symbol !== 'BTC');
     const upnl = positions.reduce((s,p) => s + (+p.unrealized_pnl||0), 0);
 
-    const fills = (acc.recent_fills || []).filter(f2 => f2.coin !== 'BTC');
-    const fees  = fills.reduce((s,f2) => s + Math.abs(+f2.fee||0), 0);
-
     setTxt('v-bal', fAbs(bal));
     setTxt('v-av',  fAbs(av));
-
-    // Session PnL card
-    const spnlEl = document.getElementById('v-spnl');
-    const spnlCard = document.getElementById('mc-spnl');
-    if (spnlEl) {
-      spnlEl.textContent = spnl != null ? fSign(spnl) : '—';
-      spnlEl.className = 'mv ' + (spnl != null ? pClass(spnl) : '');
-      if (spnlCard) spnlCard.className = 'mc ' + (spnl != null ? pClass(spnl) : '');
-    }
-    setTxt('v-spnl-pct', spct != null ? fPct(spct) : '—');
 
     const upnlEl = document.getElementById('v-upnl');
     const upnlCard = document.getElementById('mc-upnl');
@@ -511,15 +495,23 @@
       if (upnlCard) upnlCard.className = 'mc ' + pClass(upnl);
     }
 
-    setTxt('v-fees', fees > 0 ? '-$' + fees.toFixed(4) : '$0.00');
-    setTxt('v-fees-sub', `${fills.length} fills shown`);
-
     setTxt('uptime',  fUptime(d.uptime_minutes));
     setTxt('cycle',   '#' + (d.invocation_count || '—'));
     setTxt('updated', fTime(d.last_updated));
   }
 
-  // ── All-Time P&L ─────────────────────────────
+  function _setPnlCard(elId, cardId, subId, val, subTxt) {
+    const el = document.getElementById(elId);
+    const card = document.getElementById(cardId);
+    if (el) {
+      el.textContent = val != null ? fSign(val) : '—';
+      el.className = 'mv ' + (val != null ? pClass(val) : '');
+      if (card) card.className = 'mc ' + (val != null ? pClass(val) : '');
+    }
+    if (subId) setTxt(subId, subTxt || '—');
+  }
+
+  // ── All-Time / Daily / Weekly P&L ────────────
   function renderHistory(h) {
     if (!h) return;
     const pnl = h.total_realized_pnl;
@@ -527,6 +519,7 @@
     const fees = h.total_fees;
     const count = h.completed_trades || 0;
 
+    // All-time card
     const atEl = document.getElementById('v-atpnl');
     const atCard = document.getElementById('mc-atpnl');
     if (atEl) {
@@ -539,6 +532,18 @@
       : `${count} closed`;
     setTxt('v-atpnl-sub', subLine);
     setTxt('hist-badge', `all-time · ${count} trades`);
+
+    // Daily card
+    const d = h.daily || {};
+    _setPnlCard('v-dpnl', 'mc-dpnl', 'v-dpnl-sub',
+      d.net_pnl,
+      d.trades != null ? `${d.trades} trade${d.trades===1?'':'s'} · fees ${fAbs(d.fees)}` : '—');
+
+    // Weekly card
+    const w = h.weekly || {};
+    _setPnlCard('v-wpnl', 'mc-wpnl', 'v-wpnl-sub',
+      w.net_pnl,
+      w.trades != null ? `${w.trades} trade${w.trades===1?'':'s'} · fees ${fAbs(w.fees)}` : '—');
 
     const trades = h.trades || [];
     if (!trades.length) {
