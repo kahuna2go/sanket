@@ -421,33 +421,54 @@ class HyperliquidAPI:
             pass
         return oids
 
+    async def _enrich_position(self, pos_wrap, coin_prefix=""):
+        """Enrich a single assetPositions entry with pnl and notional_entry."""
+        pos = dict(pos_wrap["position"])  # copy — we may mutate coin name
+        short_coin = pos.get("coin", "")
+        if coin_prefix:
+            pos["coin"] = f"{coin_prefix}:{short_coin}"
+        entry_px = float(pos.get("entryPx", 0) or 0)
+        size = float(pos.get("szi", 0) or 0)
+        side = "long" if size > 0 else "short"
+        current_px = await self.get_current_price(pos["coin"]) if entry_px and size else 0.0
+        pnl = (current_px - entry_px) * abs(size) if side == "long" else (entry_px - current_px) * abs(size)
+        pos["pnl"] = pnl
+        pos["notional_entry"] = abs(size) * entry_px
+        return pos
+
     async def get_user_state(self):
         """Retrieve wallet state with enriched position PnL calculations.
 
-        Supports both standard and unified accounts. For unified accounts,
-        the available balance comes from the spot clearinghouse (USDC total).
+        Fetches positions from the main clearinghouse and from every registered
+        HIP-3 dex. HIP-3 positions are stored with full "dex:coin" names.
 
         Returns:
             Dictionary with ``balance``, ``total_value``, and ``positions``.
         """
         state = await self._retry(lambda: self.info.user_state(self.query_address))
-        positions = state.get("assetPositions", [])
         total_value = float(state.get("accountValue", 0.0))
         enriched_positions = []
-        for pos_wrap in positions:
-            pos = pos_wrap["position"]
-            entry_px = float(pos.get("entryPx", 0) or 0)
-            size = float(pos.get("szi", 0) or 0)
-            side = "long" if size > 0 else "short"
-            current_px = await self.get_current_price(pos["coin"]) if entry_px and size else 0.0
-            pnl = (current_px - entry_px) * abs(size) if side == "long" else (entry_px - current_px) * abs(size)
-            pos["pnl"] = pnl
-            pos["notional_entry"] = abs(size) * entry_px
-            enriched_positions.append(pos)
+
+        for pw in state.get("assetPositions", []):
+            enriched_positions.append(await self._enrich_position(pw))
+
+        # HIP-3 clearinghouses are separate — query each registered dex
+        for dex in self._perp_dexs:
+            try:
+                _dex = dex  # capture for lambda
+                hip3_state = await self._retry(
+                    lambda d=_dex: self.info.post(
+                        "/info", {"type": "clearinghouseState", "user": self.query_address, "dex": d}
+                    )
+                )
+                for pw in (hip3_state or {}).get("assetPositions", []):
+                    enriched_positions.append(await self._enrich_position(pw, coin_prefix=dex))
+            except Exception as e:
+                logging.warning("Failed to fetch HIP-3 positions for dex %s: %s", dex, e)
+
         balance = float(state.get("withdrawable", 0.0))
 
         # Unified account: perps balance may be 0 while funds are in spot USDC.
-        # Check spot clearinghouse for the actual available balance.
         if balance == 0 and total_value == 0:
             try:
                 spot_state = await self._retry(
@@ -470,24 +491,19 @@ class HyperliquidAPI:
     async def get_current_price(self, asset):
         """Return the latest mid-price for ``asset``.
 
-        Supports both main dex assets (e.g. "BTC") and HIP-3 assets
-        (e.g. "xyz:GOLD"). For HIP-3 assets, queries the dex-specific
-        allMids endpoint.
-
-        Args:
-            asset: Market symbol to query.
+        For HIP-3 assets (``dex:coin`` format), queries the dex-specific
+        allMids endpoint and looks up by the short coin name.
 
         Returns:
             Mid-price as a float, or ``0.0`` when unavailable.
         """
         if ":" in asset:
-            # HIP-3 asset — need dex-specific allMids
-            dex = asset.split(":")[0]
+            dex, short = asset.split(":", 1)
             mids = await self._retry(
                 lambda: self.info.post("/info", {"type": "allMids", "dex": dex})
             )
-        else:
-            mids = await self._retry(self.info.all_mids)
+            return float(mids.get(short, 0.0))
+        mids = await self._retry(self.info.all_mids)
         return float(mids.get(asset, 0.0))
 
     async def get_meta_and_ctxs(self, dex=None):
