@@ -425,7 +425,7 @@ class HyperliquidAPI:
         """Enrich a single assetPositions entry with pnl and notional_entry."""
         pos = dict(pos_wrap["position"])  # copy — we may mutate coin name
         short_coin = pos.get("coin", "")
-        if coin_prefix:
+        if coin_prefix and not short_coin.startswith(f"{coin_prefix}:"):
             pos["coin"] = f"{coin_prefix}:{short_coin}"
         entry_px = float(pos.get("entryPx", 0) or 0)
         size = float(pos.get("szi", 0) or 0)
