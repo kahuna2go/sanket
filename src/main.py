@@ -156,6 +156,8 @@ def main():
                             "entry_price": _entry.get("entry_price"),
                             "tp_oid": _entry.get("tp_oid"),
                             "sl_oid": _entry.get("sl_oid"),
+                            "tp_price": _entry.get("tp_price"),
+                            "sl_price": _entry.get("sl_price"),
                             "exit_plan": _entry.get("exit_plan", ""),
                             "opened_at": _entry.get("opened_at"),
                         })
@@ -242,6 +244,8 @@ def main():
                 for o in open_orders[:50]:
                     raw_coin = o.get('coin') or ''
                     coin = _resolve_coin(raw_coin)
+                    ts = o.get('timestamp')
+                    placed_at = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat() if ts else None
                     open_orders_struct.append({
                         "coin": coin,
                         "oid": o.get('oid'),
@@ -249,7 +253,9 @@ def main():
                         "size": round_or_none(o.get('sz'), 6),
                         "price": round_or_none(o.get('px'), 2),
                         "trigger_price": round_or_none(o.get('triggerPx'), 2),
-                        "order_type": o.get('orderType')
+                        "is_trigger": o.get('isTrigger', False),
+                        "order_type": o.get('orderType'),
+                        "placed_at": placed_at
                     })
             except Exception:
                 open_orders = []
@@ -323,6 +329,44 @@ def main():
                             }) + "\n")
             except Exception:
                 pass
+
+            # For each active trade with a live position: cancel orphaned limit orders
+            # and re-place any TP/SL that are no longer on the book.
+            try:
+                open_oids = {o.get('oid') for o in (open_orders or [])}
+                for tr in active_trades:
+                    asset = tr.get('asset')
+                    if asset not in assets_with_positions:
+                        continue
+                    # Cancel resting limit orders that aren't TP/SL for this asset
+                    orphaned = [
+                        o for o in (open_orders or [])
+                        if hyperliquid._coin_matches(o.get('coin', ''), asset)
+                        and not o.get('triggerPx')
+                    ]
+                    if orphaned:
+                        await hyperliquid.cancel_limit_orders(asset)
+                        add_event(f"Cancelled {len(orphaned)} orphaned limit order(s) for {asset}")
+                    # Re-place TP if missing
+                    if tr.get('tp_price') and (not tr.get('tp_oid') or tr.get('tp_oid') not in open_oids):
+                        try:
+                            tp_order = await hyperliquid.place_take_profit(asset, tr['is_long'], tr['amount'], tr['tp_price'])
+                            tp_oids = hyperliquid.extract_oids(tp_order)
+                            tr['tp_oid'] = tp_oids[0] if tp_oids else None
+                            add_event(f"Re-placed missing TP for {asset} at {tr['tp_price']}")
+                        except Exception as e:
+                            add_event(f"Failed to re-place TP for {asset}: {e}")
+                    # Re-place SL if missing
+                    if tr.get('sl_price') and (not tr.get('sl_oid') or tr.get('sl_oid') not in open_oids):
+                        try:
+                            sl_order = await hyperliquid.place_stop_loss(asset, tr['is_long'], tr['amount'], tr['sl_price'])
+                            sl_oids = hyperliquid.extract_oids(sl_order)
+                            tr['sl_oid'] = sl_oids[0] if sl_oids else None
+                            add_event(f"Re-placed missing SL for {asset} at {tr['sl_price']}")
+                        except Exception as e:
+                            add_event(f"Failed to re-place SL for {asset}: {e}")
+            except Exception as _rec_err:
+                add_event(f"TP/SL reconcile error (non-fatal): {_rec_err}")
 
             dashboard = {
                 "total_return_pct": round(total_return_pct, 2),
@@ -579,13 +623,16 @@ def main():
                         order_type = output.get("order_type", "market")
                         limit_price = output.get("limit_price")
 
+                        # Always cancel all existing orders before opening a new one
+                        try:
+                            cancelled = await hyperliquid.cancel_all_orders(asset)
+                            if cancelled.get("cancelled_count", 0) > 0:
+                                add_event(f"Cancelled {cancelled['cancelled_count']} existing order(s) for {asset} before new {action} order")
+                        except Exception as _ce:
+                            add_event(f"Pre-trade cancel error for {asset}: {_ce}")
+
                         if order_type == "limit" and limit_price:
                             limit_price = float(limit_price)
-                            # Cancel all existing orders for this asset (limit + TP/SL) before replacing
-                            existing_orders = [o for o in open_orders_struct if hyperliquid._coin_matches(o.get("coin", ""), asset)]
-                            if existing_orders:
-                                await hyperliquid.cancel_all_orders(asset)
-                                add_event(f"Cancelled {len(existing_orders)} existing order(s) for {asset} before replacement")
                             if is_buy:
                                 order = await hyperliquid.place_limit_buy(asset, amount, limit_price)
                             else:
@@ -632,6 +679,8 @@ def main():
                             "entry_price": current_price,
                             "tp_oid": tp_oid,
                             "sl_oid": sl_oid,
+                            "tp_price": output.get("tp_price"),
+                            "sl_price": output.get("sl_price"),
                             "exit_plan": output["exit_plan"],
                             "opened_at": datetime.now().isoformat()
                         })

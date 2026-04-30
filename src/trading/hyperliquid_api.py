@@ -502,7 +502,7 @@ class HyperliquidAPI:
             mids = await self._retry(
                 lambda: self.info.post("/info", {"type": "allMids", "dex": dex})
             )
-            return float(mids.get(short, 0.0))
+            return float(mids.get(asset, mids.get(short, 0.0)))
         mids = await self._retry(self.info.all_mids)
         return float(mids.get(asset, 0.0))
 
