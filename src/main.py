@@ -330,25 +330,26 @@ def main():
             except Exception:
                 pass
 
-            # For each active trade with a live position: cancel orphaned limit orders
-            # and re-place any TP/SL that are no longer on the book.
+            # For each active trade with a live position: cancel orphaned entry limits
+            # and ensure TP/SL orders are always on the book.
             try:
-                open_oids = {o.get('oid') for o in (open_orders or [])}
+                trigger_oids = {o.get('oid') for o in (open_orders or []) if o.get('isTrigger')}
                 for tr in active_trades:
                     asset = tr.get('asset')
                     if asset not in assets_with_positions:
                         continue
-                    # Cancel resting limit orders that aren't TP/SL for this asset
+                    # Cancel resting entry limits (non-trigger) for assets with an open position
                     orphaned = [
                         o for o in (open_orders or [])
                         if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                        and not o.get('triggerPx')
+                        and not o.get('isTrigger')
                     ]
                     if orphaned:
                         await hyperliquid.cancel_limit_orders(asset)
-                        add_event(f"Cancelled {len(orphaned)} orphaned limit order(s) for {asset}")
-                    # Re-place TP if missing
-                    if tr.get('tp_price') and (not tr.get('tp_oid') or tr.get('tp_oid') not in open_oids):
+                        add_event(f"Cancelled {len(orphaned)} orphaned entry limit(s) for {asset}")
+                    # Re-place TP if missing from book
+                    tp_on_book = tr.get('tp_oid') and tr['tp_oid'] in trigger_oids
+                    if not tp_on_book and tr.get('tp_price'):
                         try:
                             tp_order = await hyperliquid.place_take_profit(asset, tr['is_long'], tr['amount'], tr['tp_price'])
                             tp_oids = hyperliquid.extract_oids(tp_order)
@@ -356,15 +357,38 @@ def main():
                             add_event(f"Re-placed missing TP for {asset} at {tr['tp_price']}")
                         except Exception as e:
                             add_event(f"Failed to re-place TP for {asset}: {e}")
-                    # Re-place SL if missing
-                    if tr.get('sl_price') and (not tr.get('sl_oid') or tr.get('sl_oid') not in open_oids):
-                        try:
-                            sl_order = await hyperliquid.place_stop_loss(asset, tr['is_long'], tr['amount'], tr['sl_price'])
-                            sl_oids = hyperliquid.extract_oids(sl_order)
-                            tr['sl_oid'] = sl_oids[0] if sl_oids else None
-                            add_event(f"Re-placed missing SL for {asset} at {tr['sl_price']}")
-                        except Exception as e:
-                            add_event(f"Failed to re-place SL for {asset}: {e}")
+                    # Re-place SL if missing — mandatory fallback if no sl_price stored
+                    sl_on_book = tr.get('sl_oid') and tr['sl_oid'] in trigger_oids
+                    if not sl_on_book:
+                        sl_price = tr.get('sl_price')
+                        if not sl_price:
+                            entry = tr.get('entry_price') or asset_prices.get(asset)
+                            if entry:
+                                pct = risk_mgr.mandatory_sl_pct / 100.0
+                                sl_price = round(entry * (1 - pct) if tr['is_long'] else entry * (1 + pct), 4)
+                                add_event(f"No SL price stored for {asset} — using mandatory fallback at {sl_price}")
+                        if sl_price:
+                            try:
+                                sl_order = await hyperliquid.place_stop_loss(asset, tr['is_long'], tr['amount'], sl_price)
+                                sl_oids = hyperliquid.extract_oids(sl_order)
+                                tr['sl_oid'] = sl_oids[0] if sl_oids else None
+                                tr['sl_price'] = sl_price
+                                add_event(f"Re-placed missing SL for {asset} at {sl_price}")
+                            except Exception as e:
+                                add_event(f"Failed to re-place SL for {asset}: {e}")
+                # Cancel entry limits for positions not tracked in active_trades.
+                # These are positions opened manually or in a prior session; their
+                # entry limits would add unintended exposure on top of an existing position.
+                tracked_assets = {tr.get('asset') for tr in active_trades}
+                for asset in assets_with_positions - tracked_assets:
+                    untracked_limits = [
+                        o for o in (open_orders or [])
+                        if hyperliquid._coin_matches(o.get('coin', ''), asset)
+                        and not o.get('isTrigger')
+                    ]
+                    if untracked_limits:
+                        await hyperliquid.cancel_limit_orders(asset)
+                        add_event(f"Cancelled {len(untracked_limits)} entry limit(s) for untracked position {asset}")
             except Exception as _rec_err:
                 add_event(f"TP/SL reconcile error (non-fatal): {_rec_err}")
 
@@ -623,13 +647,18 @@ def main():
                         order_type = output.get("order_type", "market")
                         limit_price = output.get("limit_price")
 
-                        # Always cancel all existing orders before opening a new one
+                        # Cancel resting entry limit orders before opening a new one.
+                        # If cancel fails, skip the order — don't stack on uncancelled limits.
                         try:
-                            cancelled = await hyperliquid.cancel_all_orders(asset)
+                            cancelled = await hyperliquid.cancel_limit_orders(asset)
+                            if cancelled.get("status") == "error":
+                                add_event(f"Pre-trade cancel failed for {asset}: {cancelled.get('message')} — skipping order")
+                                continue
                             if cancelled.get("cancelled_count", 0) > 0:
-                                add_event(f"Cancelled {cancelled['cancelled_count']} existing order(s) for {asset} before new {action} order")
+                                add_event(f"Cancelled {cancelled['cancelled_count']} entry limit(s) for {asset} before new {action} order")
                         except Exception as _ce:
-                            add_event(f"Pre-trade cancel error for {asset}: {_ce}")
+                            add_event(f"Pre-trade cancel error for {asset}: {_ce} — skipping order")
+                            continue
 
                         if order_type == "limit" and limit_price:
                             limit_price = float(limit_price)
