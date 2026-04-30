@@ -303,7 +303,7 @@ def main():
                             assets_with_positions.add(_resolve_coin(pos.get('coin') or ''))
                     except Exception:
                         continue
-                assets_with_orders = {o.get('coin') for o in (open_orders or []) if o.get('coin')}
+                assets_with_orders = {_resolve_coin(o.get('coin') or '') for o in (open_orders or []) if o.get('coin')}
                 for tr in active_trades[:]:
                     asset = tr.get('asset')
                     if asset not in assets_with_positions and asset not in assets_with_orders:
