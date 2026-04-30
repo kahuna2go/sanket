@@ -376,9 +376,11 @@ def main():
                                 add_event(f"Re-placed missing SL for {asset} at {sl_price}")
                             except Exception as e:
                                 add_event(f"Failed to re-place SL for {asset}: {e}")
-                # Cancel entry limits for positions not tracked in active_trades.
-                # These are positions opened manually or in a prior session; their
-                # entry limits would add unintended exposure on top of an existing position.
+                # Adopt positions not tracked in active_trades.
+                # Covers positions opened in a prior session or before the coin-name
+                # bug was fixed. For each: cancel any resting entry limits, place a
+                # mandatory SL using live position data, add to active_trades for this
+                # session, and write a diary entry so it survives the next restart.
                 tracked_assets = {tr.get('asset') for tr in active_trades}
                 for asset in assets_with_positions - tracked_assets:
                     untracked_limits = [
@@ -389,6 +391,74 @@ def main():
                     if untracked_limits:
                         await hyperliquid.cancel_limit_orders(asset)
                         add_event(f"Cancelled {len(untracked_limits)} entry limit(s) for untracked position {asset}")
+
+                    pos_data = next(
+                        (p for p in state['positions']
+                         if _resolve_coin(p.get('coin') or '') == asset),
+                        None
+                    )
+                    if not pos_data:
+                        continue
+                    size = float(pos_data.get('szi') or 0)
+                    entry_px = float(pos_data.get('entryPx') or 0)
+                    if not size or not entry_px:
+                        continue
+                    is_long = size > 0
+                    amount = abs(size)
+
+                    sl_on_book = any(
+                        o for o in (open_orders or [])
+                        if hyperliquid._coin_matches(o.get('coin', ''), asset)
+                        and o.get('isTrigger')
+                    )
+                    adopted_sl_oid = None
+                    adopted_sl_price = None
+                    if not sl_on_book:
+                        pct = risk_mgr.mandatory_sl_pct / 100.0
+                        adopted_sl_price = round(
+                            entry_px * (1 - pct) if is_long else entry_px * (1 + pct), 4
+                        )
+                        try:
+                            sl_order = await hyperliquid.place_stop_loss(asset, is_long, amount, adopted_sl_price)
+                            sl_oids = hyperliquid.extract_oids(sl_order)
+                            adopted_sl_oid = sl_oids[0] if sl_oids else None
+                            add_event(f"Placed mandatory SL for untracked {asset} at {adopted_sl_price}")
+                        except Exception as _sl_err:
+                            add_event(f"Failed to place SL for untracked {asset}: {_sl_err}")
+
+                    new_tr = {
+                        "asset": asset,
+                        "is_long": is_long,
+                        "amount": amount,
+                        "entry_price": entry_px,
+                        "tp_oid": None,
+                        "sl_oid": adopted_sl_oid,
+                        "tp_price": None,
+                        "sl_price": adopted_sl_price,
+                        "exit_plan": "adopted from untracked live position",
+                        "opened_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    active_trades.append(new_tr)
+                    add_event(f"Adopted untracked {asset} into active_trades (long={is_long}, amount={amount:.4f}, entry={entry_px})")
+                    try:
+                        with open(diary_path, "a") as _df:
+                            _df.write(json.dumps({
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "asset": asset,
+                                "action": "buy" if is_long else "sell",
+                                "order_type": "adopted",
+                                "amount": amount,
+                                "entry_price": entry_px,
+                                "sl_price": adopted_sl_price,
+                                "sl_oid": adopted_sl_oid,
+                                "tp_price": None,
+                                "tp_oid": None,
+                                "exit_plan": "Adopted from untracked live position",
+                                "opened_at": new_tr["opened_at"],
+                                "filled": True,
+                            }) + "\n")
+                    except Exception as _dw_err:
+                        add_event(f"Failed to write adopted trade diary for {asset}: {_dw_err}")
             except Exception as _rec_err:
                 add_event(f"TP/SL reconcile error (non-fatal): {_rec_err}")
 
