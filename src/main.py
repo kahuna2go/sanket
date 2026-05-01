@@ -333,7 +333,12 @@ def main():
             # For each active trade with a live position: cancel orphaned entry limits
             # and ensure TP/SL orders are always on the book.
             try:
-                trigger_oids = {o.get('oid') for o in (open_orders or []) if o.get('isTrigger')}
+                def _is_trigger(o):
+                    return o.get('isTrigger') or (
+                        isinstance(o.get('orderType'), dict) and 'trigger' in o.get('orderType', {})
+                    )
+
+                trigger_oids = {o.get('oid') for o in (open_orders or []) if _is_trigger(o)}
                 for tr in active_trades:
                     asset = tr.get('asset')
                     if asset not in assets_with_positions:
@@ -342,7 +347,7 @@ def main():
                     orphaned = [
                         o for o in (open_orders or [])
                         if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                        and not o.get('isTrigger')
+                        and not _is_trigger(o)
                     ]
                     if orphaned:
                         await hyperliquid.cancel_limit_orders(asset)
@@ -409,7 +414,7 @@ def main():
                     sl_on_book = any(
                         o for o in (open_orders or [])
                         if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                        and o.get('isTrigger')
+                        and _is_trigger(o)
                     )
                     adopted_sl_oid = None
                     adopted_sl_price = None
