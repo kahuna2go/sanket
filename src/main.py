@@ -353,7 +353,15 @@ def main():
                         await hyperliquid.cancel_limit_orders(asset)
                         add_event(f"Cancelled {len(orphaned)} orphaned entry limit(s) for {asset}")
                     # Re-place TP if missing from book
-                    tp_on_book = tr.get('tp_oid') and tr['tp_oid'] in trigger_oids
+                    tp_on_book = (
+                        (tr.get('tp_oid') and tr['tp_oid'] in trigger_oids)
+                        or any(
+                            o for o in (open_orders or [])
+                            if hyperliquid._coin_matches(o.get('coin', ''), asset)
+                            and isinstance(o.get('orderType'), dict)
+                            and o.get('orderType', {}).get('trigger', {}).get('tpsl') == 'tp'
+                        )
+                    )
                     if not tp_on_book and tr.get('tp_price'):
                         try:
                             tp_order = await hyperliquid.place_take_profit(asset, tr['is_long'], tr['amount'], tr['tp_price'])
@@ -363,7 +371,15 @@ def main():
                         except Exception as e:
                             add_event(f"Failed to re-place TP for {asset}: {e}")
                     # Re-place SL if missing — mandatory fallback if no sl_price stored
-                    sl_on_book = tr.get('sl_oid') and tr['sl_oid'] in trigger_oids
+                    sl_on_book = (
+                        (tr.get('sl_oid') and tr['sl_oid'] in trigger_oids)
+                        or any(
+                            o for o in (open_orders or [])
+                            if hyperliquid._coin_matches(o.get('coin', ''), asset)
+                            and isinstance(o.get('orderType'), dict)
+                            and o.get('orderType', {}).get('trigger', {}).get('tpsl') == 'sl'
+                        )
+                    )
                     if not sl_on_book:
                         sl_price = tr.get('sl_price')
                         if not sl_price:
