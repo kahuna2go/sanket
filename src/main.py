@@ -149,6 +149,9 @@ def main():
                     if abs(float(pos.get("szi", 0) or 0)) > 0
                 }
                 for _asset, _entry in diary_trades.items():
+                    if _asset not in set(args.assets):
+                        add_event(f"Skipping diary restore for {_asset} — not in ASSETS (manual management)")
+                        continue
                     if _asset in _live_coins:
                         active_trades.append({
                             "asset": _asset,
@@ -200,7 +203,8 @@ def main():
 
             # --- RISK: Force-close positions that exceed max loss ---
             try:
-                positions_to_close = risk_mgr.check_losing_positions(state['positions'])
+                managed_positions = [p for p in state['positions'] if _resolve_coin(p.get('coin') or '') in set(args.assets)]
+                positions_to_close = risk_mgr.check_losing_positions(managed_positions)
                 for ptc in positions_to_close:
                     coin = ptc["coin"]
                     size = ptc["size"]
@@ -417,7 +421,7 @@ def main():
                 # mandatory SL using live position data, add to active_trades for this
                 # session, and write a diary entry so it survives the next restart.
                 tracked_assets = {tr.get('asset') for tr in active_trades}
-                for asset in assets_with_positions - tracked_assets:
+                for asset in (assets_with_positions - tracked_assets) & set(args.assets):
                     untracked_limits = [
                         o for o in (open_orders or [])
                         if hyperliquid._coin_matches(o.get('coin', ''), asset)
