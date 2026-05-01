@@ -784,30 +784,43 @@ def main():
                         continue
                     elif action in ("buy", "sell"):
                         is_buy = action == "buy"
-                        alloc_usd = float(output.get("allocation_usd", 0.0))
-                        if alloc_usd <= 0:
-                            add_event(f"Holding {asset}: zero/negative allocation")
-                            continue
 
-                        # --- RISK: Validate trade before execution ---
-                        output["current_price"] = current_price
-                        allowed, reason, output = risk_mgr.validate_trade(
-                            output, state, initial_account_value or 0, open_orders_struct
+                        # Detect close: LLM is selling an existing long or buying an existing short.
+                        # In that case use the tracked position size — allocation_usd is irrelevant
+                        # and risk checks for new exposure do not apply.
+                        existing_tr = next(
+                            (tr for tr in active_trades
+                             if tr.get('asset') == asset
+                             and tr.get('is_long') != is_buy),  # opposite direction = close
+                            None
                         )
-                        if not allowed:
-                            add_event(f"RISK BLOCKED {asset}: {reason}")
-                            with open(diary_path, "a") as f:
-                                f.write(json.dumps({
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                    "asset": asset,
-                                    "action": "risk_blocked",
-                                    "reason": reason,
-                                    "original_alloc_usd": alloc_usd,
-                                }) + "\n")
-                            continue
-                        # Use potentially adjusted values from risk manager
-                        alloc_usd = float(output.get("allocation_usd", alloc_usd))
-                        amount = alloc_usd / current_price
+                        if existing_tr:
+                            amount = existing_tr['amount']
+                            add_event(f"CLOSE {asset}: using tracked size {amount:.4f} (LLM allocation ignored)")
+                        else:
+                            alloc_usd = float(output.get("allocation_usd", 0.0))
+                            if alloc_usd <= 0:
+                                add_event(f"Holding {asset}: zero/negative allocation")
+                                continue
+
+                            # --- RISK: Validate trade before execution ---
+                            output["current_price"] = current_price
+                            allowed, reason, output = risk_mgr.validate_trade(
+                                output, state, initial_account_value or 0, open_orders_struct
+                            )
+                            if not allowed:
+                                add_event(f"RISK BLOCKED {asset}: {reason}")
+                                with open(diary_path, "a") as f:
+                                    f.write(json.dumps({
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "asset": asset,
+                                        "action": "risk_blocked",
+                                        "reason": reason,
+                                        "original_alloc_usd": alloc_usd,
+                                    }) + "\n")
+                                continue
+                            alloc_usd = float(output.get("allocation_usd", alloc_usd))
+                            amount = alloc_usd / current_price
 
                         # Place market or limit order
                         order_type = output.get("order_type", "market")
@@ -947,7 +960,7 @@ def main():
                     add_event(f"Execution error {asset}: {e}")
                     add_event(f"Traceback: {traceback.format_exc()}")
 
-            prev_positions_count = current_positions_count
+            prev_positions_count = len(active_trades)
             prev_account_value = account_value
             prev_asset_prices = dict(asset_prices)
             last_state = {
