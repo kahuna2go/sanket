@@ -243,6 +243,69 @@ class HyperliquidAPI:
         order_type = {"limit": {"tif": tif}}
         return await self._retry(lambda: self.exchange.order(asset, False, amount, limit_price, order_type))
 
+    async def place_limit_with_tpsl(self, asset, is_buy, amount, limit_price, tp_price, sl_price):
+        """Place a limit entry order with bracket TP/SL using normalTpsl grouping.
+
+        The TP and SL orders only activate on the exchange once the entry limit
+        fills — they are invisible to the account until then. If the entry is
+        cancelled, the attached TP/SL are also automatically cancelled.
+
+        Returns the raw exchange response. The three statuses correspond to:
+          [0] entry limit, [1] take-profit trigger, [2] stop-loss trigger.
+        """
+        from hyperliquid.utils.signing import (
+            order_request_to_order_wire, sign_l1_action, get_timestamp_ms
+        )
+        from hyperliquid.utils.constants import MAINNET_API_URL
+
+        amount = self.round_size(asset, amount)
+        orders = [
+            {
+                "coin": asset,
+                "is_buy": is_buy,
+                "sz": amount,
+                "limit_px": limit_price,
+                "order_type": {"limit": {"tif": "Gtc"}},
+                "reduce_only": False,
+            },
+            {
+                "coin": asset,
+                "is_buy": not is_buy,
+                "sz": amount,
+                "limit_px": tp_price,
+                "order_type": {"trigger": {"triggerPx": tp_price, "isMarket": True, "tpsl": "tp"}},
+                "reduce_only": True,
+            },
+            {
+                "coin": asset,
+                "is_buy": not is_buy,
+                "sz": amount,
+                "limit_px": sl_price,
+                "order_type": {"trigger": {"triggerPx": sl_price, "isMarket": True, "tpsl": "sl"}},
+                "reduce_only": True,
+            },
+        ]
+
+        def _do_place():
+            ex = self.exchange
+            order_wires = [
+                order_request_to_order_wire(o, ex.info.name_to_asset(o["coin"]))
+                for o in orders
+            ]
+            order_action = {"type": "order", "orders": order_wires, "grouping": "normalTpsl"}
+            timestamp = get_timestamp_ms()
+            signature = sign_l1_action(
+                ex.wallet,
+                order_action,
+                ex.vault_address,
+                timestamp,
+                ex.expires_after,
+                ex.base_url == MAINNET_API_URL,
+            )
+            return ex._post_action(order_action, signature, timestamp)
+
+        return await self._retry(_do_place)
+
     async def place_take_profit(self, asset, is_buy, amount, tp_price):
         """Create a reduce-only trigger order that executes a take-profit exit.
 

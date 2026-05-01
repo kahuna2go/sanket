@@ -751,13 +751,30 @@ def main():
                             add_event(f"Pre-trade cancel error for {asset}: {_ce} — skipping order")
                             continue
 
+                        tp_oid = None
+                        sl_oid = None
                         if order_type == "limit" and limit_price:
                             limit_price = float(limit_price)
-                            if is_buy:
-                                order = await hyperliquid.place_limit_buy(asset, amount, limit_price)
+                            tp_price_val = output.get("tp_price")
+                            sl_price_val = output.get("sl_price")
+                            if tp_price_val and sl_price_val:
+                                # Bracket order: TP/SL only activate after entry fills
+                                order = await hyperliquid.place_limit_with_tpsl(
+                                    asset, is_buy, amount, limit_price,
+                                    float(tp_price_val), float(sl_price_val)
+                                )
+                                oids = hyperliquid.extract_oids(order)
+                                # statuses: [0]=entry, [1]=tp, [2]=sl
+                                tp_oid = oids[1] if len(oids) > 1 else None
+                                sl_oid = oids[2] if len(oids) > 2 else None
+                                add_event(f"LIMIT {action.upper()} {asset} {amount:.4f} @ ${limit_price} with bracket TP={tp_price_val} SL={sl_price_val}")
                             else:
-                                order = await hyperliquid.place_limit_sell(asset, amount, limit_price)
-                            add_event(f"LIMIT {action.upper()} {asset} amount {amount:.4f} at limit ${limit_price}")
+                                # No TP/SL prices — plain limit
+                                if is_buy:
+                                    order = await hyperliquid.place_limit_buy(asset, amount, limit_price)
+                                else:
+                                    order = await hyperliquid.place_limit_sell(asset, amount, limit_price)
+                                add_event(f"LIMIT {action.upper()} {asset} amount {amount:.4f} at limit ${limit_price}")
                         else:
                             order = await hyperliquid.place_buy_order(asset, amount) if is_buy else await hyperliquid.place_sell_order(asset, amount)
 
@@ -773,18 +790,18 @@ def main():
                             except Exception:
                                 continue
                         trade_log.append({"type": action, "price": current_price, "amount": amount, "exit_plan": output["exit_plan"], "filled": filled})
-                        tp_oid = None
-                        sl_oid = None
-                        if output.get("tp_price"):
-                            tp_order = await hyperliquid.place_take_profit(asset, is_buy, amount, output["tp_price"])
-                            tp_oids = hyperliquid.extract_oids(tp_order)
-                            tp_oid = tp_oids[0] if tp_oids else None
-                            add_event(f"TP placed {asset} at {output['tp_price']}")
-                        if output.get("sl_price"):
-                            sl_order = await hyperliquid.place_stop_loss(asset, is_buy, amount, output["sl_price"])
-                            sl_oids = hyperliquid.extract_oids(sl_order)
-                            sl_oid = sl_oids[0] if sl_oids else None
-                            add_event(f"SL placed {asset} at {output['sl_price']}")
+                        # For market orders, place TP/SL immediately (position is open now)
+                        if order_type != "limit":
+                            if output.get("tp_price"):
+                                tp_order = await hyperliquid.place_take_profit(asset, is_buy, amount, output["tp_price"])
+                                tp_oids = hyperliquid.extract_oids(tp_order)
+                                tp_oid = tp_oids[0] if tp_oids else None
+                                add_event(f"TP placed {asset} at {output['tp_price']}")
+                            if output.get("sl_price"):
+                                sl_order = await hyperliquid.place_stop_loss(asset, is_buy, amount, output["sl_price"])
+                                sl_oids = hyperliquid.extract_oids(sl_order)
+                                sl_oid = sl_oids[0] if sl_oids else None
+                                add_event(f"SL placed {asset} at {output['sl_price']}")
                         # Reconcile: if opposite-side position exists or TP/SL just filled, clear stale active_trades for this asset
                         for existing in active_trades[:]:
                             if existing.get('asset') == asset:
