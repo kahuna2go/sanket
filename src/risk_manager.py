@@ -183,7 +183,11 @@ class RiskManager:
             if notional == 0:
                 continue
 
-            loss_pct = abs(pnl / notional) * 100 if pnl < 0 else 0
+            # Measure loss against margin (notional / leverage), not raw notional.
+            # At high leverage, loss/notional is tiny even on large margin drawdowns.
+            # e.g. $100 loss on $2600 notional at 20x = 3.8% of notional but 76% of margin.
+            margin = notional / max(self.max_leverage, 1.0)
+            loss_pct = abs(pnl / margin) * 100 if pnl < 0 else 0
 
             if loss_pct >= self.max_loss_per_position_pct:
                 logging.warning(
