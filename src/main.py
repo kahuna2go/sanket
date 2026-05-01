@@ -362,14 +362,27 @@ def main():
                             and o.get('orderType', {}).get('trigger', {}).get('tpsl') == 'tp'
                         )
                     )
-                    if not tp_on_book and tr.get('tp_price'):
-                        try:
-                            tp_order = await hyperliquid.place_take_profit(asset, tr['is_long'], tr['amount'], tr['tp_price'])
-                            tp_oids = hyperliquid.extract_oids(tp_order)
-                            tr['tp_oid'] = tp_oids[0] if tp_oids else None
-                            add_event(f"Re-placed missing TP for {asset} at {tr['tp_price']}")
-                        except Exception as e:
-                            add_event(f"Failed to re-place TP for {asset}: {e}")
+                    if not tp_on_book:
+                        tp_price = tr.get('tp_price')
+                        if not tp_price:
+                            entry = tr.get('entry_price') or asset_prices.get(asset)
+                            if entry:
+                                pct = risk_mgr.mandatory_tp_pct / 100.0
+                                tp_price = round(
+                                    entry * (1 + pct) if tr['is_long'] else entry * (1 - pct), 4
+                                )
+                                add_event(f"No TP stored for {asset} — mandatory fallback at {tp_price}")
+                        if tp_price:
+                            try:
+                                tp_order = await hyperliquid.place_take_profit(
+                                    asset, tr['is_long'], tr['amount'], tp_price
+                                )
+                                tp_oids = hyperliquid.extract_oids(tp_order)
+                                tr['tp_oid'] = tp_oids[0] if tp_oids else None
+                                tr['tp_price'] = tp_price
+                                add_event(f"Re-placed missing TP for {asset} at {tp_price}")
+                            except Exception as e:
+                                add_event(f"Failed to re-place TP for {asset}: {e}")
                     # Re-place SL if missing — mandatory fallback if no sl_price stored
                     sl_on_book = (
                         (tr.get('sl_oid') and tr['sl_oid'] in trigger_oids)
@@ -427,14 +440,20 @@ def main():
                     is_long = size > 0
                     amount = abs(size)
 
-                    sl_on_book = any(
+                    existing_triggers = [
                         o for o in (open_orders or [])
                         if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                        and _is_trigger(o)
-                    )
+                        and isinstance(o.get('orderType'), dict)
+                        and 'trigger' in o.get('orderType', {})
+                    ]
+                    existing_tpsl = {
+                        o.get('orderType', {}).get('trigger', {}).get('tpsl')
+                        for o in existing_triggers
+                    }
+
                     adopted_sl_oid = None
                     adopted_sl_price = None
-                    if not sl_on_book:
+                    if 'sl' not in existing_tpsl:
                         pct = risk_mgr.mandatory_sl_pct / 100.0
                         adopted_sl_price = round(
                             entry_px * (1 - pct) if is_long else entry_px * (1 + pct), 4
@@ -447,14 +466,29 @@ def main():
                         except Exception as _sl_err:
                             add_event(f"Failed to place SL for untracked {asset}: {_sl_err}")
 
+                    adopted_tp_oid = None
+                    adopted_tp_price = None
+                    if 'tp' not in existing_tpsl:
+                        pct = risk_mgr.mandatory_tp_pct / 100.0
+                        adopted_tp_price = round(
+                            entry_px * (1 + pct) if is_long else entry_px * (1 - pct), 4
+                        )
+                        try:
+                            tp_order = await hyperliquid.place_take_profit(asset, is_long, amount, adopted_tp_price)
+                            tp_oids = hyperliquid.extract_oids(tp_order)
+                            adopted_tp_oid = tp_oids[0] if tp_oids else None
+                            add_event(f"Placed mandatory TP for untracked {asset} at {adopted_tp_price}")
+                        except Exception as _tp_err:
+                            add_event(f"Failed to place TP for untracked {asset}: {_tp_err}")
+
                     new_tr = {
                         "asset": asset,
                         "is_long": is_long,
                         "amount": amount,
                         "entry_price": entry_px,
-                        "tp_oid": None,
+                        "tp_oid": adopted_tp_oid,
                         "sl_oid": adopted_sl_oid,
-                        "tp_price": None,
+                        "tp_price": adopted_tp_price,
                         "sl_price": adopted_sl_price,
                         "exit_plan": "adopted from untracked live position",
                         "opened_at": datetime.now(timezone.utc).isoformat(),
@@ -472,8 +506,8 @@ def main():
                                 "entry_price": entry_px,
                                 "sl_price": adopted_sl_price,
                                 "sl_oid": adopted_sl_oid,
-                                "tp_price": None,
-                                "tp_oid": None,
+                                "tp_price": adopted_tp_price,
+                                "tp_oid": adopted_tp_oid,
                                 "exit_plan": "Adopted from untracked live position",
                                 "opened_at": new_tr["opened_at"],
                                 "filled": True,
