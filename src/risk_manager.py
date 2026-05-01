@@ -21,6 +21,7 @@ class RiskManager:
         self.max_total_exposure_pct = float(CONFIG.get("max_total_exposure_pct") or 50)
         self.daily_loss_circuit_breaker_pct = float(CONFIG.get("daily_loss_circuit_breaker_pct") or 10)
         self.mandatory_sl_pct = float(CONFIG.get("mandatory_sl_pct") or 5)
+        self.mandatory_tp_pct = float(CONFIG.get("mandatory_tp_pct") or 10)
         self.max_concurrent_positions = int(CONFIG.get("max_concurrent_positions") or 10)
         self.min_balance_reserve_pct = float(CONFIG.get("min_balance_reserve_pct") or 20)
 
@@ -136,12 +137,22 @@ class RiskManager:
         """Ensure every trade has a stop-loss. Auto-set if missing."""
         if sl_price is not None:
             return sl_price
-        # Auto-set SL at mandatory_sl_pct from entry
         sl_distance = entry_price * (self.mandatory_sl_pct / 100.0)
         if is_buy:
             return round(entry_price - sl_distance, 2)
         else:
             return round(entry_price + sl_distance, 2)
+
+    def enforce_take_profit(self, tp_price: float | None, entry_price: float,
+                             is_buy: bool) -> float:
+        """Ensure every trade has a take-profit. Auto-set if missing."""
+        if tp_price is not None:
+            return tp_price
+        tp_distance = entry_price * (self.mandatory_tp_pct / 100.0)
+        if is_buy:
+            return round(entry_price + tp_distance, 2)
+        else:
+            return round(entry_price - tp_distance, 2)
 
     # ------------------------------------------------------------------
     # Force-close losing positions
@@ -278,6 +289,14 @@ class RiskManager:
                         enforced_sl, self.mandatory_sl_pct)
         trade = {**trade, "sl_price": enforced_sl}
 
+        # 8. Enforce mandatory take-profit
+        tp_price = trade.get("tp_price")
+        enforced_tp = self.enforce_take_profit(tp_price, entry_price, is_buy)
+        if tp_price is None:
+            logging.info("RISK: Auto-setting TP at %.2f (%.1f%% from entry)",
+                        enforced_tp, self.mandatory_tp_pct)
+        trade = {**trade, "tp_price": enforced_tp}
+
         return True, "", trade
 
     def get_risk_summary(self) -> dict:
@@ -289,6 +308,7 @@ class RiskManager:
             "max_total_exposure_pct": self.max_total_exposure_pct,
             "daily_loss_circuit_breaker_pct": self.daily_loss_circuit_breaker_pct,
             "mandatory_sl_pct": self.mandatory_sl_pct,
+            "mandatory_tp_pct": self.mandatory_tp_pct,
             "max_concurrent_positions": self.max_concurrent_positions,
             "min_balance_reserve_pct": self.min_balance_reserve_pct,
             "circuit_breaker_active": self.circuit_breaker_active,

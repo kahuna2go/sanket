@@ -99,6 +99,7 @@ CONFIG = {
     "max_total_exposure_pct": _get_env("MAX_TOTAL_EXPOSURE_PCT", "80"),
     "daily_loss_circuit_breaker_pct": _get_env("DAILY_LOSS_CIRCUIT_BREAKER_PCT", "25"),
     "mandatory_sl_pct": _get_env("MANDATORY_SL_PCT", "5"),
+    "mandatory_tp_pct": _get_env("MANDATORY_TP_PCT", "10"),
     "max_concurrent_positions": _get_env("MAX_CONCURRENT_POSITIONS", "10"),
     "min_balance_reserve_pct": _get_env("MIN_BALANCE_RESERVE_PCT", "10"),
 
