@@ -81,7 +81,8 @@ def main():
     prev_account_value = None
     prev_asset_prices = {}
     last_state = {}
-    model_usage = {"sonnet": 0, "haiku": 0}
+    model_usage = {"sonnet": 0, "skipped": 0}
+    last_sonnet_time: datetime | None = None
     # Perp mid-price history sampled each loop (authoritative, avoids spot/perp basis mismatch)
     price_history = {}
 
@@ -93,7 +94,7 @@ def main():
 
     async def run_loop():
         """Main trading loop that gathers data, calls the agent, and executes trades."""
-        nonlocal invocation_count, initial_account_value, prev_positions_count, prev_account_value, prev_asset_prices, last_state, model_usage
+        nonlocal invocation_count, initial_account_value, prev_positions_count, prev_account_value, prev_asset_prices, last_state, model_usage, last_sonnet_time
 
         # Pre-load meta cache for correct order sizing
         await hyperliquid.get_meta_and_ctxs()
@@ -616,27 +617,67 @@ def main():
             with open("prompts.log", "a") as f:
                 f.write(f"\n\n--- {datetime.now()} - ALL ASSETS ---\n{json.dumps(context_payload, indent=2, default=json_default)}\n")
 
-            # Use Haiku by default; escalate to Sonnet when positions, account value, or any price changed
-            current_positions_count = len(active_trades)
-            positions_changed = prev_positions_count is not None and current_positions_count != prev_positions_count
-            account_moved = (
-                prev_account_value is not None
-                and prev_account_value > 0
-                and abs(account_value - prev_account_value) / prev_account_value > 0.005
-            )
+            # Escalation logic: call Sonnet only when something actionable is happening.
+            # Otherwise skip the LLM entirely and auto-hold (zero cost).
+            #
+            # Sonnet fires when ANY of:
+            #   1. First run (no prior state)
+            #   2. Any asset price moved > SONNET_PRICE_MOVE_PCT
+            #   3. Any open position is within SONNET_TPSL_PROXIMITY_PCT of its TP or SL
+            #   4. Open positions exist and Sonnet hasn't run in SONNET_HEALTH_CHECK_MINUTES
+            price_move_threshold = float(CONFIG.get("sonnet_price_move_pct") or 0.5) / 100.0
+            tpsl_proximity = float(CONFIG.get("sonnet_tpsl_proximity_pct") or 1.25) / 100.0
+            health_check_minutes = int(float(CONFIG.get("sonnet_health_check_minutes") or 60))
+
+            first_run = prev_positions_count is None
+
             price_moved = any(
                 prev_asset_prices.get(a) is not None
                 and prev_asset_prices[a] != 0
                 and asset_prices.get(a) is not None
-                and abs(asset_prices[a] - prev_asset_prices[a]) / prev_asset_prices[a] > 0.005
+                and abs(asset_prices[a] - prev_asset_prices[a]) / prev_asset_prices[a] > price_move_threshold
                 for a in args.assets
             )
-            use_sonnet = prev_positions_count is None or positions_changed or account_moved or price_moved
-            chosen_model = agent.model if use_sonnet else agent.haiku_model
-            model_usage["sonnet" if use_sonnet else "haiku"] += 1
+
+            tpsl_near = False
+            for tr in active_trades:
+                asset = tr.get('asset')
+                price = asset_prices.get(asset)
+                if not price:
+                    continue
+                for level in (tr.get('tp_price'), tr.get('sl_price')):
+                    if level and abs(price - level) / price <= tpsl_proximity:
+                        tpsl_near = True
+                        break
+                if tpsl_near:
+                    break
+
+            health_check_due = (
+                bool(active_trades)
+                and (
+                    last_sonnet_time is None
+                    or (datetime.now(timezone.utc) - last_sonnet_time).total_seconds() / 60 >= health_check_minutes
+                )
+            )
+
+            use_sonnet = first_run or price_moved or tpsl_near or health_check_due
+
+            if not use_sonnet:
+                model_usage["skipped"] += 1
+                add_event(
+                    f"Skipping LLM (no trigger): price_moved={price_moved}, "
+                    f"tpsl_near={tpsl_near}, health_check_due={health_check_due} — auto-hold"
+                )
+                prev_positions_count = len(active_trades)
+                prev_account_value = account_value
+                prev_asset_prices = dict(asset_prices)
+                continue
+
+            model_usage["sonnet"] += 1
+            last_sonnet_time = datetime.now(timezone.utc)
             add_event(
-                f"Model: {'Sonnet' if use_sonnet else 'Haiku'} "
-                f"(positions_changed={positions_changed}, account_moved={account_moved}, price_moved={price_moved})"
+                f"Sonnet triggered: first_run={first_run}, price_moved={price_moved}, "
+                f"tpsl_near={tpsl_near}, health_check_due={health_check_due}"
             )
 
             def _is_failed_outputs(outs):
@@ -657,7 +698,7 @@ def main():
                     return True
 
             try:
-                outputs = agent.decide_trade(args.assets, context, model=chosen_model)
+                outputs = agent.decide_trade(args.assets, context, model=agent.model)
                 if not isinstance(outputs, dict):
                     add_event(f"Invalid output format (expected dict): {outputs}")
                     outputs = {}

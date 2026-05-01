@@ -103,6 +103,11 @@ CONFIG = {
     "max_concurrent_positions": _get_env("MAX_CONCURRENT_POSITIONS", "10"),
     "min_balance_reserve_pct": _get_env("MIN_BALANCE_RESERVE_PCT", "10"),
 
+    # Model escalation
+    "sonnet_price_move_pct": _get_env("SONNET_PRICE_MOVE_PCT", "0.5"),
+    "sonnet_tpsl_proximity_pct": _get_env("SONNET_TPSL_PROXIMITY_PCT", "1.25"),
+    "sonnet_health_check_minutes": _get_env("SONNET_HEALTH_CHECK_MINUTES", "60"),
+
     # API server
     "api_host": _get_env("API_HOST", "0.0.0.0"),
     "api_port": _get_env("APP_PORT") or _get_env("API_PORT") or "3000",
