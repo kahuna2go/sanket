@@ -751,6 +751,16 @@ def main():
                             add_event(f"Pre-trade cancel error for {asset}: {_ce} — skipping order")
                             continue
 
+                        # Enforce exchange-side leverage before every order.
+                        # check_leverage() only validates allocation/balance ratio; the
+                        # actual position size is determined by the exchange leverage
+                        # setting, which must be capped here explicitly.
+                        try:
+                            max_lev = int(risk_mgr.max_leverage)
+                            await hyperliquid.set_leverage(asset, max_lev)
+                        except Exception as _lev_err:
+                            add_event(f"WARNING: Failed to set leverage for {asset}: {_lev_err}")
+
                         tp_oid = None
                         sl_oid = None
                         if order_type == "limit" and limit_price:

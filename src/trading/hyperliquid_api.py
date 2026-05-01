@@ -243,6 +243,16 @@ class HyperliquidAPI:
         order_type = {"limit": {"tif": tif}}
         return await self._retry(lambda: self.exchange.order(asset, False, amount, limit_price, order_type))
 
+    async def set_leverage(self, asset: str, leverage: int, is_cross: bool = True):
+        """Set exchange-side leverage for asset before placing an order.
+
+        Hyperliquid requires an integer leverage value. Silently succeeds if
+        the leverage is already at the requested level.
+        """
+        return await self._retry(
+            lambda: self.exchange.update_leverage(leverage, asset, is_cross)
+        )
+
     async def place_limit_with_tpsl(self, asset, is_buy, amount, limit_price, tp_price, sl_price):
         """Place a limit entry order with bracket TP/SL using normalTpsl grouping.
 
