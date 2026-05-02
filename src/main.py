@@ -383,6 +383,14 @@ def main():
                                     add_event(f"Failed to cancel duplicate trigger for {asset}: {_de}")
                             else:
                                 seen_prices[px] = oid
+                    # Log trigger orders for this asset so we can diagnose detection failures
+                    asset_order_debug = [
+                        (o.get('coin'), o.get('oid'), o.get('triggerPx'), o.get('isTrigger'), o.get('orderType'))
+                        for o in (open_orders or [])
+                        if hyperliquid._coin_matches(o.get('coin', ''), asset)
+                    ]
+                    if asset_order_debug:
+                        add_event(f"DEBUG orders for {asset}: {asset_order_debug}")
                     # Re-place TP if missing from book
                     tp_on_book = (
                         (tr.get('tp_oid') and tr['tp_oid'] in trigger_oids)
@@ -394,6 +402,7 @@ def main():
                         ))
                     )
                     if not tp_on_book:
+                        add_event(f"DEBUG tp detection: tp_oid={tr.get('tp_oid')} in_oids={tr.get('tp_oid') in trigger_oids}, tp_price={tr.get('tp_price')}, triggers={[(o.get('triggerPx'), o.get('isTrigger')) for o in (open_orders or []) if hyperliquid._coin_matches(o.get('coin',''), asset) and _is_trigger(o)]}")
                         tp_price = tr.get('tp_price')
                         if not tp_price:
                             entry = tr.get('entry_price') or asset_prices.get(asset)
@@ -425,6 +434,7 @@ def main():
                         ))
                     )
                     if not sl_on_book:
+                        add_event(f"DEBUG sl detection: sl_oid={tr.get('sl_oid')} in_oids={tr.get('sl_oid') in trigger_oids}, sl_price={tr.get('sl_price')}, triggers={[(o.get('triggerPx'), o.get('isTrigger')) for o in (open_orders or []) if hyperliquid._coin_matches(o.get('coin',''), asset) and _is_trigger(o)]}")
                         sl_price = tr.get('sl_price')
                         if not sl_price:
                             entry = tr.get('entry_price') or asset_prices.get(asset)
