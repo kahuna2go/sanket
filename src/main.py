@@ -931,8 +931,10 @@ def main():
 
                             # --- RISK: Validate trade before execution ---
                             output["current_price"] = current_price
+                            _managed_assets = set(args.assets)
+                            _managed_state = {**state, "positions": [p for p in state["positions"] if p.get("coin") in _managed_assets]}
                             allowed, reason, output = risk_mgr.validate_trade(
-                                output, state, initial_account_value or 0, open_orders_struct
+                                output, _managed_state, initial_account_value or 0, open_orders_struct
                             )
                             if not allowed:
                                 add_event(f"RISK BLOCKED {asset}: {reason}")
