@@ -431,7 +431,7 @@ def main():
                     )
                     if not tp_on_book:
                         tp_price = tr.get('tp_price')
-                        cur_px = asset_prices.get(asset)
+                        cur_px = next((p.get('current_price') for p in positions if p.get('symbol') == asset), None)
                         tp_pct = risk_mgr.mandatory_tp_pct / 100.0
                         # Validate direction: long TP must be above current price; short TP below
                         if tp_price and cur_px:
@@ -480,7 +480,7 @@ def main():
                     )
                     if not sl_on_book:
                         sl_price = tr.get('sl_price')
-                        cur_px = asset_prices.get(asset)
+                        cur_px = next((p.get('current_price') for p in positions if p.get('symbol') == asset), None)
                         sl_pct = risk_mgr.mandatory_sl_pct / 100.0
                         # Validate direction: short SL must be above current price; long SL below
                         if sl_price and cur_px:
