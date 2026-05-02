@@ -41,6 +41,13 @@ def get_interval_seconds(interval_str):
     else:
         raise ValueError(f"Unsupported interval: {interval_str}")
 
+def _sig_round(x, sig=4):
+    if x == 0:
+        return 0
+    mag = math.floor(math.log10(abs(x)))
+    return round(x, max(0, sig - 1 - mag))
+
+
 def main():
     """Parse CLI args, bootstrap dependencies, and launch the trading loop."""
     clear_terminal()
@@ -143,7 +150,7 @@ def main():
                             diary_trades.pop(_asset, None)
                         elif _action == "tpsl_update" and _asset in diary_trades:
                             for _k in ("tp_price", "tp_oid", "sl_price", "sl_oid"):
-                                if _entry.get(_k) is not None:
+                                if _k in _entry:
                                     diary_trades[_asset][_k] = _entry[_k]
             if diary_trades:
                 _live = await hyperliquid.get_user_state()
@@ -443,7 +450,7 @@ def main():
                         if not tp_price:
                             ref = cur_px or tr.get('entry_price')
                             if ref:
-                                tp_price = round(ref * (1 + tp_pct) if tr['is_long'] else ref * (1 - tp_pct), 2)
+                                tp_price = _sig_round(ref * (1 + tp_pct) if tr['is_long'] else ref * (1 - tp_pct))
                                 add_event(f"No valid TP for {asset} — fallback at {tp_price}")
                         if tp_price:
                             try:
@@ -465,7 +472,14 @@ def main():
                                         }) + "\n")
                                 else:
                                     add_event(f"TP order rejected for {asset} at {tp_price}: {tp_order}")
-                                    tr['tp_price'] = None  # clear stale price so fallback recomputes next cycle
+                                    tr['tp_price'] = None
+                                    tr['tp_oid'] = None
+                                    with open(diary_path, "a") as _dtf:
+                                        _dtf.write(json.dumps({
+                                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                                            "asset": asset, "action": "tpsl_update",
+                                            "tp_price": None, "tp_oid": None,
+                                        }) + "\n")
                             except Exception as e:
                                 add_event(f"Failed to re-place TP for {asset}: {e}")
                     # Re-place SL if missing — mandatory fallback if no sl_price stored
@@ -492,7 +506,7 @@ def main():
                         if not sl_price:
                             ref = cur_px or tr.get('entry_price')
                             if ref:
-                                sl_price = round(ref * (1 - sl_pct) if tr['is_long'] else ref * (1 + sl_pct), 2)
+                                sl_price = _sig_round(ref * (1 - sl_pct) if tr['is_long'] else ref * (1 + sl_pct))
                                 add_event(f"No valid SL for {asset} — fallback at {sl_price}")
                         if sl_price:
                             try:
@@ -512,7 +526,14 @@ def main():
                                         }) + "\n")
                                 else:
                                     add_event(f"SL order rejected for {asset} at {sl_price}: {sl_order}")
-                                    tr['sl_price'] = None  # clear stale price so fallback recomputes next cycle
+                                    tr['sl_price'] = None
+                                    tr['sl_oid'] = None
+                                    with open(diary_path, "a") as _dsf:
+                                        _dsf.write(json.dumps({
+                                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                                            "asset": asset, "action": "tpsl_update",
+                                            "sl_price": None, "sl_oid": None,
+                                        }) + "\n")
                             except Exception as e:
                                 add_event(f"Failed to re-place SL for {asset}: {e}")
                 # Adopt positions not tracked in active_trades.
