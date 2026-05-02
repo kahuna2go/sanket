@@ -339,9 +339,17 @@ def main():
             # and ensure TP/SL orders are always on the book.
             try:
                 def _is_trigger(o):
-                    return o.get('isTrigger') or (
-                        isinstance(o.get('orderType'), dict) and 'trigger' in o.get('orderType', {})
+                    return (
+                        o.get('isTrigger')
+                        or (isinstance(o.get('orderType'), dict) and 'trigger' in o.get('orderType', {}))
+                        or o.get('triggerPx') is not None
                     )
+
+                def _trigger_price_matches(o, price, tol=0.001):
+                    try:
+                        return abs(float(o.get('triggerPx', 0)) - price) / price <= tol
+                    except (TypeError, ZeroDivisionError):
+                        return False
 
                 trigger_oids = {o.get('oid') for o in (open_orders or []) if _is_trigger(o)}
                 for tr in active_trades:
@@ -357,15 +365,33 @@ def main():
                     if orphaned:
                         await hyperliquid.cancel_limit_orders(asset)
                         add_event(f"Cancelled {len(orphaned)} orphaned entry limit(s) for {asset}")
+                    # Deduplicate: group trigger orders by triggerPx, cancel extras
+                    asset_triggers = [
+                        o for o in (open_orders or [])
+                        if hyperliquid._coin_matches(o.get('coin', ''), asset) and _is_trigger(o)
+                    ]
+                    seen_prices: dict = {}
+                    for o in asset_triggers:
+                        px = o.get('triggerPx')
+                        oid = o.get('oid')
+                        if px is not None and oid is not None:
+                            if px in seen_prices:
+                                try:
+                                    await hyperliquid.cancel_order(asset, oid)
+                                    add_event(f"Cancelled duplicate trigger order for {asset} at {px}")
+                                except Exception as _de:
+                                    add_event(f"Failed to cancel duplicate trigger for {asset}: {_de}")
+                            else:
+                                seen_prices[px] = oid
                     # Re-place TP if missing from book
                     tp_on_book = (
                         (tr.get('tp_oid') and tr['tp_oid'] in trigger_oids)
-                        or any(
+                        or (tr.get('tp_price') and any(
                             o for o in (open_orders or [])
                             if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                            and isinstance(o.get('orderType'), dict)
-                            and o.get('orderType', {}).get('trigger', {}).get('tpsl') == 'tp'
-                        )
+                            and _is_trigger(o)
+                            and _trigger_price_matches(o, tr['tp_price'])
+                        ))
                     )
                     if not tp_on_book:
                         tp_price = tr.get('tp_price')
@@ -391,12 +417,12 @@ def main():
                     # Re-place SL if missing — mandatory fallback if no sl_price stored
                     sl_on_book = (
                         (tr.get('sl_oid') and tr['sl_oid'] in trigger_oids)
-                        or any(
+                        or (tr.get('sl_price') and any(
                             o for o in (open_orders or [])
                             if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                            and isinstance(o.get('orderType'), dict)
-                            and o.get('orderType', {}).get('trigger', {}).get('tpsl') == 'sl'
-                        )
+                            and _is_trigger(o)
+                            and _trigger_price_matches(o, tr['sl_price'])
+                        ))
                     )
                     if not sl_on_book:
                         sl_price = tr.get('sl_price')
@@ -800,6 +826,7 @@ def main():
                         )
                         if existing_tr:
                             amount = existing_tr['amount']
+                            alloc_usd = amount * current_price
                             add_event(f"CLOSE {asset}: using tracked size {amount:.4f} (LLM allocation ignored)")
                         else:
                             alloc_usd = float(output.get("allocation_usd", 0.0))
