@@ -431,14 +431,20 @@ def main():
                     )
                     if not tp_on_book:
                         tp_price = tr.get('tp_price')
+                        cur_px = asset_prices.get(asset)
+                        tp_pct = risk_mgr.mandatory_tp_pct / 100.0
+                        # Validate direction: long TP must be above current price; short TP below
+                        if tp_price and cur_px:
+                            wrong_side = (tr['is_long'] and tp_price <= cur_px) or (not tr['is_long'] and tp_price >= cur_px)
+                            if wrong_side:
+                                add_event(f"TP {tp_price} for {asset} wrong side of current {cur_px} — recomputing")
+                                tp_price = None
+                                tr['tp_price'] = None
                         if not tp_price:
-                            entry = tr.get('entry_price') or asset_prices.get(asset)
-                            if entry:
-                                pct = risk_mgr.mandatory_tp_pct / 100.0
-                                tp_price = round(
-                                    entry * (1 + pct) if tr['is_long'] else entry * (1 - pct), 4
-                                )
-                                add_event(f"No TP stored for {asset} — mandatory fallback at {tp_price}")
+                            ref = cur_px or tr.get('entry_price')
+                            if ref:
+                                tp_price = round(ref * (1 + tp_pct) if tr['is_long'] else ref * (1 - tp_pct), 2)
+                                add_event(f"No valid TP for {asset} — fallback at {tp_price}")
                         if tp_price:
                             try:
                                 tp_order = await hyperliquid.place_take_profit(
@@ -474,12 +480,20 @@ def main():
                     )
                     if not sl_on_book:
                         sl_price = tr.get('sl_price')
+                        cur_px = asset_prices.get(asset)
+                        sl_pct = risk_mgr.mandatory_sl_pct / 100.0
+                        # Validate direction: short SL must be above current price; long SL below
+                        if sl_price and cur_px:
+                            wrong_side = (tr['is_long'] and sl_price >= cur_px) or (not tr['is_long'] and sl_price <= cur_px)
+                            if wrong_side:
+                                add_event(f"SL {sl_price} for {asset} wrong side of current {cur_px} — recomputing")
+                                sl_price = None
+                                tr['sl_price'] = None
                         if not sl_price:
-                            entry = tr.get('entry_price') or asset_prices.get(asset)
-                            if entry:
-                                pct = risk_mgr.mandatory_sl_pct / 100.0
-                                sl_price = round(entry * (1 - pct) if tr['is_long'] else entry * (1 + pct), 4)
-                                add_event(f"No SL price stored for {asset} — using mandatory fallback at {sl_price}")
+                            ref = cur_px or tr.get('entry_price')
+                            if ref:
+                                sl_price = round(ref * (1 - sl_pct) if tr['is_long'] else ref * (1 + sl_pct), 2)
+                                add_event(f"No valid SL for {asset} — fallback at {sl_price}")
                         if sl_price:
                             try:
                                 sl_order = await hyperliquid.place_stop_loss(asset, tr['is_long'], tr['amount'], sl_price)

@@ -14,6 +14,7 @@ from src.config_loader import CONFIG
 from hyperliquid.exchange import Exchange
 from hyperliquid.info import Info
 from hyperliquid.utils import constants  # For MAINNET/TESTNET
+from hyperliquid.utils.error import ServerError
 from eth_account import Account as _Account
 from eth_account.signers.local import LocalAccount
 from websocket._exceptions import WebSocketConnectionClosedException
@@ -125,7 +126,7 @@ class HyperliquidAPI:
                 if to_thread:
                     return await asyncio.to_thread(fn, *args, **kwargs)
                 return await fn(*args, **kwargs)
-            except (WebSocketConnectionClosedException, aiohttp.ClientError, ConnectionError, TimeoutError, socket.timeout) as e:
+            except (WebSocketConnectionClosedException, aiohttp.ClientError, ConnectionError, TimeoutError, socket.timeout, ServerError) as e:
                 last_err = e
                 logging.warning("HL call failed (attempt %s/%s): %s", attempt + 1, max_attempts, e)
                 if reset_on_fail:
@@ -387,6 +388,14 @@ class HyperliquidAPI:
             logging.error("Cancel all orders error for %s: %s", asset, e)
             return {"status": "error", "message": str(e)}
 
+    def _is_trigger_order(self, o) -> bool:
+        """Return True if order is a TP/SL trigger regardless of orderType format."""
+        return (
+            bool(o.get('isTrigger'))
+            or (isinstance(o.get('orderType'), dict) and 'trigger' in o.get('orderType', {}))
+            or o.get('triggerPx') is not None
+        )
+
     async def cancel_limit_orders(self, asset):
         """Cancel only resting limit orders for asset — preserves TP/SL trigger orders."""
         try:
@@ -398,8 +407,7 @@ class HyperliquidAPI:
                 oid = order.get("oid")
                 if not oid:
                     continue
-                ot = order.get("orderType")
-                if isinstance(ot, dict) and "trigger" in ot:
+                if self._is_trigger_order(order):
                     continue
                 await self.cancel_order(asset, oid)
                 cancelled += 1
