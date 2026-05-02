@@ -445,17 +445,21 @@ def main():
                                     asset, tr['is_long'], tr['amount'], tp_price
                                 )
                                 tp_oids = hyperliquid.extract_oids(tp_order)
-                                tr['tp_oid'] = tp_oids[0] if tp_oids else None
-                                tr['tp_price'] = tp_price
-                                add_event(f"Re-placed missing TP for {asset} at {tp_price}")
-                                with open(diary_path, "a") as _dtf:
-                                    _dtf.write(json.dumps({
-                                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                                        "asset": asset,
-                                        "action": "tpsl_update",
-                                        "tp_price": tr['tp_price'],
-                                        "tp_oid": tr['tp_oid'],
-                                    }) + "\n")
+                                if tp_oids:
+                                    tr['tp_oid'] = tp_oids[0]
+                                    tr['tp_price'] = tp_price
+                                    add_event(f"Re-placed missing TP for {asset} at {tp_price}")
+                                    with open(diary_path, "a") as _dtf:
+                                        _dtf.write(json.dumps({
+                                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                                            "asset": asset,
+                                            "action": "tpsl_update",
+                                            "tp_price": tr['tp_price'],
+                                            "tp_oid": tr['tp_oid'],
+                                        }) + "\n")
+                                else:
+                                    add_event(f"TP order rejected for {asset} at {tp_price}: {tp_order}")
+                                    tr['tp_price'] = None  # clear stale price so fallback recomputes next cycle
                             except Exception as e:
                                 add_event(f"Failed to re-place TP for {asset}: {e}")
                     # Re-place SL if missing — mandatory fallback if no sl_price stored
@@ -480,17 +484,21 @@ def main():
                             try:
                                 sl_order = await hyperliquid.place_stop_loss(asset, tr['is_long'], tr['amount'], sl_price)
                                 sl_oids = hyperliquid.extract_oids(sl_order)
-                                tr['sl_oid'] = sl_oids[0] if sl_oids else None
-                                tr['sl_price'] = sl_price
-                                add_event(f"Re-placed missing SL for {asset} at {sl_price}")
-                                with open(diary_path, "a") as _dsf:
-                                    _dsf.write(json.dumps({
-                                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                                        "asset": asset,
-                                        "action": "tpsl_update",
-                                        "sl_price": tr['sl_price'],
-                                        "sl_oid": tr['sl_oid'],
-                                    }) + "\n")
+                                if sl_oids:
+                                    tr['sl_oid'] = sl_oids[0]
+                                    tr['sl_price'] = sl_price
+                                    add_event(f"Re-placed missing SL for {asset} at {sl_price}")
+                                    with open(diary_path, "a") as _dsf:
+                                        _dsf.write(json.dumps({
+                                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                                            "asset": asset,
+                                            "action": "tpsl_update",
+                                            "sl_price": tr['sl_price'],
+                                            "sl_oid": tr['sl_oid'],
+                                        }) + "\n")
+                                else:
+                                    add_event(f"SL order rejected for {asset} at {sl_price}: {sl_order}")
+                                    tr['sl_price'] = None  # clear stale price so fallback recomputes next cycle
                             except Exception as e:
                                 add_event(f"Failed to re-place SL for {asset}: {e}")
                 # Adopt positions not tracked in active_trades.
