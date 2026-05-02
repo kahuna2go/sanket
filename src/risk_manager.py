@@ -252,15 +252,23 @@ class RiskManager:
         if not ok:
             return False, reason, trade
 
-        # 3. Position size limit
-        ok, reason = self.check_position_size(alloc_usd, account_value)
+        # 3. Position size limit — include existing notional if trade adds to same-direction position
+        asset = trade.get("asset", "")
+        existing_notional = 0.0
+        for p in positions:
+            if (p.get("coin") or p.get("symbol")) == asset:
+                szi = float(p.get("szi") or p.get("quantity") or 0)
+                entry = float(p.get("entryPx") or p.get("entry_price") or 0)
+                if (is_buy and szi > 0) or (not is_buy and szi < 0):
+                    existing_notional = abs(szi) * entry
+                break
+        ok, reason = self.check_position_size(alloc_usd + existing_notional, account_value)
         if not ok:
-            # Cap allocation instead of rejecting
-            max_alloc = account_value * (self.max_position_pct / 100.0)
-            # But never below Hyperliquid's $10 minimum
+            # Cap new allocation so combined size stays within limit
+            max_alloc = account_value * (self.max_position_pct / 100.0) - existing_notional
             if max_alloc < 11.0:
                 max_alloc = 11.0
-            logging.warning("RISK: Capping allocation from $%.2f to $%.2f", alloc_usd, max_alloc)
+            logging.warning("RISK: Capping allocation from $%.2f to $%.2f (existing notional $%.2f)", alloc_usd, max_alloc, existing_notional)
             alloc_usd = max_alloc
             trade = {**trade, "allocation_usd": alloc_usd}
 
