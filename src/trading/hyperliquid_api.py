@@ -373,7 +373,7 @@ class HyperliquidAPI:
     async def cancel_all_orders(self, asset):
         """Cancel every open order for ``asset`` owned by the configured wallet."""
         try:
-            open_orders = await self._retry(lambda: self.info.frontend_open_orders(self.query_address))
+            open_orders = await self.get_open_orders()
             cancelled = 0
             for order in open_orders:
                 if not self._coin_matches(order.get("coin", ""), asset):
@@ -390,7 +390,7 @@ class HyperliquidAPI:
     async def cancel_limit_orders(self, asset):
         """Cancel only resting limit orders for asset — preserves TP/SL trigger orders."""
         try:
-            open_orders = await self._retry(lambda: self.info.frontend_open_orders(self.query_address))
+            open_orders = await self.get_open_orders()
             cancelled = 0
             for order in open_orders:
                 if not self._coin_matches(order.get("coin", ""), asset):
@@ -409,14 +409,17 @@ class HyperliquidAPI:
             return {"status": "error", "message": str(e)}
 
     async def get_open_orders(self):
-        """Fetch and normalize open orders associated with the wallet.
+        """Fetch and normalize open orders for the wallet, including all HIP-3 dexes.
+
+        frontend_open_orders only returns main clearinghouse orders. HIP-3 trigger
+        orders (TP/SL on xyz:* assets) live on a separate clearinghouse and must be
+        fetched with dex= parameter, otherwise the reconcile loop never sees them.
 
         Returns:
-            List of order dictionaries augmented with ``triggerPx`` when present.
+            Combined list of order dicts from main + all registered HIP-3 dexes,
+            each augmented with ``triggerPx`` when present.
         """
-        try:
-            orders = await self._retry(lambda: self.info.frontend_open_orders(self.query_address))
-            # Normalize trigger price if present in orderType
+        def _normalize(orders):
             for o in orders:
                 try:
                     ot = o.get("orderType")
@@ -425,11 +428,30 @@ class HyperliquidAPI:
                         if "triggerPx" in trig:
                             o["triggerPx"] = float(trig["triggerPx"])
                 except (ValueError, KeyError, TypeError):
-                    continue
+                    pass
             return orders
+
+        all_orders = []
+        try:
+            main_orders = await self._retry(lambda: self.info.frontend_open_orders(self.query_address))
+            all_orders.extend(_normalize(main_orders))
         except (RuntimeError, ValueError, KeyError, ConnectionError) as e:
-            logging.error("Get open orders error: %s", e)
-            return []
+            logging.error("Get open orders (main) error: %s", e)
+
+        for dex in self._perp_dexs:
+            try:
+                _dex = dex
+                hip3_orders = await self._retry(
+                    lambda d=_dex: self.info.post(
+                        "/info", {"type": "frontendOpenOrders", "user": self.query_address, "dex": d}
+                    )
+                )
+                if isinstance(hip3_orders, list):
+                    all_orders.extend(_normalize(hip3_orders))
+            except (RuntimeError, ValueError, KeyError, ConnectionError) as e:
+                logging.warning("Get open orders (dex=%s) error: %s", dex, e)
+
+        return all_orders
 
     async def get_recent_fills(self, limit: int = 50):
         """Return the most recent fills when supported by the SDK variant.
