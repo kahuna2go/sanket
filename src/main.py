@@ -926,6 +926,44 @@ def main():
                         except Exception as cl_err:
                             add_event(f"Cancel limits error {asset}: {cl_err}")
                         continue
+                    elif action == "update_tpsl":
+                        tr = next((t for t in active_trades if t.get("asset") == asset), None)
+                        if not tr:
+                            add_event(f"UPDATE_TPSL {asset}: no active trade tracked — skipping")
+                            continue
+                        new_tp = output.get("tp_price")
+                        new_sl = output.get("sl_price")
+                        is_long = tr.get("is_long")
+                        amount = tr.get("amount")
+                        try:
+                            if new_tp is not None:
+                                await hyperliquid.cancel_order(asset, tr.get("tp_oid")) if tr.get("tp_oid") else None
+                                tp_order = await hyperliquid.place_take_profit(asset, is_long, amount, float(new_tp))
+                                tp_oids = hyperliquid.extract_oids(tp_order)
+                                tr["tp_oid"] = tp_oids[0] if tp_oids else None
+                                tr["tp_price"] = float(new_tp)
+                                add_event(f"UPDATE_TPSL {asset}: TP → {new_tp}")
+                            if new_sl is not None:
+                                await hyperliquid.cancel_order(asset, tr.get("sl_oid")) if tr.get("sl_oid") else None
+                                sl_order = await hyperliquid.place_stop_loss(asset, is_long, amount, float(new_sl))
+                                sl_oids = hyperliquid.extract_oids(sl_order)
+                                tr["sl_oid"] = sl_oids[0] if sl_oids else None
+                                tr["sl_price"] = float(new_sl)
+                                add_event(f"UPDATE_TPSL {asset}: SL → {new_sl}")
+                            with open(diary_path, "a") as f:
+                                f.write(json.dumps({
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "asset": asset,
+                                    "action": "tpsl_update",
+                                    "tp_price": tr.get("tp_price"),
+                                    "tp_oid": tr.get("tp_oid"),
+                                    "sl_price": tr.get("sl_price"),
+                                    "sl_oid": tr.get("sl_oid"),
+                                    "rationale": rationale,
+                                }) + "\n")
+                        except Exception as tpsl_err:
+                            add_event(f"UPDATE_TPSL error {asset}: {tpsl_err}")
+                        continue
                     elif action in ("buy", "sell"):
                         is_buy = action == "buy"
 
@@ -939,9 +977,14 @@ def main():
                             None
                         )
                         if existing_tr:
-                            amount = existing_tr['amount']
+                            close_fraction = float(output.get("close_fraction") or 1.0)
+                            close_fraction = max(0.01, min(1.0, close_fraction))
+                            amount = existing_tr['amount'] * close_fraction
                             alloc_usd = amount * current_price
-                            add_event(f"CLOSE {asset}: using tracked size {amount:.4f} (LLM allocation ignored)")
+                            if close_fraction < 1.0:
+                                add_event(f"PARTIAL CLOSE {asset}: {close_fraction:.0%} of {existing_tr['amount']:.4f} = {amount:.4f}")
+                            else:
+                                add_event(f"CLOSE {asset}: using tracked size {amount:.4f} (LLM allocation ignored)")
                         else:
                             alloc_usd = float(output.get("allocation_usd", 0.0))
                             if alloc_usd <= 0:
@@ -1021,8 +1064,8 @@ def main():
                                     order = await hyperliquid.place_limit_sell(asset, amount, limit_price)
                                 add_event(f"LIMIT {action.upper()} {asset} amount {amount:.4f} at limit ${limit_price}")
                         else:
-                            if existing_tr:
-                                # Close path: use market_close so order is reduceOnly and can never flip
+                            if existing_tr and close_fraction >= 1.0:
+                                # Full close: reduceOnly market order, can never flip
                                 order = await hyperliquid.place_close_order(asset)
                             elif is_buy:
                                 order = await hyperliquid.place_buy_order(asset, amount)
@@ -1041,17 +1084,27 @@ def main():
                             except Exception:
                                 continue
                         trade_log.append({"type": action, "price": current_price, "amount": amount, "exit_plan": output["exit_plan"], "filled": filled})
-                        # Remove stale active_trade for this asset (covers both closes and flips)
-                        for existing in active_trades[:]:
-                            if existing.get('asset') == asset:
-                                try:
-                                    active_trades.remove(existing)
-                                except ValueError:
-                                    pass
                         if existing_tr:
-                            # This was a close — no new position, no TP/SL to place
-                            pass
+                            if close_fraction < 1.0:
+                                # Partial close: reduce tracked amount, leave trade active
+                                existing_tr['amount'] = round(existing_tr['amount'] - amount, 6)
+                                add_event(f"Partial close recorded: {asset} remaining {existing_tr['amount']:.4f}")
+                            else:
+                                # Full close: remove from active_trades
+                                for existing in active_trades[:]:
+                                    if existing.get('asset') == asset:
+                                        try:
+                                            active_trades.remove(existing)
+                                        except ValueError:
+                                            pass
                         else:
+                            # New open or flip: remove old entry, add new
+                            for existing in active_trades[:]:
+                                if existing.get('asset') == asset:
+                                    try:
+                                        active_trades.remove(existing)
+                                    except ValueError:
+                                        pass
                             # For market orders, place TP/SL immediately (position is open now)
                             if order_type != "limit":
                                 if output.get("tp_price"):
