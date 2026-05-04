@@ -211,6 +211,17 @@ class HyperliquidAPI:
             return await self._retry(lambda: self.exchange.market_open(asset, False, amount, px, slippage))
         return await self._retry(lambda: self.exchange.market_open(asset, False, amount, None, slippage))
 
+    async def place_close_order(self, asset, slippage=0.01):
+        """Close the full open position for asset using market_close (reduceOnly, never flips).
+
+        Uses sz=None so the exchange closes the exact open size regardless of
+        what the agent thinks it is — prevents accidental reversal.
+        """
+        if ":" in asset:
+            px = await self.get_current_price(asset)
+            return await self._retry(lambda: self.exchange.market_close(asset, None, px, slippage))
+        return await self._retry(lambda: self.exchange.market_close(asset, None, None, slippage))
+
     async def place_limit_buy(self, asset, amount, limit_price, tif="Gtc"):
         """Submit a limit buy order.
 

@@ -90,6 +90,7 @@ def main():
     last_state = {}
     model_usage = {"sonnet": 0, "skipped": 0}
     last_sonnet_time: datetime | None = None
+    last_sonnet_prices: dict = {}
     # Perp mid-price history sampled each loop (authoritative, avoids spot/perp basis mismatch)
     price_history = {}
 
@@ -101,7 +102,7 @@ def main():
 
     async def run_loop():
         """Main trading loop that gathers data, calls the agent, and executes trades."""
-        nonlocal invocation_count, initial_account_value, prev_positions_count, prev_account_value, prev_asset_prices, last_state, model_usage, last_sonnet_time
+        nonlocal invocation_count, initial_account_value, prev_positions_count, prev_account_value, prev_asset_prices, last_state, model_usage, last_sonnet_time, last_sonnet_prices
 
         # Pre-load meta cache for correct order sizing
         await hyperliquid.get_meta_and_ctxs()
@@ -667,8 +668,7 @@ def main():
                 "recent_fills": recent_fills_struct,
             }
 
-            # Gather data for ALL assets first (using Hyperliquid candles + local indicators)
-            market_sections = []
+            # Fast: fetch current prices only (needed for trigger checks)
             asset_prices = {}
             for asset in args.assets:
                 try:
@@ -677,6 +677,77 @@ def main():
                     if asset not in price_history:
                         price_history[asset] = deque(maxlen=60)
                     price_history[asset].append({"t": datetime.now(timezone.utc).isoformat(), "mid": round_or_none(current_price, 2)})
+                except Exception as e:
+                    add_event(f"Price fetch error {asset}: {e}")
+
+            # Escalation logic: check triggers before building expensive prompt.
+            # Sonnet fires when ANY of:
+            #   1. First run (no prior state)
+            #   2. Any asset price moved > SONNET_PRICE_MOVE_PCT
+            #   3. Any open position is within SONNET_TPSL_PROXIMITY_PCT of its TP or SL
+            #   4. Open positions exist and Sonnet hasn't run in SONNET_HEALTH_CHECK_MINUTES
+            price_move_threshold = float(CONFIG.get("sonnet_price_move_pct") or 0.5) / 100.0
+            tpsl_proximity = float(CONFIG.get("sonnet_tpsl_proximity_pct") or 1.25) / 100.0
+            health_check_minutes = int(float(CONFIG.get("sonnet_health_check_minutes") or 60))
+
+            first_run = prev_positions_count is None
+
+            price_moved = any(
+                last_sonnet_prices.get(a) is not None
+                and last_sonnet_prices[a] != 0
+                and asset_prices.get(a) is not None
+                and abs(asset_prices[a] - last_sonnet_prices[a]) / last_sonnet_prices[a] > price_move_threshold
+                for a in args.assets
+            )
+
+            tpsl_near = False
+            for tr in active_trades:
+                asset = tr.get('asset')
+                price = asset_prices.get(asset)
+                if not price:
+                    continue
+                for level in (tr.get('tp_price'), tr.get('sl_price')):
+                    if level and abs(price - level) / price <= tpsl_proximity:
+                        tpsl_near = True
+                        break
+                if tpsl_near:
+                    break
+
+            health_check_due = (
+                bool(active_trades)
+                and (
+                    last_sonnet_time is None
+                    or (datetime.now(timezone.utc) - last_sonnet_time).total_seconds() / 60 >= health_check_minutes
+                )
+            )
+
+            use_sonnet = first_run or price_moved or tpsl_near or health_check_due
+
+            if not use_sonnet:
+                model_usage["skipped"] += 1
+                add_event(
+                    f"Skipping LLM (no trigger): price_moved={price_moved}, "
+                    f"tpsl_near={tpsl_near}, health_check_due={health_check_due} — auto-hold"
+                )
+                prev_positions_count = len(active_trades)
+                prev_account_value = account_value
+                prev_asset_prices = dict(asset_prices)
+                await asyncio.sleep(get_interval_seconds(args.interval))
+                continue
+
+            model_usage["sonnet"] += 1
+            last_sonnet_time = datetime.now(timezone.utc)
+            last_sonnet_prices = dict(asset_prices)
+            add_event(
+                f"Sonnet triggered: first_run={first_run}, price_moved={price_moved}, "
+                f"tpsl_near={tpsl_near}, health_check_due={health_check_due}"
+            )
+
+            # Heavy: gather full market data (OI, funding, candles, indicators) only when LLM fires
+            market_sections = []
+            for asset in args.assets:
+                try:
+                    current_price = asset_prices.get(asset)
                     oi = await hyperliquid.get_open_interest(asset)
                     funding = await hyperliquid.get_funding_rate(asset)
 
@@ -723,12 +794,23 @@ def main():
                     continue
 
             # Single LLM call with all assets
+            _now = datetime.now(timezone.utc)
+            _is_weekend = _now.weekday() >= 5
+            _invocation = {
+                "minutes_since_start": round(minutes_since_start, 2),
+                "current_time": _now.isoformat(),
+                "day_of_week": _now.strftime("%A"),
+                "invocation_count": invocation_count,
+            }
+            if _is_weekend:
+                _invocation["weekend_liquidity_note"] = (
+                    "CEX-linked markets (commodities, indices, equities) are closed today. "
+                    "Hyperliquid candles for these assets may reflect near-zero real volume — "
+                    "treat RSI/MACD/EMA signals with lower confidence and require stronger "
+                    "confluence before opening new positions."
+                )
             context_payload = OrderedDict([
-                ("invocation", {
-                    "minutes_since_start": round(minutes_since_start, 2),
-                    "current_time": datetime.now(timezone.utc).isoformat(),
-                    "invocation_count": invocation_count
-                }),
+                ("invocation", _invocation),
                 ("account", dashboard),
                 ("risk_limits", risk_mgr.get_risk_summary()),
                 ("market_data", market_sections),
@@ -741,69 +823,6 @@ def main():
             add_event(f"Combined prompt length: {len(context)} chars for {len(args.assets)} assets")
             with open("prompts.log", "a") as f:
                 f.write(f"\n\n--- {datetime.now()} - ALL ASSETS ---\n{json.dumps(context_payload, indent=2, default=json_default)}\n")
-
-            # Escalation logic: call Sonnet only when something actionable is happening.
-            # Otherwise skip the LLM entirely and auto-hold (zero cost).
-            #
-            # Sonnet fires when ANY of:
-            #   1. First run (no prior state)
-            #   2. Any asset price moved > SONNET_PRICE_MOVE_PCT
-            #   3. Any open position is within SONNET_TPSL_PROXIMITY_PCT of its TP or SL
-            #   4. Open positions exist and Sonnet hasn't run in SONNET_HEALTH_CHECK_MINUTES
-            price_move_threshold = float(CONFIG.get("sonnet_price_move_pct") or 0.5) / 100.0
-            tpsl_proximity = float(CONFIG.get("sonnet_tpsl_proximity_pct") or 1.25) / 100.0
-            health_check_minutes = int(float(CONFIG.get("sonnet_health_check_minutes") or 60))
-
-            first_run = prev_positions_count is None
-
-            price_moved = any(
-                prev_asset_prices.get(a) is not None
-                and prev_asset_prices[a] != 0
-                and asset_prices.get(a) is not None
-                and abs(asset_prices[a] - prev_asset_prices[a]) / prev_asset_prices[a] > price_move_threshold
-                for a in args.assets
-            )
-
-            tpsl_near = False
-            for tr in active_trades:
-                asset = tr.get('asset')
-                price = asset_prices.get(asset)
-                if not price:
-                    continue
-                for level in (tr.get('tp_price'), tr.get('sl_price')):
-                    if level and abs(price - level) / price <= tpsl_proximity:
-                        tpsl_near = True
-                        break
-                if tpsl_near:
-                    break
-
-            health_check_due = (
-                bool(active_trades)
-                and (
-                    last_sonnet_time is None
-                    or (datetime.now(timezone.utc) - last_sonnet_time).total_seconds() / 60 >= health_check_minutes
-                )
-            )
-
-            use_sonnet = first_run or price_moved or tpsl_near or health_check_due
-
-            if not use_sonnet:
-                model_usage["skipped"] += 1
-                add_event(
-                    f"Skipping LLM (no trigger): price_moved={price_moved}, "
-                    f"tpsl_near={tpsl_near}, health_check_due={health_check_due} — auto-hold"
-                )
-                prev_positions_count = len(active_trades)
-                prev_account_value = account_value
-                prev_asset_prices = dict(asset_prices)
-                continue
-
-            model_usage["sonnet"] += 1
-            last_sonnet_time = datetime.now(timezone.utc)
-            add_event(
-                f"Sonnet triggered: first_run={first_run}, price_moved={price_moved}, "
-                f"tpsl_near={tpsl_near}, health_check_due={health_check_due}"
-            )
 
             def _is_failed_outputs(outs):
                 """Return True when outputs are missing or clearly invalid."""
@@ -1002,7 +1021,13 @@ def main():
                                     order = await hyperliquid.place_limit_sell(asset, amount, limit_price)
                                 add_event(f"LIMIT {action.upper()} {asset} amount {amount:.4f} at limit ${limit_price}")
                         else:
-                            order = await hyperliquid.place_buy_order(asset, amount) if is_buy else await hyperliquid.place_sell_order(asset, amount)
+                            if existing_tr:
+                                # Close path: use market_close so order is reduceOnly and can never flip
+                                order = await hyperliquid.place_close_order(asset)
+                            elif is_buy:
+                                order = await hyperliquid.place_buy_order(asset, amount)
+                            else:
+                                order = await hyperliquid.place_sell_order(asset, amount)
 
                         # Confirm by checking recent fills for this asset shortly after placing
                         await asyncio.sleep(1)
@@ -1016,61 +1041,75 @@ def main():
                             except Exception:
                                 continue
                         trade_log.append({"type": action, "price": current_price, "amount": amount, "exit_plan": output["exit_plan"], "filled": filled})
-                        # For market orders, place TP/SL immediately (position is open now)
-                        if order_type != "limit":
-                            if output.get("tp_price"):
-                                tp_order = await hyperliquid.place_take_profit(asset, is_buy, amount, output["tp_price"])
-                                tp_oids = hyperliquid.extract_oids(tp_order)
-                                tp_oid = tp_oids[0] if tp_oids else None
-                                add_event(f"TP placed {asset} at {output['tp_price']}")
-                            if output.get("sl_price"):
-                                sl_order = await hyperliquid.place_stop_loss(asset, is_buy, amount, output["sl_price"])
-                                sl_oids = hyperliquid.extract_oids(sl_order)
-                                sl_oid = sl_oids[0] if sl_oids else None
-                                add_event(f"SL placed {asset} at {output['sl_price']}")
-                        # Reconcile: if opposite-side position exists or TP/SL just filled, clear stale active_trades for this asset
+                        # Remove stale active_trade for this asset (covers both closes and flips)
                         for existing in active_trades[:]:
                             if existing.get('asset') == asset:
                                 try:
                                     active_trades.remove(existing)
                                 except ValueError:
                                     pass
-                        active_trades.append({
-                            "asset": asset,
-                            "is_long": is_buy,
-                            "amount": amount,
-                            "entry_price": current_price,
-                            "tp_oid": tp_oid,
-                            "sl_oid": sl_oid,
-                            "tp_price": output.get("tp_price"),
-                            "sl_price": output.get("sl_price"),
-                            "exit_plan": output["exit_plan"],
-                            "opened_at": datetime.now().isoformat()
-                        })
+                        if existing_tr:
+                            # This was a close — no new position, no TP/SL to place
+                            pass
+                        else:
+                            # For market orders, place TP/SL immediately (position is open now)
+                            if order_type != "limit":
+                                if output.get("tp_price"):
+                                    tp_order = await hyperliquid.place_take_profit(asset, is_buy, amount, output["tp_price"])
+                                    tp_oids = hyperliquid.extract_oids(tp_order)
+                                    tp_oid = tp_oids[0] if tp_oids else None
+                                    add_event(f"TP placed {asset} at {output['tp_price']}")
+                                if output.get("sl_price"):
+                                    sl_order = await hyperliquid.place_stop_loss(asset, is_buy, amount, output["sl_price"])
+                                    sl_oids = hyperliquid.extract_oids(sl_order)
+                                    sl_oid = sl_oids[0] if sl_oids else None
+                                    add_event(f"SL placed {asset} at {output['sl_price']}")
+                            active_trades.append({
+                                "asset": asset,
+                                "is_long": is_buy,
+                                "amount": amount,
+                                "entry_price": current_price,
+                                "tp_oid": tp_oid,
+                                "sl_oid": sl_oid,
+                                "tp_price": output.get("tp_price"),
+                                "sl_price": output.get("sl_price"),
+                                "exit_plan": output["exit_plan"],
+                                "opened_at": datetime.now().isoformat()
+                            })
                         add_event(f"{action.upper()} {asset} amount {amount:.4f} at ~{current_price}")
                         if rationale:
                             add_event(f"Post-trade rationale for {asset}: {rationale}")
                         # Write to diary after confirming fills status
                         with open(diary_path, "a") as f:
-                            diary_entry = {
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                                "asset": asset,
-                                "action": action,
-                                "order_type": order_type,
-                                "limit_price": limit_price,
-                                "allocation_usd": alloc_usd,
-                                "amount": amount,
-                                "entry_price": current_price,
-                                "tp_price": output.get("tp_price"),
-                                "tp_oid": tp_oid,
-                                "sl_price": output.get("sl_price"),
-                                "sl_oid": sl_oid,
-                                "exit_plan": output.get("exit_plan", ""),
-                                "rationale": output.get("rationale", ""),
-                                "order_result": str(order),
-                                "opened_at": datetime.now(timezone.utc).isoformat(),
-                                "filled": filled
-                            }
+                            if existing_tr:
+                                diary_entry = {
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "asset": asset,
+                                    "action": "reconcile_close",
+                                    "reason": "llm_close",
+                                    "order_result": str(order),
+                                    "filled": filled,
+                                }
+                            else:
+                                diary_entry = {
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "asset": asset,
+                                    "action": action,
+                                    "order_type": order_type,
+                                    "limit_price": limit_price,
+                                    "allocation_usd": alloc_usd,
+                                    "amount": amount,
+                                    "entry_price": current_price,
+                                    "tp_price": output.get("tp_price"),
+                                    "tp_oid": tp_oid,
+                                    "sl_price": output.get("sl_price"),
+                                    "sl_oid": sl_oid,
+                                    "exit_plan": output.get("exit_plan", ""),
+                                    "rationale": output.get("rationale", ""),
+                                    "order_result": str(order),
+                                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                                    "filled": filled,
+                                }
                             f.write(json.dumps(diary_entry) + "\n")
                     else:  # hold
                         add_event(f"Hold {asset}: {output.get('rationale', '')}")
