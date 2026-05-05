@@ -5,6 +5,7 @@ import argparse
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).parent.parent))
 from src.agent.decision_maker import TradingAgent
+from src.thesis_tracker import update_and_check
 from src.indicators.local_indicators import compute_all, last_n, latest
 from src.risk_manager import RiskManager
 from src.trading.hyperliquid_api import HyperliquidAPI
@@ -872,6 +873,9 @@ def main():
                     add_event(f"Retry traceback: {traceback.format_exc()}")
                     outputs = {}
 
+            if isinstance(outputs, dict) and outputs.get("trade_decisions"):
+                outputs = update_and_check(outputs, active_trades)
+
             reasoning_text = outputs.get("reasoning", "") if isinstance(outputs, dict) else ""
             if reasoning_text:
                 add_event(f"LLM reasoning summary: {reasoning_text}")
@@ -884,6 +888,7 @@ def main():
                     "action": d.get("action", "hold"),
                     "allocation_usd": d.get("allocation_usd", 0),
                     "rationale": d.get("rationale", ""),
+                    "thesis_strength": d.get("thesis_strength"),
                 })
             cycle_log = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),

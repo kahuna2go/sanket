@@ -43,10 +43,21 @@ class TradingAgent:
             "3) Cooldown: After any direction change, impose at least 3 bars before another. Encode in exit_plan (e.g. \"cooldown_bars:3 until 2026-06-01T10:00Z\") and honor it on future cycles.\n"
             "4) Funding is a tilt, not a trigger: Do not flip solely due to funding unless it meaningfully exceeds expected edge (>~0.25×ATR over your holding horizon).\n"
             "5) Prefer adjustments over flips: If thesis weakens but is not invalidated — tighten stop (update_tpsl), trail TP, or take partial profits (buy/sell with close_fraction < 1.0). RSI extremes alone are not reversals. Flip only on hard invalidation + fresh confluence.\n\n"
-            "Loss discipline (overrides hysteresis)\n"
-            "- Position underwater AND rationale uses 'deteriorating', 'collapsing', 'broken', 'weakening', 'exhausted', or 'invalidated' → MUST close (sell long / buy short). Hold is forbidden.\n"
-            "- Thesis weakening 3+ consecutive cycles = thesis failed. Exit.\n"
-            "- Ask not 'how much have I lost' but 'would I open this now?' If no → close.\n\n"
+            "Thesis strength (required every cycle, every asset)\n"
+            "Rate the conviction behind the current thesis as an integer 1–5:\n"
+            "  5 = Strong trend + full confluence (4h + 5m aligned, all signals green)\n"
+            "  4 = Good setup, minor mixed signals (e.g. RSI neutral)\n"
+            "  3 = Neutral / no clear edge — do not open new positions at this level or below\n"
+            "  2 = Thesis weakening: structure eroding, signals diverging\n"
+            "  1 = Thesis broken: invalidation triggered, structure reversed\n"
+            "Rules enforced in code: thesis_strength == 1 + open position → immediate close (hold forbidden). "
+            "thesis_strength <= 2 for 3+ consecutive cycles + open position → exit regardless of P&L.\n\n"
+            "Core Entry Logic — crypto assets (BTC, ETH, SOL, and other pure-crypto perps)\n"
+            "Use Momentum Breakout only:\n"
+            "  4h bias (all required): EMA20 > EMA50, MACD histogram positive, ADX > 25\n"
+            "  5m entry (all required): close breaks above previous bar high, OBV rising, RSI 50–70\n"
+            "  TP: 1.5× ATR14 above entry. SL: 0.75× ATR14 below entry (R:R = 2:1)\n"
+            "  No new opens when ADX < 25 on any asset.\n\n"
             "CRITICAL — what 'hold' does\n"
             "- action=hold places ZERO new orders. TP/SL levels in rationale have no effect on the exchange.\n"
             "- To move TP/SL: use update_tpsl — the only way to change protective orders on the exchange.\n"
@@ -67,7 +78,8 @@ class TradingAgent:
             "Reasoning: assess Structure (trend, EMA slopes/cross), Momentum (MACD, RSI slope), Volatility (ATR), Positioning (funding, OI). Favor 4h+5m alignment.\n\n"
             "Output contract\n"
             "- Return ONLY a strict JSON object with one key: \"trade_decisions\" (array ordered to match assets list).\n"
-            "- Each item: asset, action, allocation_usd, order_type, limit_price, tp_price, sl_price, exit_plan, rationale, close_fraction.\n"
+            "- Each item: asset, action, allocation_usd, order_type, limit_price, tp_price, sl_price, exit_plan, rationale, close_fraction, thesis_strength.\n"
+            "  • thesis_strength: integer 1–5, required for every item every cycle.\n"
             "  • close_fraction: 0.01–1.0 for closing an existing position (1.0 = full, 0.5 = half). Ignored when opening.\n"
             "  • cancel_limits: allocation_usd=0, order_type=\"market\", limit_price=null, tp_price=null, sl_price=null.\n"
             "  • update_tpsl: allocation_usd=0, order_type=\"market\", limit_price=null. null tp/sl = keep existing.\n"
@@ -236,7 +248,7 @@ class TradingAgent:
                         "Each trade_decisions item must have: asset, action (buy/sell/hold), "
                         "allocation_usd (number), order_type (\"market\" or \"limit\"), "
                         "limit_price (number or null), tp_price (number or null), sl_price (number or null), "
-                        "exit_plan (string), rationale (string). "
+                        "exit_plan (string), rationale (string), thesis_strength (integer 1-5). "
                         f"Valid assets: {json.dumps(list(assets_list))}. "
                         "If input is wrapped in markdown or has prose, extract just the JSON. Do not add fields."
                     ),
@@ -349,6 +361,9 @@ class TradingAgent:
                             item.setdefault("close_fraction", 1.0)
                             item.setdefault("exit_plan", "")
                             item.setdefault("rationale", "")
+                            ts = item.get("thesis_strength")
+                            if not isinstance(ts, int) or not (1 <= ts <= 5):
+                                item["thesis_strength"] = 3
                             normalized.append(item)
                     return {"reasoning": reasoning_text, "trade_decisions": normalized}
 

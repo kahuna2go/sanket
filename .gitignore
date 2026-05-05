@@ -29,3 +29,8 @@ llm_requests.log
 trading_history.log
 *.log
 diary.jsonl
+decisions.jsonl
+thesis_history.json
+
+# Cached candle data for backtesting
+data/candles/
