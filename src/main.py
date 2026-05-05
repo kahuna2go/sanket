@@ -662,6 +662,7 @@ def main():
                         "opened_at": tr.get('opened_at')
                     }
                     for tr in active_trades
+                    if tr.get('asset') in assets_with_positions
                 ],
                 "open_orders": open_orders_struct,
                 "recent_diary": recent_diary,
@@ -1165,7 +1166,7 @@ def main():
                                 }
                             f.write(json.dumps(diary_entry) + "\n")
                     else:  # hold
-                        add_event(f"Hold {asset}: {output.get('rationale', '')}")
+                        add_event(f"Hold {asset}")
                         # Write hold to diary
                         with open(diary_path, "a") as f:
                             diary_entry = {
