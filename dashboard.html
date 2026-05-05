@@ -8,28 +8,28 @@
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg:          #07080d;
-      --surface:     #0d0f1c;
-      --surface-alt: #121527;
-      --surface-hi:  #171b2e;
-      --border:      rgba(255,255,255,.06);
-      --border-2:    rgba(255,255,255,.1);
-      --profit:      #22d97a;
-      --profit-bg:   rgba(34,217,122,.08);
-      --loss:        #f04040;
-      --loss-bg:     rgba(240,64,64,.08);
-      --accent:      #5b9bff;
-      --accent-bg:   rgba(91,155,255,.1);
-      --gold:        #ffbf30;
-      --gold-bg:     rgba(255,191,48,.08);
-      --warn:        #ff9422;
-      --warn-bg:     rgba(255,148,34,.08);
-      --text:        #d8ddf0;
-      --muted:       #3e4268;
+      --bg:          #eaecf4;
+      --surface:     #f8f9fd;
+      --surface-alt: #f0f2f8;
+      --surface-hi:  #e8eaf4;
+      --border:      rgba(0,0,0,.07);
+      --border-2:    rgba(0,0,0,.12);
+      --profit:      #0aab5c;
+      --profit-bg:   rgba(10,171,92,.08);
+      --loss:        #d42f2f;
+      --loss-bg:     rgba(212,47,47,.07);
+      --accent:      #2f6ff0;
+      --accent-bg:   rgba(47,111,240,.08);
+      --gold:        #c47f00;
+      --gold-bg:     rgba(196,127,0,.08);
+      --warn:        #c86000;
+      --warn-bg:     rgba(200,96,0,.07);
+      --text:        #0d0f1e;
+      --muted:       #8890b0;
       --r:           16px;
       --r-sm:        10px;
       --r-xs:        6px;
-      --shadow:      0 2px 12px rgba(0,0,0,.55), 0 0 0 1px var(--border);
+      --shadow:      0 2px 8px rgba(0,0,0,.07), 0 0 0 1px var(--border);
       --font-num:    'Orbitron', monospace;
       --font-data:   'JetBrains Mono', monospace;
       --font-label:  'Barlow Condensed', sans-serif;
@@ -67,7 +67,7 @@
     }
     .header-meta span { color: var(--text); }
     .refresh-wrap { display: flex; align-items: center; gap: 8px; }
-    .refresh-track { width: 48px; height: 3px; background: rgba(255,255,255,.07); border-radius: 999px; overflow: hidden; }
+    .refresh-track { width: 48px; height: 3px; background: rgba(0,0,0,.1); border-radius: 999px; overflow: hidden; }
     .refresh-fill { height: 100%; background: var(--accent); width: 0%; border-radius: 999px; }
     .refresh-label { font-family: var(--font-label); font-size: 10px; letter-spacing: .06em; color: var(--muted); }
 
@@ -100,8 +100,8 @@
     .mc.l::before { background: var(--loss); }
     .mc.a::before { background: var(--accent); }
     .mc.g::before { background: var(--gold); }
-    .mc.p { background: linear-gradient(160deg, rgba(34,217,122,.1) 0%, var(--surface) 55%); }
-    .mc.l { background: linear-gradient(160deg, rgba(240,64,64,.1) 0%, var(--surface) 55%); }
+    .mc.p { background: linear-gradient(160deg, rgba(10,171,92,.07) 0%, var(--surface) 55%); }
+    .mc.l { background: linear-gradient(160deg, rgba(212,47,47,.07) 0%, var(--surface) 55%); }
     .mc:nth-child(1){animation-delay:.04s} .mc:nth-child(2){animation-delay:.08s}
     .mc:nth-child(3){animation-delay:.12s} .mc:nth-child(4){animation-delay:.16s}
     .mc:nth-child(5){animation-delay:.20s} .mc:nth-child(6){animation-delay:.24s}
@@ -209,7 +209,7 @@
     .model-item-label { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
     .model-item-val { font-family: var(--font-num); font-size: 18px; font-weight: 700; }
     .model-item-val.ac { color: var(--accent); }
-    .model-bar-track { height: 4px; background: rgba(255,255,255,.06); border-radius: 999px; margin: 4px 0 10px; overflow: hidden; }
+    .model-bar-track { height: 4px; background: rgba(0,0,0,.08); border-radius: 999px; margin: 4px 0 10px; overflow: hidden; }
     .model-bar-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .6s ease; }
     .llm-cost-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -218,7 +218,7 @@
     .llm-cost-input-wrap { display: flex; align-items: center; gap: 3px; font-family: var(--font-num); font-size: 14px; font-weight: 600; color: var(--text); }
     .llm-cost-input-wrap span { color: var(--muted); font-size: 12px; }
     #llm-cost-input {
-      width: 72px; background: rgba(255,255,255,.05); border: 1px solid var(--border);
+      width: 72px; background: rgba(0,0,0,.04); border: 1px solid var(--border-2);
       border-radius: var(--r-xs); color: var(--text); font-family: var(--font-num);
       font-size: 14px; font-weight: 600; padding: 2px 5px; text-align: right; outline: none;
     }
@@ -281,7 +281,7 @@
     .asset-row { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
     .asset-row:last-child { margin-bottom: 0; }
     .asset-name { min-width: 55px; font-family: var(--font-label); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-    .asset-bar-track { flex: 1; height: 4px; background: rgba(255,255,255,.06); border-radius: 999px; overflow: hidden; }
+    .asset-bar-track { flex: 1; height: 4px; background: rgba(0,0,0,.08); border-radius: 999px; overflow: hidden; }
     .asset-bar-fill { height: 100%; border-radius: 999px; transition: width .5s ease; }
     .asset-bar-fill.p { background: var(--profit); }
     .asset-bar-fill.l { background: var(--loss); }
@@ -298,7 +298,7 @@
     .ov-logo { font-family: var(--font-num); font-size: 32px; font-weight: 900; letter-spacing: .2em; }
     .ov-logo em { color: var(--accent); font-style: normal; }
     .spinner {
-      width: 36px; height: 36px; border: 2px solid rgba(255,255,255,.08); border-top-color: var(--accent);
+      width: 36px; height: 36px; border: 2px solid rgba(0,0,0,.1); border-top-color: var(--accent);
       border-radius: 50%; animation: spin .7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
