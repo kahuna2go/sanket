@@ -23,14 +23,14 @@ class TradingAgent:
         self.haiku_model = CONFIG.get("haiku_model") or "claude-haiku-4-5-20251001"
         self.max_tokens = int(CONFIG.get("max_tokens") or 4096)
 
-    def decide_trade(self, assets, context, model=None):
+    def decide_trade(self, assets, context, model=None, macro_context=None):
         """Decide for multiple assets in one call."""
-        return self._decide(context, assets=assets, model=model)
+        return self._decide(context, assets=assets, model=model, macro_context=macro_context)
 
-    def _decide(self, context, assets, model=None):
+    def _decide(self, context, assets, model=None, macro_context=None):
         """Dispatch decision request to Claude and enforce output contract."""
         system_prompt = (
-            "You are an expert quantitative trader managing perpetual futures on Hyperliquid, optimizing risk-adjusted returns under real execution, margin, and funding constraints.\n"
+            "You are a senior quantitative trader managing perpetual futures on Hyperliquid, optimizing risk-adjusted returns under real execution, margin, and funding constraints.\n"
             "You receive market + account context for: "
             f"assets = {json.dumps(list(assets))}, "
             "per-asset intraday (5m) and 4h metrics, active trades with exit plans, recent history, and hard-enforced risk limits.\n\n"
@@ -120,7 +120,27 @@ class TradingAgent:
             "cache_control": {"type": "ephemeral"},
         }]
 
-        messages = [{"role": "user", "content": context}]
+        user_content = context
+        if macro_context:
+            fg = macro_context.get("fear_greed", 50)
+            fg_label = (
+                "extreme fear" if fg < 20 else
+                "extreme greed" if fg > 80 else
+                "neutral"
+            )
+            macro_section = (
+                f"Macro context (current cycle):\n"
+                f"- Fear & Greed Index: {fg} ({fg_label})\n"
+                f"- DXY trend: {'rising — reduce long allocation on crypto by ~30%' if macro_context.get('dxy_rising') else 'neutral/falling'}\n"
+                f"- High-impact macro event within 60 min: {macro_context.get('high_impact_event_imminent', False)}\n"
+                f"- Minimum thesis_strength to open new positions this cycle: {macro_context.get('min_thesis_strength_to_open', 3)}\n"
+                f"- New opens blocked this cycle: {macro_context.get('block_new_opens', False)}\n\n"
+                "Apply these constraints strictly. If block_new_opens is true, action must be hold "
+                "or update_tpsl for all assets — no buy or sell opens regardless of signal strength.\n\n"
+            )
+            user_content = macro_section + context
+
+        messages = [{"role": "user", "content": user_content}]
 
         def _log_request(model, messages_to_log):
             with open("llm_requests.log", "a", encoding="utf-8") as f:

@@ -6,6 +6,7 @@ import pathlib
 sys.path.append(str(pathlib.Path(__file__).parent.parent))
 from src.agent.decision_maker import TradingAgent
 from src.thesis_tracker import update_and_check
+from src.macro_filter import get_macro_context
 from src.indicators.local_indicators import compute_all, last_n, latest
 from src.risk_manager import RiskManager
 from src.trading.hyperliquid_api import HyperliquidAPI
@@ -188,6 +189,12 @@ def main():
         while True:
             invocation_count += 1
             minutes_since_start = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
+
+            macro_ctx = await get_macro_context()
+            with open("llm_requests.log", "a", encoding="utf-8") as _mf:
+                _mf.write(f"\n=== Macro context {datetime.now(timezone.utc).isoformat()} ===\n{json.dumps(macro_ctx)}\n")
+            if macro_ctx["block_new_opens"]:
+                logging.info("Macro filter: high-impact event imminent — new opens blocked this cycle")
 
             # Global account state
             state = await hyperliquid.get_user_state()
@@ -844,7 +851,7 @@ def main():
                     return True
 
             try:
-                outputs = agent.decide_trade(args.assets, context, model=agent.model)
+                outputs = agent.decide_trade(args.assets, context, model=agent.model, macro_context=macro_ctx)
                 if not isinstance(outputs, dict):
                     add_event(f"Invalid output format (expected dict): {outputs}")
                     outputs = {}
@@ -863,7 +870,7 @@ def main():
                 ])
                 context_retry = json.dumps(context_retry_payload, default=json_default)
                 try:
-                    outputs = agent.decide_trade(args.assets, context_retry, model=agent.model)
+                    outputs = agent.decide_trade(args.assets, context_retry, model=agent.model, macro_context=macro_ctx)
                     if not isinstance(outputs, dict):
                         add_event(f"Retry invalid format: {outputs}")
                         outputs = {}

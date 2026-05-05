@@ -112,6 +112,9 @@ CONFIG = {
     "api_host": _get_env("API_HOST", "0.0.0.0"),
     "api_port": _get_env("APP_PORT") or _get_env("API_PORT") or "3000",
 
+    # Macro filters
+    "finnhub_api_key": _get_env("FINNHUB_API_KEY"),
+
     # Legacy / optional
     "taapi_api_key": _get_env("TAAPI_API_KEY"),
     "openrouter_api_key": _get_env("OPENROUTER_API_KEY"),
