@@ -723,11 +723,8 @@ def main():
                     break
 
             health_check_due = (
-                bool(active_trades)
-                and (
-                    last_sonnet_time is None
-                    or (datetime.now(timezone.utc) - last_sonnet_time).total_seconds() / 60 >= health_check_minutes
-                )
+                last_sonnet_time is None
+                or (datetime.now(timezone.utc) - last_sonnet_time).total_seconds() / 60 >= health_check_minutes
             )
 
             use_sonnet = first_run or price_moved or tpsl_near or health_check_due
