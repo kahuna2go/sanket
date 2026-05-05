@@ -36,6 +36,7 @@ load_dotenv()
 
 from src.indicators.local_indicators import (
     ema, adx as adx_fn, rsi as rsi_fn, obv as obv_fn, atr as atr_fn, sma,
+    bbands as bbands_fn,
 )
 from src.backtest.fetch_history import load_cache, fetch_all, save_cache
 
@@ -58,6 +59,18 @@ ALL_CONFIGS = [
     SimConfig(tight_rsi=True, label="+ Tight RSI"),
     SimConfig(volume_filter=True, tight_rsi=True, label="+ Volume + Tight RSI"),
     SimConfig(volume_filter=True, tight_rsi=True, rr3=True, label="+ Volume + Tight RSI + 3:1 R:R"),
+]
+
+
+@dataclass
+class GoldSimConfig:
+    dxy_filter: bool = False
+    label: str = "Baseline (4:1)"
+
+
+GOLD_CONFIGS = [
+    GoldSimConfig(label="Baseline (4:1)"),
+    GoldSimConfig(dxy_filter=True, label="+ DXY filter (no long when USD rising)"),
 ]
 
 
@@ -252,6 +265,231 @@ def _print_table(asset: str, candles_5m: list, all_stats: list[tuple[SimConfig, 
 
 
 # ---------------------------------------------------------------------------
+# Gold Range Breakout
+# ---------------------------------------------------------------------------
+
+def _compute_gold_4h_signals(candles_4h: list) -> list[dict]:
+    """Compute per-4h-bar Gold setup signals: squeeze + ADX rising."""
+    if len(candles_4h) < 30:
+        return []
+
+    bb = bbands_fn(candles_4h, period=20)
+    adx_vals = adx_fn(candles_4h)
+
+    widths: list[float | None] = []
+    for u, m, lo in zip(bb["upper"], bb["middle"], bb["lower"]):
+        if u is None or m is None or lo is None or m == 0:
+            widths.append(None)
+        else:
+            widths.append((u - lo) / m)
+
+    results = []
+    for i, bar in enumerate(candles_4h):
+        if widths[i] is None or adx_vals[i] is None:
+            results.append({"t": bar["t"], "squeeze": False, "adx_rising": False})
+            continue
+
+        valid_window = [widths[j] for j in range(max(0, i - 7), i + 1) if widths[j] is not None]
+        squeeze = len(valid_window) == 8 and widths[i] == min(valid_window)
+
+        adx_5_ago = adx_vals[i - 5] if i >= 5 else None
+        adx_rising = adx_5_ago is not None and adx_vals[i] > adx_5_ago
+
+        results.append({"t": bar["t"], "squeeze": squeeze, "adx_rising": adx_rising})
+
+    return results
+
+
+def _get_gold_signal_at(signals: list[dict], ts: int) -> tuple[bool, bool]:
+    result = (False, False)
+    for s in signals:
+        if s["t"] <= ts:
+            result = (s["squeeze"], s["adx_rising"])
+        else:
+            break
+    return result
+
+
+def _fetch_dxy_rising_by_date(start_ms: int, end_ms: int) -> dict:
+    """Return {date_str: bool (rising)} per calendar day. Empty dict on failure."""
+    try:
+        import yfinance as yf
+        from datetime import datetime, timezone, timedelta
+        start = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+        end = (datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+        hist = yf.Ticker("DX-Y.NYB").history(start=start, end=end)
+        if hist.empty:
+            return {}
+        closes = hist["Close"].tolist()
+        dates = [str(ts.date()) for ts in hist.index]
+        k = 2.0 / 6
+        ema_val = closes[0]
+        result = {}
+        for date, c in zip(dates, closes):
+            ema_val = c * k + ema_val * (1 - k)
+            result[date] = c > ema_val
+        return result
+    except Exception as e:
+        print(f"  DXY history fetch failed: {e}")
+        return {}
+
+
+def _run_gold_simulation(candles_5m: list, gold_4h_signals: list[dict],
+                         cfg: GoldSimConfig, dxy_data: dict) -> dict:
+    if len(candles_5m) < 25:
+        return {}
+
+    atr_vals = atr_fn(candles_5m, 14)
+
+    TP_MULT = 2.0
+    SL_MULT = 0.5
+    WIN_PAYOUT = TP_MULT / SL_MULT  # 4.0
+
+    trades: list[float] = []
+    in_trade = False
+    tp = sl = entry = 0.0
+    direction = None
+
+    from datetime import datetime, timezone
+
+    for i in range(20, len(candles_5m)):
+        bar = candles_5m[i]
+
+        if in_trade:
+            if direction == "long":
+                if bar["low"] <= sl:
+                    trades.append(-1.0)
+                    in_trade = False
+                elif bar["high"] >= tp:
+                    trades.append(WIN_PAYOUT)
+                    in_trade = False
+            else:
+                if bar["high"] >= sl:
+                    trades.append(-1.0)
+                    in_trade = False
+                elif bar["low"] <= tp:
+                    trades.append(WIN_PAYOUT)
+                    in_trade = False
+            continue
+
+        squeeze, adx_rising = _get_gold_signal_at(gold_4h_signals, bar["t"])
+        if not (squeeze and adx_rising):
+            continue
+
+        atr_v = atr_vals[i]
+        if atr_v is None or atr_v == 0:
+            continue
+
+        window = candles_5m[i - 20:i]
+        range_high = max(c["high"] for c in window)
+        range_low = min(c["low"] for c in window)
+        close = bar["close"]
+
+        bar_date = datetime.fromtimestamp(bar["t"] / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+        dxy_rising = dxy_data.get(bar_date, False) if cfg.dxy_filter else False
+
+        if not dxy_rising and close > range_high + 0.3 * atr_v:
+            entry, direction, in_trade = close, "long", True
+            tp = entry + TP_MULT * atr_v
+            sl = entry - SL_MULT * atr_v
+        elif close < range_low - 0.3 * atr_v:
+            entry, direction, in_trade = close, "short", True
+            tp = entry - TP_MULT * atr_v
+            sl = entry + SL_MULT * atr_v
+
+    if not trades:
+        return {"trades": 0}
+
+    wins = sum(1 for r in trades if r > 0)
+    total_r = sum(trades)
+    peak = cum = max_dd = 0.0
+    for r in trades:
+        cum += r
+        if cum > peak:
+            peak = cum
+        if peak - cum > max_dd:
+            max_dd = peak - cum
+
+    return {
+        "trades": len(trades),
+        "wins": wins,
+        "win_rate": wins / len(trades),
+        "total_r": total_r,
+        "avg_r": total_r / len(trades),
+        "max_dd_r": -max_dd,
+        "expectancy": total_r / len(trades),
+    }
+
+
+def _print_gold_table(asset: str, candles_5m: list, all_stats: list):
+    from datetime import datetime, timezone
+
+    def _dt(ms):
+        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+
+    period = (
+        f"{_dt(candles_5m[0]['t'])} → {_dt(candles_5m[-1]['t'])}"
+        if candles_5m else "?"
+    )
+
+    print(f"\n{'='*80}")
+    print(f"Asset: {asset} (Range Breakout)   Period: {period}")
+    print(f"{'='*80}")
+    print(f"{'Config':<38} {'Trades':>7} {'Win%':>6} {'TotalR':>8} {'AvgR':>7} {'MaxDD':>7} {'Verdict'}")
+    print(f"{'-'*38} {'-'*7} {'-'*6} {'-'*8} {'-'*7} {'-'*7} {'-'*14}")
+
+    for cfg, s in all_stats:
+        if not s or s.get("trades", 0) == 0:
+            print(f"{cfg.label:<38} {'—':>7}")
+            continue
+        print(
+            f"{cfg.label:<38} "
+            f"{s['trades']:>7} "
+            f"{s['win_rate']*100:>5.1f}% "
+            f"{s['total_r']:>+8.1f} "
+            f"{s['avg_r']:>+7.3f} "
+            f"{s['max_dd_r']:>7.1f} "
+            f"{_verdict(s)}"
+        )
+
+
+async def run_gold_asset(asset: str, years: int, fetch: bool):
+    from src.trading.hyperliquid_api import HyperliquidAPI
+    hl = None
+
+    for interval in ("5m", "4h"):
+        cached = load_cache(asset, interval)
+        if cached is None or fetch:
+            if hl is None:
+                hl = HyperliquidAPI()
+                await hl.get_meta_and_ctxs()
+            print(f"Fetching {asset} {interval}…", end=" ", flush=True)
+            candles, source = await fetch_all(hl, asset, interval, years)
+            save_cache(asset, interval, candles)
+            print(f"{len(candles)} bars [{source}]")
+
+    candles_5m = load_cache(asset, "5m") or []
+    candles_4h = load_cache(asset, "4h") or []
+
+    if not candles_4h:
+        print(f"{asset}: missing 4h candle data — run fetch_history.py first")
+        return
+
+    gold_4h_signals = _compute_gold_4h_signals(candles_4h)
+
+    ref = candles_5m or candles_4h
+    print(f"Fetching DXY history for DXY-filter comparison…", end=" ", flush=True)
+    dxy_data = _fetch_dxy_rising_by_date(ref[0]["t"], ref[-1]["t"])
+    print(f"{len(dxy_data)} trading days")
+
+    all_stats = [
+        (cfg, _run_gold_simulation(candles_5m, gold_4h_signals, cfg, dxy_data))
+        for cfg in GOLD_CONFIGS
+    ]
+    _print_gold_table(asset, candles_5m, all_stats)
+
+
+# ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
 
@@ -284,7 +522,10 @@ async def run_asset(asset: str, years: int, fetch: bool, configs: list[SimConfig
 
 async def main_async(assets: list[str], years: int, fetch: bool, configs: list[SimConfig]):
     for asset in assets:
-        await run_asset(asset, years, fetch, configs)
+        if asset == "xyz:GOLD":
+            await run_gold_asset(asset, years, fetch)
+        else:
+            await run_asset(asset, years, fetch, configs)
 
 
 def main():

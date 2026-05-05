@@ -195,6 +195,34 @@ def bbands(candles: list[dict], period: int = 20, std_dev: float = 2.0) -> dict:
     return {"upper": upper, "middle": middle, "lower": lower}
 
 
+def bbands_squeeze(candles: list[dict], period: int = 20, lookback: int = 8) -> dict:
+    """Detect Bollinger Band squeeze: bands at their tightest point in `lookback` bars.
+
+    Returns:
+        {"squeeze": bool, "width": float | None, "expanding": bool}
+    """
+    data = bbands(candles, period)
+    upper, middle, lower = data["upper"], data["middle"], data["lower"]
+
+    widths: list[float | None] = []
+    for u, m, lo in zip(upper, middle, lower):
+        if u is None or m is None or lo is None or m == 0:
+            widths.append(None)
+        else:
+            widths.append((u - lo) / m)
+
+    valid = [w for w in widths if w is not None]
+    if len(valid) < lookback + 1:
+        return {"squeeze": False, "width": None, "expanding": False}
+
+    current = valid[-1]
+    window = valid[-lookback:]
+    squeeze = current == min(window)
+    expanding = current > valid[-2]
+
+    return {"squeeze": squeeze, "width": round(current, 6), "expanding": expanding}
+
+
 # ---------------------------------------------------------------------------
 # Stochastic RSI
 # ---------------------------------------------------------------------------
