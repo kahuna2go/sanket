@@ -21,6 +21,8 @@
       --accent-bg:   rgba(77,140,255,.1);
       --gold:        #ffc142;
       --gold-bg:     rgba(255,193,66,.08);
+      --warn:        #ff9800;
+      --warn-bg:     rgba(255,152,0,.08);
       --text:        #dce0ef;
       --muted:       #454870;
       --dim:         #1e2138;
@@ -30,128 +32,103 @@
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     html { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
-
     body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--font-data);
-      font-size: 12px;
-      line-height: 1.5;
-      min-height: 100vh;
+      background: var(--bg); color: var(--text);
+      font-family: var(--font-data); font-size: 12px; line-height: 1.5; min-height: 100vh;
     }
-
-    /* Dot-grid background */
     body::before {
-      content: '';
-      position: fixed; inset: 0; z-index: 0;
+      content: ''; position: fixed; inset: 0; z-index: 0;
       background-image: radial-gradient(circle, var(--dim) 1px, transparent 1px);
-      background-size: 24px 24px;
-      pointer-events: none;
+      background-size: 24px 24px; pointer-events: none;
     }
     body::after {
-      content: '';
-      position: fixed; inset: 0; z-index: 0;
+      content: ''; position: fixed; inset: 0; z-index: 0;
       background: radial-gradient(ellipse 100% 55% at 50% 0%, transparent 30%, var(--bg) 100%);
       pointer-events: none;
     }
-
     .app { position: relative; z-index: 1; max-width: 1640px; margin: 0 auto; padding: 20px 24px 40px; }
 
     /* ─── HEADER ─────────────────────────────── */
     header {
       display: flex; align-items: center; justify-content: space-between;
-      padding-bottom: 16px; margin-bottom: 20px;
-      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px; margin-bottom: 20px; border-bottom: 1px solid var(--border);
     }
-
-    .logo {
-      font-family: var(--font-num); font-size: 18px; font-weight: 900;
-      letter-spacing: .2em; color: var(--text);
-    }
+    .logo { font-family: var(--font-num); font-size: 18px; font-weight: 900; letter-spacing: .2em; color: var(--text); }
     .logo em { color: var(--accent); font-style: normal; }
-
     .header-right { display: flex; align-items: center; gap: 28px; }
-
     .status-live {
       display: flex; align-items: center; gap: 7px;
       font-family: var(--font-label); font-size: 11px; font-weight: 600;
       letter-spacing: .1em; text-transform: uppercase; color: var(--profit);
     }
-    .dot {
-      width: 7px; height: 7px; border-radius: 50%; background: var(--profit);
-      animation: blink 2.2s ease-in-out infinite;
-    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--profit); animation: blink 2.2s ease-in-out infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-
     .header-meta {
       display: flex; gap: 20px;
       font-family: var(--font-label); font-size: 11px; font-weight: 500;
       letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
     }
     .header-meta span { color: var(--text); }
-
     .refresh-wrap { display: flex; align-items: center; gap: 8px; }
-    .refresh-track {
-      width: 48px; height: 2px; background: var(--border-2); overflow: hidden;
+    .refresh-track { width: 48px; height: 2px; background: var(--border-2); overflow: hidden; }
+    .refresh-fill { height: 100%; background: var(--accent); width: 0%; }
+    .refresh-label { font-family: var(--font-label); font-size: 10px; letter-spacing: .06em; color: var(--muted); }
+
+    /* ─── CIRCUIT BREAKER ────────────────────── */
+    .cb-banner {
+      display: none; align-items: center; gap: 10px;
+      padding: 8px 16px; margin-bottom: 14px;
+      background: var(--warn-bg); border: 1px solid rgba(255,152,0,.25);
+      font-family: var(--font-label); font-size: 11px; font-weight: 600;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--warn);
     }
-    .refresh-fill {
-      height: 100%; background: var(--accent); width: 0%;
-    }
-    .refresh-label {
-      font-family: var(--font-label); font-size: 10px; letter-spacing: .06em;
-      color: var(--muted);
-    }
+    .cb-banner.active { display: flex; }
+    .cb-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); animation: blink 1.2s ease-in-out infinite; }
 
     /* ─── METRICS STRIP ──────────────────────── */
     .metrics {
-      display: grid; grid-template-columns: repeat(6,1fr); gap: 10px;
-      margin-bottom: 14px;
+      display: grid; grid-template-columns: repeat(6,1fr); gap: 10px; margin-bottom: 10px;
     }
-
     .mc {
       background: var(--surface); border: 1px solid var(--border);
-      padding: 16px 18px; position: relative; overflow: hidden;
-      animation: rise .4s ease both;
+      padding: 16px 18px; position: relative; overflow: hidden; animation: rise .4s ease both;
     }
-    .mc::after {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-      background: var(--border-2);
-    }
+    .mc::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--border-2); }
     .mc.p::after { background: var(--profit); }
     .mc.l::after { background: var(--loss); }
     .mc.a::after { background: var(--accent); }
     .mc.g::after { background: var(--gold); }
     .mc.p { background: linear-gradient(175deg, var(--profit-bg) 0%, var(--surface) 50%); }
     .mc.l { background: linear-gradient(175deg, var(--loss-bg) 0%, var(--surface) 50%); }
-
     .mc:nth-child(1){animation-delay:.04s} .mc:nth-child(2){animation-delay:.08s}
     .mc:nth-child(3){animation-delay:.12s} .mc:nth-child(4){animation-delay:.16s}
     .mc:nth-child(5){animation-delay:.20s} .mc:nth-child(6){animation-delay:.24s}
-
-    .ml {
-      font-family: var(--font-label); font-size: 10px; font-weight: 600;
-      letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
-      margin-bottom: 8px;
-    }
-    .mv {
-      font-family: var(--font-num); font-size: 20px; font-weight: 700;
-      letter-spacing: .02em; line-height: 1;
-    }
+    .ml { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+    .mv { font-family: var(--font-num); font-size: 20px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
     .mv.p { color: var(--profit); }
     .mv.l { color: var(--loss); }
     .mv.g { color: var(--gold); }
-    .msub {
-      font-family: var(--font-data); font-size: 10px; color: var(--muted);
-      margin-top: 5px;
+    .msub { font-family: var(--font-data); font-size: 10px; color: var(--muted); margin-top: 5px; }
+
+    /* ─── STRATEGY STATS STRIP ───────────────── */
+    .stats-strip {
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 10px;
     }
+    .sc {
+      background: var(--surface); border: 1px solid var(--border);
+      padding: 10px 14px; position: relative; animation: rise .45s ease both;
+    }
+    .sc:nth-child(1){animation-delay:.06s} .sc:nth-child(2){animation-delay:.10s}
+    .sc:nth-child(3){animation-delay:.14s} .sc:nth-child(4){animation-delay:.18s}
+    .sc:nth-child(5){animation-delay:.22s} .sc:nth-child(6){animation-delay:.26s}
+    .sl { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+    .sv { font-family: var(--font-data); font-size: 14px; font-weight: 500; }
 
     /* ─── LAYOUT GRID ────────────────────────── */
     .grid {
       display: grid;
-      grid-template-columns: 1fr 300px;
-      grid-template-rows: auto auto auto auto;
+      grid-template-columns: 1fr 320px;
       gap: 10px;
     }
     .g-pos     { grid-column:1; grid-row:1; }
@@ -160,35 +137,25 @@
     .g-dec     { grid-column:1/3; grid-row:3; }
 
     /* ─── CARD ───────────────────────────────── */
-    .card {
-      background: var(--surface); border: 1px solid var(--border);
-      animation: rise .5s ease both;
-    }
+    .card { background: var(--surface); border: 1px solid var(--border); animation: rise .5s ease both; }
     .card-head {
       padding: 10px 16px; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; justify-content: space-between;
     }
-    .card-title {
-      font-family: var(--font-label); font-size: 10px; font-weight: 700;
-      letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
-    }
-    .card-badge {
-      font-family: var(--font-data); font-size: 10px; color: var(--muted);
-    }
+    .card-title { font-family: var(--font-label); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+    .card-badge { font-family: var(--font-data); font-size: 10px; color: var(--muted); }
 
     /* ─── TABLE ──────────────────────────────── */
     .tbl { width: 100%; border-collapse: collapse; }
     .tbl th {
       font-family: var(--font-label); font-size: 10px; font-weight: 600;
       letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
-      padding: 9px 16px; text-align: right; border-bottom: 1px solid var(--border);
-      white-space: nowrap;
+      padding: 9px 16px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap;
     }
     .tbl th:first-child { text-align: left; }
     .tbl td {
       font-family: var(--font-data); font-size: 12px; color: var(--text);
-      padding: 9px 16px; text-align: right; border-bottom: 1px solid var(--border);
-      white-space: nowrap;
+      padding: 9px 16px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap;
     }
     .tbl td:first-child { text-align: left; }
     .tbl tr:last-child td { border-bottom: none; }
@@ -204,12 +171,14 @@
     .pill-s { background: var(--loss-bg);   color: var(--loss);   border: 1px solid rgba(255,64,64,.2);  }
     .pill-b { background: var(--profit-bg); color: var(--profit); border: 1px solid rgba(0,230,118,.2); }
     .pill-e { background: var(--loss-bg);   color: var(--loss);   border: 1px solid rgba(255,64,64,.2);  }
+    .pill-t { background: var(--gold-bg);   color: var(--gold);   border: 1px solid rgba(255,193,66,.2); }
 
     .p  { color: var(--profit) !important; }
     .l  { color: var(--loss)   !important; }
     .ac { color: var(--accent) !important; }
     .gd { color: var(--gold)   !important; }
     .mu { color: var(--muted)  !important; }
+    .wn { color: var(--warn)   !important; }
 
     .empty {
       padding: 28px 16px; text-align: center;
@@ -217,72 +186,118 @@
       text-transform: uppercase; color: var(--muted);
     }
 
+    /* ─── ORDERS SIDEBAR ─────────────────────── */
+    .ord-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 14px; border-bottom: 1px solid var(--border); gap: 8px;
+    }
+    .ord-row:last-child { border-bottom: none; }
+    .ord-row:hover { background: var(--surface-alt); }
+    .ord-left { display: flex; align-items: center; gap: 8px; }
+    .ord-right { text-align: right; }
+    .ord-price { font-family: var(--font-data); font-size: 12px; color: var(--accent); }
+    .ord-notional { font-family: var(--font-data); font-size: 10px; color: var(--muted); }
+    .ord-type { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+
     /* ─── SIDEBAR: MODEL USAGE ───────────────── */
     .model-body { padding: 14px 16px; }
     .model-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
-    .model-item-label {
-      font-family: var(--font-label); font-size: 10px; font-weight: 600;
-      letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
-      margin-bottom: 3px;
-    }
-    .model-item-val {
-      font-family: var(--font-num); font-size: 18px; font-weight: 700;
-    }
+    .model-item-label { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+    .model-item-val { font-family: var(--font-num); font-size: 18px; font-weight: 700; }
     .model-item-val.ac { color: var(--accent); }
-    .model-bar-track {
-      height: 4px; background: var(--border-2); margin: 4px 0 10px;
-    }
-    .model-bar-fill {
-      height: 100%; background: var(--accent); transition: width .6s ease;
-    }
+    .model-bar-track { height: 4px; background: var(--border-2); margin: 4px 0 10px; }
+    .model-bar-fill { height: 100%; background: var(--accent); transition: width .6s ease; }
     .llm-cost-row {
       display: flex; align-items: center; justify-content: space-between;
       margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-2);
     }
-    .llm-cost-input-wrap {
-      display: flex; align-items: center; gap: 3px;
-      font-family: var(--font-num); font-size: 14px; font-weight: 600; color: var(--text);
-    }
+    .llm-cost-input-wrap { display: flex; align-items: center; gap: 3px; font-family: var(--font-num); font-size: 14px; font-weight: 600; color: var(--text); }
     .llm-cost-input-wrap span { color: var(--muted); font-size: 12px; }
     #llm-cost-input {
       width: 72px; background: var(--border-2); border: 1px solid var(--border-2);
       border-radius: 4px; color: var(--text); font-family: var(--font-num);
-      font-size: 14px; font-weight: 600; padding: 2px 5px; text-align: right;
-      outline: none;
+      font-size: 14px; font-weight: 600; padding: 2px 5px; text-align: right; outline: none;
     }
     #llm-cost-input:focus { border-color: var(--accent); }
 
     /* ─── DECISIONS ──────────────────────────── */
     .dec-row {
-      display: flex; align-items: flex-start; gap: 14px;
-      padding: 9px 16px; border-bottom: 1px solid var(--border);
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
     }
     .dec-row:last-child { border-bottom: none; }
     .dec-row:hover { background: var(--surface-alt); }
-    .dec-meta {
-      flex-shrink: 0; min-width: 110px;
-      font-family: var(--font-label); font-size: 10px; letter-spacing: .07em;
-      text-transform: uppercase; color: var(--muted); line-height: 1.8;
+
+    .dec-header {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
     }
-    .dec-meta b { display: block; color: var(--text); font-weight: 600; }
+    .dec-meta {
+      flex-shrink: 0;
+      font-family: var(--font-label); font-size: 10px; letter-spacing: .07em;
+      text-transform: uppercase; color: var(--muted);
+    }
+    .dec-meta b { color: var(--text); font-weight: 600; font-size: 11px; }
+    .dec-acval {
+      margin-left: auto;
+      font-family: var(--font-data); font-size: 10px; color: var(--muted);
+    }
     .dec-chips { display: flex; flex-wrap: wrap; gap: 5px; }
     .chip {
       display: inline-flex; align-items: center; gap: 5px;
-      padding: 3px 9px; background: var(--surface-alt);
-      border: 1px solid var(--border-2);
+      padding: 3px 9px; background: var(--surface-alt); border: 1px solid var(--border-2);
       font-family: var(--font-data); font-size: 10px; cursor: default;
-      transition: border-color .15s;
     }
-    .chip:hover { border-color: var(--border-2); background: var(--bg); }
     .chip-asset { color: var(--text); font-weight: 600; font-size: 11px; }
     .chip-action {
       font-family: var(--font-label); font-size: 9px; font-weight: 700;
       letter-spacing: .07em; text-transform: uppercase;
     }
-    .chip-action.buy   { color: var(--profit); }
-    .chip-action.sell  { color: var(--loss); }
-    .chip-action.hold  { color: var(--muted); }
+    .chip-action.buy           { color: var(--profit); }
+    .chip-action.sell          { color: var(--loss); }
     .chip-action.cancel_limits { color: var(--gold); }
+    .chip-action.change_tpsl   { color: var(--accent); }
+    .chip-action.close         { color: var(--warn); }
+    .chip-alloc {
+      font-family: var(--font-data); font-size: 9px; color: var(--muted);
+    }
+
+    .dec-rationale-wrap { margin-top: 8px; }
+    .dec-rationale {
+      font-family: var(--font-data); font-size: 11px; color: var(--muted);
+      line-height: 1.55; overflow: hidden;
+    }
+    .dec-rationale.collapsed { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .dec-toggle {
+      margin-top: 3px; background: none; border: none; cursor: pointer; padding: 0;
+      font-family: var(--font-label); font-size: 9px; font-weight: 600;
+      letter-spacing: .08em; text-transform: uppercase; color: var(--border-2);
+    }
+    .dec-toggle:hover { color: var(--muted); }
+
+    /* per-asset rationale grid */
+    .dec-assets { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .dec-asset-block { display: flex; gap: 10px; align-items: flex-start; }
+    .dec-asset-label {
+      flex-shrink: 0; min-width: 70px;
+      font-family: var(--font-label); font-size: 9px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase; padding-top: 1px;
+    }
+    .dec-asset-text {
+      font-family: var(--font-data); font-size: 11px; color: var(--muted);
+      line-height: 1.5;
+    }
+    .dec-asset-text.collapsed { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* ─── ASSET P&L BREAKDOWN ────────────────── */
+    .asset-bar-wrap { padding: 10px 14px; }
+    .asset-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .asset-row:last-child { margin-bottom: 0; }
+    .asset-name { min-width: 55px; font-family: var(--font-label); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .asset-bar-track { flex: 1; height: 4px; background: var(--border-2); overflow: hidden; }
+    .asset-bar-fill { height: 100%; transition: width .5s ease; }
+    .asset-bar-fill.p { background: var(--profit); }
+    .asset-bar-fill.l { background: var(--loss); }
+    .asset-pnl { min-width: 64px; text-align: right; font-family: var(--font-data); font-size: 11px; }
+    .asset-ct { min-width: 28px; text-align: right; font-family: var(--font-data); font-size: 10px; color: var(--muted); }
 
     /* ─── CONNECTING OVERLAY ─────────────────── */
     #overlay {
@@ -291,27 +306,17 @@
       gap: 20px; transition: opacity .4s;
     }
     #overlay.gone { opacity: 0; pointer-events: none; }
-    .ov-logo {
-      font-family: var(--font-num); font-size: 32px; font-weight: 900;
-      letter-spacing: .2em;
-    }
+    .ov-logo { font-family: var(--font-num); font-size: 32px; font-weight: 900; letter-spacing: .2em; }
     .ov-logo em { color: var(--accent); font-style: normal; }
     .spinner {
-      width: 36px; height: 36px;
-      border: 2px solid var(--border-2); border-top-color: var(--accent);
+      width: 36px; height: 36px; border: 2px solid var(--border-2); border-top-color: var(--accent);
       border-radius: 50%; animation: spin .7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .ov-msg {
-      font-family: var(--font-label); font-size: 11px; letter-spacing: .12em;
-      text-transform: uppercase; color: var(--muted);
-    }
+    .ov-msg { font-family: var(--font-label); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 
     /* ─── ANIMATIONS ─────────────────────────── */
-    @keyframes rise {
-      from { opacity:0; transform: translateY(6px); }
-      to   { opacity:1; transform: translateY(0); }
-    }
+    @keyframes rise { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: translateY(0); } }
     .flash { animation: flash .35s ease; }
     @keyframes flash { 0%{opacity:.4} 100%{opacity:1} }
   </style>
@@ -342,6 +347,13 @@
       </div>
     </div>
   </header>
+
+  <!-- Circuit breaker banner -->
+  <div class="cb-banner" id="cb-banner">
+    <div class="cb-dot"></div>
+    CIRCUIT BREAKER ACTIVE — no new entries permitted
+    <span id="cb-detail" style="margin-left:auto;font-weight:400;letter-spacing:.05em;text-transform:none;font-family:var(--font-data);font-size:10px"></span>
+  </div>
 
   <!-- Metrics strip -->
   <div class="metrics">
@@ -374,6 +386,35 @@
     </div>
   </div>
 
+  <!-- Strategy stats strip -->
+  <div class="stats-strip">
+    <div class="sc">
+      <div class="sl">Win Rate</div>
+      <div class="sv" id="ss-winrate">—</div>
+    </div>
+    <div class="sc">
+      <div class="sl">Profit Factor</div>
+      <div class="sv" id="ss-pf">—</div>
+    </div>
+    <div class="sc">
+      <div class="sl">Avg Win / Avg Loss</div>
+      <div class="sv" id="ss-avgratio">—</div>
+    </div>
+    <div class="sc">
+      <div class="sl">Best / Worst Trade</div>
+      <div class="sv" id="ss-extremes">—</div>
+    </div>
+    <div class="sc">
+      <div class="sl">Action Rate</div>
+      <div class="sv" id="ss-actrate">—</div>
+      <div style="font-family:var(--font-data);font-size:10px;color:var(--muted);margin-top:2px" id="ss-actrate-sub"></div>
+    </div>
+    <div class="sc">
+      <div class="sl">Avg P&amp;L / Trade</div>
+      <div class="sv" id="ss-avgpnl">—</div>
+    </div>
+  </div>
+
   <!-- Main grid -->
   <div class="grid">
 
@@ -389,13 +430,13 @@
     <!-- Sidebar -->
     <div class="g-side">
 
-      <!-- Limit orders -->
+      <!-- Open orders (all types) -->
       <div class="card">
         <div class="card-head">
-          <span class="card-title">Resting Limit Orders</span>
+          <span class="card-title">Open Orders</span>
           <span class="card-badge" id="ord-badge">0 orders</span>
         </div>
-        <div id="ord-body"><div class="empty">No resting orders</div></div>
+        <div id="ord-body"><div class="empty">No open orders</div></div>
       </div>
 
       <!-- Model usage -->
@@ -438,9 +479,17 @@
         </div>
       </div>
 
+      <!-- Asset P&L breakdown -->
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">P&amp;L by Asset</span>
+          <span class="card-badge" id="asset-badge"></span>
+        </div>
+        <div id="asset-body"><div class="empty">No data</div></div>
+      </div>
+
     </div><!-- /sidebar -->
 
-    <!-- Fills -->
     <!-- Completed trades -->
     <div class="card g-history">
       <div class="card-head">
@@ -450,13 +499,13 @@
       <div id="hist-body"><div class="empty">No completed trades with known P&L</div></div>
     </div>
 
-    <!-- Decisions -->
+    <!-- Non-hold Decisions -->
     <div class="card g-dec">
       <div class="card-head">
         <span class="card-title">Agent Decisions</span>
-        <span class="card-badge">hover chip for rationale</span>
+        <span class="card-badge" id="dec-badge">non-hold only</span>
       </div>
-      <div id="dec-body"><div class="empty">No decisions yet</div></div>
+      <div id="dec-body"><div class="empty">No actionable decisions yet</div></div>
     </div>
 
   </div><!-- /grid -->
@@ -483,11 +532,7 @@
   };
   const fUptime = m => { if(!m) return '—'; const h=Math.floor(m/60),mm=Math.floor(m%60); return h?`${h}h ${mm}m`:`${mm}m`; };
 
-  function setTxt(id, val) {
-    const el = document.getElementById(id);
-    if (el) { el.textContent = val; }
-  }
-
+  function setTxt(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
   function pClass(v) { return +v >= 0 ? 'p' : 'l'; }
 
   // ── LLM Cost (localStorage) ───────────────────
@@ -500,9 +545,22 @@
     input.addEventListener('change', () => {
       const val = parseFloat(input.value) || 0;
       localStorage.setItem(LLM_COST_KEY, val);
-      // Re-render history card with updated cost (reuse last fetched data)
       if (window._lastHist) renderHistory(window._lastHist);
     });
+  }
+
+  // ── Circuit Breaker Detection ─────────────────
+  function detectCircuitBreaker(data) {
+    const decisions = data.recent_decisions || [];
+    if (!decisions.length) return false;
+    const last = decisions[decisions.length - 1];
+    const items = last.decisions || [];
+    const cbCount = items.filter(i => i.action === 'hold' && /circuit breaker/i.test(i.rationale || '')).length;
+    return cbCount >= Math.max(1, items.length / 2);
+  }
+
+  function updateCbBanner(active) {
+    document.getElementById('cb-banner').classList.toggle('active', active);
   }
 
   // ── Metrics ──────────────────────────────────
@@ -510,7 +568,6 @@
     const acc = d.account || {};
     const bal  = acc.balance;
     const av   = acc.account_value;
-
     const positions = (acc.positions || []).filter(p => p.symbol !== 'BTC');
     const upnl = positions.reduce((s,p) => s + (+p.unrealized_pnl||0), 0);
 
@@ -541,7 +598,110 @@
     if (subId) setTxt(subId, subTxt || '—');
   }
 
-  // ── All-Time / Daily / Weekly P&L ────────────
+  // ── Strategy Stats ────────────────────────────
+  function renderStrategyStats(h, data) {
+    if (!h) return;
+    const trades = (h.trades || []).filter(t => t.pnl != null);
+
+    const wins = trades.filter(t => +t.pnl > 0);
+    const losses = trades.filter(t => +t.pnl < 0);
+    const winRate = trades.length ? (wins.length / trades.length * 100) : null;
+    const grossWins = wins.reduce((s,t) => s + (+t.pnl), 0);
+    const grossLoss = Math.abs(losses.reduce((s,t) => s + (+t.pnl), 0));
+    const pf = grossLoss > 0 ? grossWins / grossLoss : null;
+    const avgWin = wins.length ? grossWins / wins.length : null;
+    const avgLoss = losses.length ? grossLoss / losses.length : null;
+    const best = trades.reduce((b,t) => (+t.pnl > +b.pnl ? t : b), trades[0] || {});
+    const worst = trades.reduce((w,t) => (+t.pnl < +w.pnl ? t : w), trades[0] || {});
+    const avgPnl = trades.length ? (h.total_realized_pnl || 0) / trades.length : null;
+
+    // win rate
+    const wrEl = document.getElementById('ss-winrate');
+    if (wrEl) {
+      wrEl.textContent = winRate != null ? winRate.toFixed(1) + '%' : '—';
+      wrEl.className = 'sv ' + (winRate != null ? (winRate >= 50 ? 'p' : 'l') : '');
+    }
+
+    // profit factor
+    const pfEl = document.getElementById('ss-pf');
+    if (pfEl) {
+      pfEl.textContent = pf != null ? pf.toFixed(2) + '×' : '—';
+      pfEl.className = 'sv ' + (pf != null ? (pf >= 1 ? 'p' : 'l') : '');
+    }
+
+    // avg win / avg loss ratio
+    const ratioEl = document.getElementById('ss-avgratio');
+    if (ratioEl) {
+      if (avgWin != null && avgLoss != null) {
+        ratioEl.innerHTML = `<span class="p">${fAbs(avgWin)}</span> <span class="mu">/</span> <span class="l">${fAbs(avgLoss)}</span>`;
+      } else {
+        ratioEl.textContent = '—';
+      }
+    }
+
+    // best / worst
+    const extEl = document.getElementById('ss-extremes');
+    if (extEl && trades.length) {
+      extEl.innerHTML = `<span class="p">${fSign(best.pnl)}</span> <span class="mu">/</span> <span class="l">${fSign(worst.pnl)}</span>`;
+    }
+
+    // action rate
+    const decisions = data.recent_decisions || [];
+    const actionCycles = decisions.filter(d => d.decisions && d.decisions.some(i => i.action !== 'hold')).length;
+    const totalCycles = decisions.length;
+    const actionRate = totalCycles ? actionCycles / totalCycles * 100 : null;
+    const arEl = document.getElementById('ss-actrate');
+    if (arEl) {
+      arEl.textContent = actionRate != null ? actionRate.toFixed(0) + '%' : '—';
+      arEl.className = 'sv';
+    }
+    setTxt('ss-actrate-sub', totalCycles ? `${actionCycles}/${totalCycles} cycles` : '');
+
+    // avg pnl
+    const apEl = document.getElementById('ss-avgpnl');
+    if (apEl) {
+      apEl.textContent = avgPnl != null ? fSign(avgPnl) : '—';
+      apEl.className = 'sv ' + (avgPnl != null ? pClass(avgPnl) : '');
+    }
+  }
+
+  // ── Asset P&L Breakdown ───────────────────────
+  function renderAssetBreakdown(h) {
+    if (!h) return;
+    const trades = (h.trades || []).filter(t => t.pnl != null && t.asset);
+    if (!trades.length) {
+      document.getElementById('asset-body').innerHTML = '<div class="empty">No data</div>';
+      return;
+    }
+
+    const byAsset = {};
+    for (const t of trades) {
+      const a = t.asset;
+      if (!byAsset[a]) byAsset[a] = { pnl: 0, count: 0 };
+      byAsset[a].pnl += +t.pnl;
+      byAsset[a].count++;
+    }
+
+    const entries = Object.entries(byAsset).sort((a,b) => b[1].pnl - a[1].pnl);
+    const maxAbs = Math.max(...entries.map(([,v]) => Math.abs(v.pnl)), 0.01);
+
+    setTxt('asset-badge', `${entries.length} assets`);
+
+    const rows = entries.map(([asset, v]) => {
+      const barPct = (Math.abs(v.pnl) / maxAbs * 100).toFixed(1);
+      const cls = v.pnl >= 0 ? 'p' : 'l';
+      return `<div class="asset-row">
+        <span class="asset-name ${cls}">${asset}</span>
+        <div class="asset-bar-track"><div class="asset-bar-fill ${cls}" style="width:${barPct}%"></div></div>
+        <span class="asset-pnl ${cls}">${fSign(v.pnl)}</span>
+        <span class="asset-ct">${v.count}t</span>
+      </div>`;
+    }).join('');
+
+    document.getElementById('asset-body').innerHTML = `<div class="asset-bar-wrap">${rows}</div>`;
+  }
+
+  // ── History / P&L Cards ───────────────────────
   function renderHistory(h) {
     if (!h) return;
     const pnl = h.total_realized_pnl;
@@ -549,7 +709,6 @@
     const fees = h.total_fees;
     const count = h.completed_trades || 0;
 
-    // All-time card
     const atEl = document.getElementById('v-atpnl');
     const atCard = document.getElementById('mc-atpnl');
     if (atEl) {
@@ -562,7 +721,6 @@
       ? `gross ${fSign(gross)} − fees ${fAbs(fees)}${llmCost > 0 ? ` − llm ${fAbs(llmCost)}` : ''}`
       : `${count} closed`;
     setTxt('v-atpnl-sub', subLine);
-    // Adjust all-time card value to reflect LLM cost
     if (atEl && pnl != null && llmCost > 0) {
       const net = pnl - llmCost;
       atEl.textContent = fSign(net);
@@ -571,13 +729,11 @@
     }
     setTxt('hist-badge', `all-time · ${count} trades`);
 
-    // Daily card
     const d = h.daily || {};
     _setPnlCard('v-dpnl', 'mc-dpnl', 'v-dpnl-sub',
       d.net_pnl,
       d.trades != null ? `${d.trades} trade${d.trades===1?'':'s'} · fees ${fAbs(d.fees)}` : '—');
 
-    // Weekly card
     const w = h.weekly || {};
     _setPnlCard('v-wpnl', 'mc-wpnl', 'v-wpnl-sub',
       w.net_pnl,
@@ -658,63 +814,107 @@
       </table>`;
   }
 
-  // ── Limit Orders ─────────────────────────────
+  // ── Open Orders (all types) ───────────────────
   function renderOrders(d) {
-    const orders = (d.account?.open_orders||[]).filter(o => !o.trigger_price);
+    const all = d.account?.open_orders || [];
     document.getElementById('ord-badge').textContent =
-      orders.length + (orders.length===1?' order':' orders');
+      all.length + (all.length===1?' order':' orders');
 
-    if (!orders.length) {
-      document.getElementById('ord-body').innerHTML = '<div class="empty">No resting orders</div>';
+    if (!all.length) {
+      document.getElementById('ord-body').innerHTML = '<div class="empty">No open orders</div>';
       return;
     }
 
-    const rows = orders.map(o => {
-      const notional = (Math.abs(+o.size||0)) * (+o.price||0);
-      return `<tr>
-        <td><span class="sym">${o.coin||'—'}</span></td>
-        <td>${o.is_buy ? '<span class="pill pill-b">Buy</span>' : '<span class="pill pill-e">Sell</span>'}</td>
-        <td>${f(o.size,4)}</td>
-        <td class="ac">${fAbs(o.price)}</td>
-        <td class="mu">${fAbs(notional)}</td>
-      </tr>`;
+    const rows = all.map(o => {
+      const isTrigger = !!o.trigger_price;
+      const price = isTrigger ? (+o.trigger_price) : (+o.price);
+      const notional = Math.abs(+o.size||0) * price;
+      const sidePill = o.is_buy
+        ? '<span class="pill pill-b">Buy</span>'
+        : '<span class="pill pill-e">Sell</span>';
+      const typeLabel = isTrigger ? '<span class="pill pill-t">Trigger</span>' : '<span class="pill" style="background:var(--accent-bg);color:var(--accent);border:1px solid rgba(77,140,255,.2)">Limit</span>';
+      return `<div class="ord-row">
+        <div class="ord-left">
+          <span class="sym" style="font-size:12px">${o.coin||'—'}</span>
+          ${sidePill}
+          ${typeLabel}
+        </div>
+        <div class="ord-right">
+          <div class="ord-price">${fAbs(price)}</div>
+          <div class="ord-notional">${fAbs(notional)} · ${f(o.size,4)}</div>
+        </div>
+      </div>`;
     }).join('');
 
-    document.getElementById('ord-body').innerHTML = `
-      <table class="tbl">
-        <thead><tr><th>Asset</th><th>Side</th><th>Size</th><th>Limit</th><th>Notional</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+    document.getElementById('ord-body').innerHTML = rows;
   }
 
-  // ── Fills ────────────────────────────────────
-  // ── Decisions ────────────────────────────────
+  // ── Decisions (non-hold only) ─────────────────
   function renderDecisions(d) {
-    const decisions = [...(d.recent_decisions||[])].reverse().slice(0,15);
-    if (!decisions.length) {
-      document.getElementById('dec-body').innerHTML = '<div class="empty">No decisions yet</div>';
+    const allDecs = [...(d.recent_decisions||[])].reverse();
+
+    // Filter: only rows that have at least one non-hold decision
+    const actionable = allDecs.filter(dec =>
+      (dec.decisions||[]).some(item => item.action !== 'hold')
+    ).slice(0, 20);
+
+    const total = allDecs.length;
+    const shown = actionable.length;
+    setTxt('dec-badge', `${shown} actionable / ${total} cycles shown`);
+
+    if (!actionable.length) {
+      document.getElementById('dec-body').innerHTML = '<div class="empty">No actionable decisions in recent cycles</div>';
       return;
     }
 
-    const rows = decisions.map(dec => {
-      const chips = (dec.decisions||[]).map(item => {
+    const rows = actionable.map((dec, di) => {
+      const nonHold = (dec.decisions||[]).filter(item => item.action !== 'hold');
+      const chips = nonHold.map(item => {
         const ac = item.action || 'hold';
-        const rationale = (item.rationale||'').replace(/"/g,'&quot;');
-        return `<div class="chip" title="${rationale}">
+        const alloc = item.allocation_usd ? `<span class="chip-alloc">${fAbs(item.allocation_usd, 0)}</span>` : '';
+        return `<div class="chip">
           <span class="chip-asset">${item.asset}</span>
-          <span class="chip-action ${ac}">${ac}</span>
+          <span class="chip-action ${ac}">${ac.replace(/_/g,' ')}</span>
+          ${alloc}
         </div>`;
       }).join('');
-      return `<div class="dec-row">
-        <div class="dec-meta">
-          Cycle <b>#${dec.cycle||'—'}</b>
-          ${fTime(dec.timestamp)}
+
+      // Per-asset rationale for non-hold items
+      const ratBlocks = nonHold.map(item => {
+        const rat = item.rationale || '';
+        const id = `rat-${di}-${item.asset.replace(/[^a-z0-9]/gi,'_')}`;
+        const cls = item.action === 'hold' ? 'mu' : (item.action === 'buy' ? 'p' : item.action === 'sell' ? 'l' : 'gd');
+        return `<div class="dec-asset-block">
+          <span class="dec-asset-label ${cls}">${item.asset}<br><span style="color:var(--muted)">${item.action.replace(/_/g,' ')}</span></span>
+          <div class="dec-asset-text collapsed" id="${id}">${escHtml(rat)}</div>
         </div>
-        <div class="dec-chips">${chips}</div>
+        <button class="dec-toggle" onclick="toggleRat('${id}', this)">▾ show more</button>`;
+      }).join('');
+
+      const acv = dec.account_value != null ? `acv ${fAbs(dec.account_value)}` : '';
+
+      return `<div class="dec-row">
+        <div class="dec-header">
+          <div class="dec-meta">Cycle <b>#${dec.cycle||'—'}</b> ${fTime(dec.timestamp)}</div>
+          <div class="dec-chips">${chips}</div>
+          <div class="dec-acval">${acv}</div>
+        </div>
+        <div class="dec-assets">${ratBlocks}</div>
       </div>`;
     }).join('');
 
     document.getElementById('dec-body').innerHTML = rows;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function toggleRat(id, btn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const collapsed = el.classList.toggle('collapsed');
+    btn.textContent = collapsed ? '▾ show more' : '▴ collapse';
   }
 
   // ── Model usage ──────────────────────────────
@@ -760,8 +960,11 @@
       renderOrders(data);
       window._lastHist = hist;
       renderHistory(hist);
+      renderStrategyStats(hist, data);
+      renderAssetBreakdown(hist);
       renderDecisions(data);
       renderModel(data);
+      updateCbBanner(detectCircuitBreaker(data));
       startProgress();
     } catch (e) {
       console.warn('Fetch failed:', e);
