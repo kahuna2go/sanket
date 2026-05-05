@@ -7,7 +7,16 @@ so the trading loop is never blocked.
 
 import asyncio
 import logging
+import ssl
 from datetime import datetime, timezone, timedelta
+
+
+def _ssl_ctx() -> ssl.SSLContext:
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
 
 
 async def get_macro_context() -> dict:
@@ -45,7 +54,8 @@ async def get_macro_context() -> dict:
 async def _fetch_fear_greed() -> int:
     import aiohttp
     timeout = aiohttp.ClientTimeout(total=10)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    connector = aiohttp.TCPConnector(ssl=_ssl_ctx())
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         async with session.get("https://api.alternative.me/fng/") as resp:
             data = await resp.json(content_type=None)
             return int(data["data"][0]["value"])
@@ -68,7 +78,8 @@ async def _fetch_high_impact_event() -> bool:
     )
 
     timeout = aiohttp.ClientTimeout(total=10)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    connector = aiohttp.TCPConnector(ssl=_ssl_ctx())
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
         async with session.get(url) as resp:
             data = await resp.json(content_type=None)
 
