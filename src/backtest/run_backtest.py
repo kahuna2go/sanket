@@ -28,6 +28,8 @@ import asyncio
 import pathlib
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent))
 
@@ -43,20 +45,34 @@ from src.backtest.fetch_history import load_cache, fetch_all, save_cache
 
 MIN_TRADES = 200
 
+_VIENNA_TZ = ZoneInfo("Europe/Vienna")
+_LONDON_START = 8 + 30 / 60  # 08:30
+_LONDON_END   = 11.5          # 11:30
+_NY_START     = 16.0          # 16:00
+_NY_END       = 20.0          # 20:00
+
+
+def _in_session(ts_ms: int) -> bool:
+    hf = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).astimezone(_VIENNA_TZ)
+    hf = hf.hour + hf.minute / 60
+    return (_LONDON_START <= hf < _LONDON_END) or (_NY_START <= hf < _NY_END)
+
 
 @dataclass
 class SimConfig:
     volume_filter: bool = False   # require bar volume > 20-bar vol SMA
     tight_rsi: bool = False       # 55-65 long / 35-45 short instead of 50-70 / 30-50
     rr3: bool = False             # 3:1 R:R: TP = 2.25×ATR, SL = 0.75×ATR (payout +3/−1)
+    session_filter: bool = False  # London 08:30-11:30 and NY 16:00-20:00 Vienna only
     label: str = "Baseline (2:1)"
 
 
 ALL_CONFIGS = [
     SimConfig(rr3=True, label="Baseline (3:1)"),
-    SimConfig(rr3=True, volume_filter=True, label="+ Volume filter"),
-    SimConfig(rr3=True, tight_rsi=True, label="+ Tight RSI"),
-    SimConfig(rr3=True, volume_filter=True, tight_rsi=True, label="+ Volume + Tight RSI"),
+    SimConfig(rr3=True, session_filter=True, label="+ Session filter"),
+    SimConfig(rr3=True, session_filter=True, volume_filter=True, label="+ Session + Volume"),
+    SimConfig(rr3=True, session_filter=True, tight_rsi=True, label="+ Session + Tight RSI"),
+    SimConfig(rr3=True, session_filter=True, volume_filter=True, tight_rsi=True, label="+ Session + Volume + Tight RSI"),
     SimConfig(label="Reference: old 2:1 R:R"),
 ]
 
@@ -164,6 +180,9 @@ def _run_simulation(candles_5m: list, bias_list: list[dict], cfg: SimConfig) -> 
                 elif bar["low"] <= tp:
                     trades.append(win_payout)
                     in_trade = False
+            continue
+
+        if cfg.session_filter and not _in_session(bar["t"]):
             continue
 
         bias = _get_4h_bias_at(bias_list, bar["t"])
