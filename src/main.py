@@ -744,14 +744,38 @@ def main():
             model_usage["sonnet"] += 1
             last_sonnet_time = datetime.now(timezone.utc)
             last_sonnet_prices = dict(asset_prices)
+
+            # Asset triage: on health-check or first-run, evaluate everything.
+            # Otherwise only evaluate assets that moved or have an open position.
+            assets_with_position = {tr['asset'] for tr in active_trades}
+            if first_run or health_check_due:
+                assets_to_evaluate = list(args.assets)
+                assets_auto_hold = []
+            else:
+                assets_to_evaluate = []
+                assets_auto_hold = []
+                for _a in args.assets:
+                    _cur = asset_prices.get(_a)
+                    _last = last_sonnet_prices.get(_a)
+                    _moved = (
+                        _cur is not None and _last is not None and _last != 0
+                        and abs(_cur - _last) / _last > price_move_threshold
+                    )
+                    if _a in assets_with_position or _moved:
+                        assets_to_evaluate.append(_a)
+                    else:
+                        assets_auto_hold.append(_a)
+
             add_event(
                 f"Sonnet triggered: first_run={first_run}, price_moved={price_moved}, "
-                f"tpsl_near={tpsl_near}, health_check_due={health_check_due}"
+                f"tpsl_near={tpsl_near}, health_check_due={health_check_due} — "
+                f"evaluating {len(assets_to_evaluate)}/{len(args.assets)} assets"
+                + (f" | auto-hold (quiet): {assets_auto_hold}" if assets_auto_hold else "")
             )
 
             # Heavy: gather full market data (OI, funding, candles, indicators) only when LLM fires
             market_sections = []
-            for asset in args.assets:
+            for asset in assets_to_evaluate:
                 try:
                     current_price = asset_prices.get(asset)
                     oi = await hyperliquid.get_open_interest(asset)
@@ -821,12 +845,12 @@ def main():
                 ("risk_limits", risk_mgr.get_risk_summary()),
                 ("market_data", market_sections),
                 ("instructions", {
-                    "assets": args.assets,
+                    "assets": assets_to_evaluate,
                     "requirement": "Decide actions for all assets and return a strict JSON object matching the schema."
                 })
             ])
             context = json.dumps(context_payload, default=json_default)
-            add_event(f"Combined prompt length: {len(context)} chars for {len(args.assets)} assets")
+            add_event(f"Combined prompt length: {len(context)} chars for {len(assets_to_evaluate)} assets")
             with open("prompts.log", "a") as f:
                 f.write(f"\n\n--- {datetime.now()} - ALL ASSETS ---\n{json.dumps(context_payload, indent=2, default=json_default)}\n")
 
@@ -848,7 +872,7 @@ def main():
                     return True
 
             try:
-                outputs = agent.decide_trade(args.assets, context, model=agent.model, macro_context=macro_ctx)
+                outputs = agent.decide_trade(assets_to_evaluate, context, model=agent.model, macro_context=macro_ctx)
                 if not isinstance(outputs, dict):
                     add_event(f"Invalid output format (expected dict): {outputs}")
                     outputs = {}
@@ -867,7 +891,7 @@ def main():
                 ])
                 context_retry = json.dumps(context_retry_payload, default=json_default)
                 try:
-                    outputs = agent.decide_trade(args.assets, context_retry, model=agent.model, macro_context=macro_ctx)
+                    outputs = agent.decide_trade(assets_to_evaluate, context_retry, model=agent.model, macro_context=macro_ctx)
                     if not isinstance(outputs, dict):
                         add_event(f"Retry invalid format: {outputs}")
                         outputs = {}
