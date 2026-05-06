@@ -55,7 +55,7 @@ class TradingAgent:
             "Core Entry Logic — crypto assets (BTC, ETH, SOL, and other pure-crypto perps)\n"
             "Use Momentum Breakout only:\n"
             "  4h bias (all required): EMA20 > EMA50, MACD histogram positive, ADX > 25\n"
-            "  5m entry (all required): close breaks above previous bar high, OBV rising, RSI 50–70\n"
+            "  5m entry (all required): close breaks above previous bar high, OBV rising, RSI 55–65\n"
             "  TP: 2.25× ATR14 above entry. SL: 0.75× ATR14 below entry (R:R = 3:1)\n"
             "  No new opens when ADX < 25 on any asset.\n"
             "  Minimum thesis_strength to open: 4. Do not open new crypto positions at thesis_strength ≤ 3.\n\n"
