@@ -743,6 +743,7 @@ def main():
 
             model_usage["sonnet"] += 1
             last_sonnet_time = datetime.now(timezone.utc)
+            _prev_sonnet_prices = dict(last_sonnet_prices)  # snapshot before overwrite
             last_sonnet_prices = dict(asset_prices)
 
             # Asset triage: on health-check or first-run, evaluate everything.
@@ -756,7 +757,7 @@ def main():
                 assets_auto_hold = []
                 for _a in args.assets:
                     _cur = asset_prices.get(_a)
-                    _last = last_sonnet_prices.get(_a)
+                    _last = _prev_sonnet_prices.get(_a)
                     _moved = (
                         _cur is not None and _last is not None and _last != 0
                         and abs(_cur - _last) / _last > price_move_threshold
