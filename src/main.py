@@ -14,6 +14,7 @@ import asyncio
 import logging
 from collections import deque, OrderedDict
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import math  # For Sharpe
 from dotenv import load_dotenv
 import os
@@ -25,6 +26,26 @@ from src.utils.prompt_utils import json_default, round_or_none, round_series
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+
+_VIENNA_TZ = ZoneInfo("Europe/Vienna")
+
+# Active trading windows (Vienna local time)
+_LONDON_START = 8 + 30 / 60  # 08:30 — 30 min after London open
+_LONDON_END   = 11.5          # 11:30
+_NY_START     = 16.0          # 16:00
+_NY_END       = 20.0          # 20:00
+
+
+def _get_session(utc_now: datetime) -> dict:
+    hf = utc_now.astimezone(_VIENNA_TZ)
+    hf = hf.hour + hf.minute / 60
+    if _LONDON_START <= hf < _LONDON_END:
+        return {"name": "london", "active": True,  "interval_secs": 180, "move_pct": 0.003}
+    elif _NY_START <= hf < _NY_END:
+        return {"name": "ny",     "active": True,  "interval_secs": 300, "move_pct": 0.003}
+    else:
+        return {"name": "off",    "active": False, "interval_secs": 900, "move_pct": 0.005}
 
 
 def clear_terminal():
@@ -188,13 +209,18 @@ def main():
 
         while True:
             invocation_count += 1
-            minutes_since_start = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
+            _loop_now = datetime.now(timezone.utc)
+            _session = _get_session(_loop_now)
+            minutes_since_start = (_loop_now - start_time).total_seconds() / 60
 
             macro_ctx = await get_macro_context()
+            if not _session["active"] and not macro_ctx.get("block_new_opens"):
+                macro_ctx["block_new_opens"] = True
+            macro_ctx["session"] = _session["name"]
             with open("llm_requests.log", "a", encoding="utf-8") as _mf:
                 _mf.write(f"\n=== Macro context {datetime.now(timezone.utc).isoformat()} ===\n{json.dumps(macro_ctx)}\n")
             if macro_ctx["block_new_opens"]:
-                logging.info("Macro filter: high-impact event imminent — new opens blocked this cycle")
+                logging.info("Macro filter: block_new_opens=True (session=%s)", _session["name"])
 
             # Global account state
             state = await hyperliquid.get_user_state()
@@ -696,6 +722,8 @@ def main():
             #   3. Any open position is within SONNET_TPSL_PROXIMITY_PCT of its TP or SL
             #   4. Open positions exist and Sonnet hasn't run in SONNET_HEALTH_CHECK_MINUTES
             price_move_threshold = float(CONFIG.get("sonnet_price_move_pct") or 0.5) / 100.0
+            if _session["active"]:
+                price_move_threshold = min(price_move_threshold, _session["move_pct"])
             tpsl_proximity = float(CONFIG.get("sonnet_tpsl_proximity_pct") or 1.25) / 100.0
             health_check_minutes = int(float(CONFIG.get("sonnet_health_check_minutes") or 60))
 
@@ -738,7 +766,7 @@ def main():
                 prev_positions_count = len(active_trades)
                 prev_account_value = account_value
                 prev_asset_prices = dict(asset_prices)
-                await asyncio.sleep(get_interval_seconds(args.interval))
+                await asyncio.sleep(_session["interval_secs"])
                 continue
 
             model_usage["sonnet"] += 1
@@ -1225,7 +1253,7 @@ def main():
                 "account": dashboard,
             }
 
-            await asyncio.sleep(get_interval_seconds(args.interval))
+            await asyncio.sleep(_session["interval_secs"])
 
     async def handle_diary(request):
         """Return diary entries as JSON or newline-delimited text."""

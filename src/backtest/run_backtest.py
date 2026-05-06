@@ -41,7 +41,6 @@ from src.indicators.local_indicators import (
 from src.backtest.fetch_history import load_cache, fetch_all, save_cache
 
 
-WIN_RATE_THRESHOLD = 0.38
 MIN_TRADES = 200
 
 
@@ -54,11 +53,11 @@ class SimConfig:
 
 
 ALL_CONFIGS = [
-    SimConfig(label="Baseline (2:1)"),
-    SimConfig(volume_filter=True, label="+ Volume filter"),
-    SimConfig(tight_rsi=True, label="+ Tight RSI"),
-    SimConfig(volume_filter=True, tight_rsi=True, label="+ Volume + Tight RSI"),
-    SimConfig(volume_filter=True, tight_rsi=True, rr3=True, label="+ Volume + Tight RSI + 3:1 R:R"),
+    SimConfig(rr3=True, label="Baseline (3:1)"),
+    SimConfig(rr3=True, volume_filter=True, label="+ Volume filter"),
+    SimConfig(rr3=True, tight_rsi=True, label="+ Tight RSI"),
+    SimConfig(rr3=True, volume_filter=True, tight_rsi=True, label="+ Volume + Tight RSI"),
+    SimConfig(label="Reference: old 2:1 R:R"),
 ]
 
 
@@ -225,12 +224,14 @@ def _run_simulation(candles_5m: list, bias_list: list[dict], cfg: SimConfig) -> 
 # Output
 # ---------------------------------------------------------------------------
 
-def _verdict(stats: dict) -> str:
+def _verdict(stats: dict, win_payout: float = 3.0) -> str:
     n  = stats.get("trades", 0)
     wr = stats.get("win_rate", 0)
     if n < MIN_TRADES:
         return f"INCONCLUSIVE (<{MIN_TRADES} trades)"
-    return "GO ✓" if wr > WIN_RATE_THRESHOLD else "NO-GO ✗"
+    # require 5pp above breakeven to cover fees and slippage
+    threshold = 1.0 / (1.0 + win_payout) + 0.05
+    return "GO ✓" if wr >= threshold else "NO-GO ✗"
 
 
 def _print_table(asset: str, candles_5m: list, all_stats: list[tuple[SimConfig, dict]]):
@@ -253,6 +254,7 @@ def _print_table(asset: str, candles_5m: list, all_stats: list[tuple[SimConfig, 
         if not s or s.get("trades", 0) == 0:
             print(f"{cfg.label:<38} {'—':>7}")
             continue
+        win_payout = 3.0 if cfg.rr3 else 2.0
         print(
             f"{cfg.label:<38} "
             f"{s['trades']:>7} "
@@ -260,7 +262,7 @@ def _print_table(asset: str, candles_5m: list, all_stats: list[tuple[SimConfig, 
             f"{s['total_r']:>+8.1f} "
             f"{s['avg_r']:>+7.3f} "
             f"{s['max_dd_r']:>7.1f} "
-            f"{_verdict(s)}"
+            f"{_verdict(s, win_payout)}"
         )
 
 
