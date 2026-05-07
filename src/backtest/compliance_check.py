@@ -20,7 +20,18 @@ from collections import defaultdict
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent))
 
 
-def load_decisions(path: str) -> list[dict]:
+def load_decisions(path: str, since: str | None = None) -> list[dict]:
+    from datetime import datetime, timezone
+    since_dt = None
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            print(f"Invalid --since format: {since!r}. Use ISO 8601, e.g. 2026-05-07T00:00:00")
+            sys.exit(1)
+
     entries = []
     try:
         with open(path) as f:
@@ -29,9 +40,20 @@ def load_decisions(path: str) -> list[dict]:
                 if not line:
                     continue
                 try:
-                    entries.append(json.loads(line))
+                    entry = json.loads(line)
                 except json.JSONDecodeError:
                     continue
+                if since_dt is not None:
+                    ts_raw = entry.get("timestamp", "")
+                    try:
+                        ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+                        if ts.tzinfo is None:
+                            ts = ts.replace(tzinfo=timezone.utc)
+                        if ts < since_dt:
+                            continue
+                    except (ValueError, AttributeError):
+                        pass
+                entries.append(entry)
     except FileNotFoundError:
         print(f"File not found: {path}")
     return entries
@@ -128,6 +150,7 @@ def print_report(results: dict):
 def main():
     parser = argparse.ArgumentParser(description="Compliance check on decisions.jsonl")
     parser.add_argument("--path", default="decisions.jsonl")
+    parser.add_argument("--since", default=None, help="Only analyse decisions after this ISO 8601 timestamp, e.g. 2026-05-07T00:00:00")
     args = parser.parse_args()
 
     if not os.path.exists(args.path):
@@ -135,7 +158,9 @@ def main():
         print("Run the live agent first to generate decisions.jsonl.")
         sys.exit(1)
 
-    entries = load_decisions(args.path)
+    entries = load_decisions(args.path, since=args.since)
+    if args.since:
+        print(f"Filtering to decisions since {args.since} — {len(entries)} cycles matched.")
     if not entries:
         print("No entries found.")
         sys.exit(0)
