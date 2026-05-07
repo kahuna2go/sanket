@@ -518,7 +518,7 @@ async def run_asset(asset: str, years: int, fetch: bool, configs: list[SimConfig
     from src.trading.hyperliquid_api import HyperliquidAPI
     hl = None
 
-    for interval in ("5m", "4h"):
+    for interval in ("5m", "1h"):
         cached = load_cache(asset, interval)
         if cached is None or fetch:
             if hl is None:
@@ -530,13 +530,13 @@ async def run_asset(asset: str, years: int, fetch: bool, configs: list[SimConfig
             print(f"{len(candles)} bars [{source}]")
 
     candles_5m = load_cache(asset, "5m") or []
-    candles_4h = load_cache(asset, "4h") or []
+    candles_1h = load_cache(asset, "1h") or []
 
-    if not candles_5m or not candles_4h:
+    if not candles_5m or not candles_1h:
         print(f"{asset}: missing candle data — run fetch_history.py first")
         return
 
-    bias_list = _compute_4h_bias(candles_4h)
+    bias_list = _compute_4h_bias(candles_1h)
     all_stats = [(cfg, _run_simulation(candles_5m, bias_list, cfg)) for cfg in configs]
     _print_table(asset, candles_5m, all_stats)
 
