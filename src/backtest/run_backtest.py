@@ -514,11 +514,11 @@ async def run_gold_asset(asset: str, years: int, fetch: bool):
 # Entry points
 # ---------------------------------------------------------------------------
 
-async def run_asset(asset: str, years: int, fetch: bool, configs: list[SimConfig]):
+async def run_asset(asset: str, years: int, fetch: bool, configs: list[SimConfig], htf: str = "1h"):
     from src.trading.hyperliquid_api import HyperliquidAPI
     hl = None
 
-    for interval in ("5m", "1h"):
+    for interval in ("5m", htf):
         cached = load_cache(asset, interval)
         if cached is None or fetch:
             if hl is None:
@@ -530,23 +530,23 @@ async def run_asset(asset: str, years: int, fetch: bool, configs: list[SimConfig
             print(f"{len(candles)} bars [{source}]")
 
     candles_5m = load_cache(asset, "5m") or []
-    candles_1h = load_cache(asset, "1h") or []
+    candles_htf = load_cache(asset, htf) or []
 
-    if not candles_5m or not candles_1h:
+    if not candles_5m or not candles_htf:
         print(f"{asset}: missing candle data — run fetch_history.py first")
         return
 
-    bias_list = _compute_4h_bias(candles_1h)
+    bias_list = _compute_4h_bias(candles_htf)
     all_stats = [(cfg, _run_simulation(candles_5m, bias_list, cfg)) for cfg in configs]
     _print_table(asset, candles_5m, all_stats)
 
 
-async def main_async(assets: list[str], years: int, fetch: bool, configs: list[SimConfig]):
+async def main_async(assets: list[str], years: int, fetch: bool, configs: list[SimConfig], htf: str = "1h"):
     for asset in assets:
         if asset == "xyz:GOLD":
             await run_gold_asset(asset, years, fetch)
         else:
-            await run_asset(asset, years, fetch, configs)
+            await run_asset(asset, years, fetch, configs, htf)
 
 
 def main():
@@ -554,6 +554,7 @@ def main():
     parser.add_argument("--assets", nargs="+", default=["BTC", "ETH", "SOL"])
     parser.add_argument("--years", type=int, default=2)
     parser.add_argument("--fetch", action="store_true")
+    parser.add_argument("--htf", default="1h", help="Higher timeframe for bias (e.g. 1h, 4h, 2h)")
     parser.add_argument("--volume-filter", action="store_true", help="Run only with volume filter")
     parser.add_argument("--tight-rsi", action="store_true", help="Run only with tight RSI")
     parser.add_argument("--rr3", action="store_true", help="Run only with 3:1 R:R")
@@ -570,7 +571,7 @@ def main():
     else:
         configs = ALL_CONFIGS
 
-    asyncio.run(main_async(args.assets, args.years, args.fetch, configs))
+    asyncio.run(main_async(args.assets, args.years, args.fetch, configs, args.htf))
 
 
 if __name__ == "__main__":
