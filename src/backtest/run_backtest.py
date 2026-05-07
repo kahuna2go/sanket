@@ -46,10 +46,10 @@ from src.backtest.fetch_history import load_cache, fetch_all, save_cache
 MIN_TRADES = 200
 
 _VIENNA_TZ = ZoneInfo("Europe/Vienna")
-_LONDON_START = 9.0   # 09:00
-_LONDON_END   = 12.0  # 12:00
-_NY_START     = 14.0  # 14:00
-_NY_END       = 20.0  # 20:00
+_LONDON_START = 8 + 30 / 60  # 08:30
+_LONDON_END   = 11.5          # 11:30
+_NY_START     = 16.0          # 16:00
+_NY_END       = 20.0          # 20:00
 
 
 def _in_session(ts_ms: int) -> bool:
@@ -63,7 +63,7 @@ class SimConfig:
     volume_filter: bool = False   # require bar volume > 20-bar vol SMA
     tight_rsi: bool = False       # 55-65 long / 35-45 short instead of 50-70 / 30-50
     rr3: bool = False             # 3:1 R:R: TP = 2.25×ATR, SL = 0.75×ATR (payout +3/−1)
-    session_filter: bool = False  # Europe 09:00-12:00 and NY/pre 14:00-20:00 Vienna only
+    session_filter: bool = False  # London 08:30-11:30 and NY 16:00-20:00 Vienna only
     label: str = "Baseline (2:1)"
 
 

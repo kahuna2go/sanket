@@ -31,10 +31,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 _VIENNA_TZ = ZoneInfo("Europe/Vienna")
 
 # Active trading windows (Vienna local time)
-_LONDON_START = 9.0   # 09:00
-_LONDON_END   = 12.0  # 12:00
-_NY_START     = 14.0  # 14:00
-_NY_END       = 20.0  # 20:00
+_LONDON_START = 8 + 30 / 60  # 08:30
+_LONDON_END   = 11.5          # 11:30
+_NY_START     = 16.0          # 16:00
+_NY_END       = 20.0          # 20:00
 
 
 def _get_session(utc_now: datetime) -> dict:
