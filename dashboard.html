@@ -282,6 +282,19 @@
     .asset-row:last-child { margin-bottom: 0; }
     .asset-name { min-width: 55px; font-family: var(--font-label); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
     .asset-bar-track { flex: 1; height: 4px; background: rgba(0,0,0,.08); border-radius: 999px; overflow: hidden; }
+
+    /* ─── HISTORY EXPAND ─────────────────────── */
+    .hist-expand-row {
+      padding: 8px 18px; border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .hist-expand-btn {
+      background: none; border: none; cursor: pointer; padding: 4px 12px;
+      font-family: var(--font-label); font-size: 10px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+      border-radius: 999px;
+    }
+    .hist-expand-btn:hover { background: var(--surface-alt); color: var(--text); }
     .asset-bar-fill { height: 100%; border-radius: 999px; transition: width .5s ease; }
     .asset-bar-fill.p { background: var(--profit); }
     .asset-bar-fill.l { background: var(--loss); }
@@ -733,28 +746,55 @@
       document.getElementById('hist-body').innerHTML = '<div class="empty">No completed trades</div>';
       return;
     }
-    const rows = [...trades].reverse().slice(0, 30).map(t => {
-      const long = (t.dir || '').includes('Long');
-      const pnlVal = +t.pnl || 0;
-      const feeVal = +t.fee || 0;
-      return `<tr>
-        <td class="mu" style="white-space:nowrap">${fDateTime(t.closed_at)}</td>
-        <td><span class="sym">${t.asset||'—'}</span></td>
-        <td>${long ? '<span class="pill pill-l">Long</span>' : '<span class="pill pill-s">Short</span>'}</td>
-        <td class="mu">${t.entry_price != null ? fAbs(t.entry_price) : '—'}</td>
-        <td>${fAbs(t.exit_price)}</td>
-        <td class="mu">${f(t.size,4)}</td>
-        <td class="${pClass(pnlVal)}">${fSign(pnlVal)}<br><small style="opacity:.55">fee ${fAbs(feeVal)}</small></td>
-      </tr>`;
-    }).join('');
-    document.getElementById('hist-body').innerHTML = `
-      <table class="tbl">
-        <thead><tr>
-          <th>Closed</th><th>Asset</th><th>Dir</th>
-          <th>Entry</th><th>Exit</th><th>Size</th><th>P&amp;L</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+
+    const HIST_PAGE = 5;
+    const sorted = [...trades].reverse();
+
+    function buildHistHtml(expanded) {
+      const visible = expanded ? sorted.slice(0, 30) : sorted.slice(0, HIST_PAGE);
+      const rows = visible.map(t => {
+        const long = (t.dir || '').includes('Long');
+        const pnlVal = +t.pnl || 0;
+        const feeVal = +t.fee || 0;
+        return `<tr>
+          <td class="mu" style="white-space:nowrap">${fDateTime(t.closed_at)}</td>
+          <td><span class="sym">${t.asset||'—'}</span></td>
+          <td>${long ? '<span class="pill pill-l">Long</span>' : '<span class="pill pill-s">Short</span>'}</td>
+          <td class="mu">${t.entry_price != null ? fAbs(t.entry_price) : '—'}</td>
+          <td>${fAbs(t.exit_price)}</td>
+          <td class="mu">${f(t.size,4)}</td>
+          <td class="${pClass(pnlVal)}">${fSign(pnlVal)}<br><small style="opacity:.55">fee ${fAbs(feeVal)}</small></td>
+        </tr>`;
+      }).join('');
+
+      const remaining = sorted.length - visible.length;
+      const expandRow = sorted.length > HIST_PAGE ? `
+        <div class="hist-expand-row">
+          <button class="hist-expand-btn" id="hist-toggle">
+            ${expanded ? '▴ show less' : `▾ show ${Math.min(remaining, 25)} more`}
+          </button>
+        </div>` : '';
+
+      return `
+        <table class="tbl">
+          <thead><tr>
+            <th>Closed</th><th>Asset</th><th>Dir</th>
+            <th>Entry</th><th>Exit</th><th>Size</th><th>P&amp;L</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${expandRow}`;
+    }
+
+    let histExpanded = false;
+    document.getElementById('hist-body').innerHTML = buildHistHtml(false);
+
+    document.getElementById('hist-body').addEventListener('click', e => {
+      if (e.target.id === 'hist-toggle') {
+        histExpanded = !histExpanded;
+        document.getElementById('hist-body').innerHTML = buildHistHtml(histExpanded);
+      }
+    });
   }
 
   // ── Positions ────────────────────────────────
