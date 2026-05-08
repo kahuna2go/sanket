@@ -177,11 +177,7 @@ class TradingAgent:
             if use_tools and enable_tools:
                 kwargs["tools"] = tools
             if CONFIG.get("thinking_enabled"):
-                kwargs["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": int(CONFIG.get("thinking_budget_tokens") or 10000),
-                }
-                # When thinking is enabled, max_tokens must be larger
+                kwargs["thinking"] = {"type": "adaptive"}
                 kwargs["max_tokens"] = max(self.max_tokens, 16000)
 
             response = self.client.messages.create(**kwargs)
