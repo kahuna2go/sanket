@@ -58,21 +58,35 @@ def _in_session(ts_ms: int) -> bool:
     return (_LONDON_START <= hf < _LONDON_END) or (_NY_START <= hf < _NY_END)
 
 
+_WIDE_START = 8.0   # 08:00 UTC
+_WIDE_END   = 22.0  # 22:00 UTC
+
+def _in_wide_session(ts_ms: int) -> bool:
+    """08:00–22:00 UTC (10:00–00:00 Vienna in summer)."""
+    dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+    hf = dt.hour + dt.minute / 60
+    return _WIDE_START <= hf < _WIDE_END
+
+
 @dataclass
 class SimConfig:
     volume_filter: bool = False   # require bar volume > 20-bar vol SMA
     tight_rsi: bool = False       # 55-65 long / 35-45 short instead of 50-70 / 30-50
     rr3: bool = False             # 3:1 R:R: TP = 2.25×ATR, SL = 0.75×ATR (payout +3/−1)
     session_filter: bool = False  # London 08:30-11:30 and NY 16:00-20:00 Vienna only
+    wide_session: bool = False    # 08:00-22:00 UTC instead of London/NY windows
     label: str = "Baseline (2:1)"
 
 
 ALL_CONFIGS = [
     SimConfig(rr3=True, label="Baseline (3:1)"),
-    SimConfig(rr3=True, session_filter=True, label="+ Session filter"),
-    SimConfig(rr3=True, session_filter=True, volume_filter=True, label="+ Session + Volume"),
-    SimConfig(rr3=True, session_filter=True, tight_rsi=True, label="+ Session + Tight RSI"),
-    SimConfig(rr3=True, session_filter=True, volume_filter=True, tight_rsi=True, label="+ Session + Volume + Tight RSI"),
+    SimConfig(rr3=True, session_filter=True, label="+ London/NY session"),
+    SimConfig(rr3=True, session_filter=True, volume_filter=True, label="+ London/NY + Volume"),
+    SimConfig(rr3=True, session_filter=True, tight_rsi=True, label="+ London/NY + Tight RSI"),
+    SimConfig(rr3=True, session_filter=True, volume_filter=True, tight_rsi=True, label="+ London/NY + Volume + Tight RSI"),
+    SimConfig(rr3=True, session_filter=True, wide_session=True, label="+ Wide (08-22 UTC)"),
+    SimConfig(rr3=True, session_filter=True, wide_session=True, volume_filter=True, label="+ Wide (08-22 UTC) + Volume"),
+    SimConfig(rr3=True, session_filter=True, wide_session=True, tight_rsi=True, label="+ Wide (08-22 UTC) + Tight RSI"),
     SimConfig(label="Reference: old 2:1 R:R"),
 ]
 
@@ -182,8 +196,10 @@ def _run_simulation(candles_5m: list, bias_list: list[dict], cfg: SimConfig) -> 
                     in_trade = False
             continue
 
-        if cfg.session_filter and not _in_session(bar["t"]):
-            continue
+        if cfg.session_filter:
+            fn = _in_wide_session if cfg.wide_session else _in_session
+            if not fn(bar["t"]):
+                continue
 
         bias = _get_4h_bias_at(bias_list, bar["t"])
         if bias is None:
@@ -558,14 +574,17 @@ def main():
     parser.add_argument("--volume-filter", action="store_true", help="Run only with volume filter")
     parser.add_argument("--tight-rsi", action="store_true", help="Run only with tight RSI")
     parser.add_argument("--rr3", action="store_true", help="Run only with 3:1 R:R")
+    parser.add_argument("--wide-session", action="store_true", help="08:00-22:00 UTC session window")
     args = parser.parse_args()
 
     # If any specific flag given, run just that single config; otherwise run all combos
-    if args.volume_filter or args.tight_rsi or args.rr3:
+    if args.volume_filter or args.tight_rsi or args.rr3 or args.wide_session:
         configs = [SimConfig(
             volume_filter=args.volume_filter,
             tight_rsi=args.tight_rsi,
             rr3=args.rr3,
+            session_filter=args.wide_session,
+            wide_session=args.wide_session,
             label="Custom config",
         )]
     else:
