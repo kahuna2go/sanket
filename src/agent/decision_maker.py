@@ -31,9 +31,7 @@ class TradingAgent:
         """Dispatch decision request to Claude and enforce output contract."""
         system_prompt = (
             "You are a senior quantitative trader managing perpetual futures on Hyperliquid, optimizing risk-adjusted returns under real execution, margin, and funding constraints.\n"
-            "You receive market + account context for: "
-            f"assets = {json.dumps(list(assets))}, "
-            "per-asset intraday (5m) and 4h metrics, active trades with exit plans, recent history, and hard-enforced risk limits.\n\n"
+            "You receive market + account context including per-asset intraday (5m) and 4h metrics, active trades with exit plans, recent history, and hard-enforced risk limits.\n\n"
             "Always use the 'current time' to evaluate cooldown expirations and timed exit plans. "
             "If 'is_weekend' is true or day_of_week is Saturday/Sunday: CEX-linked markets (commodities, indices, equities) are closed — candles may reflect near-zero volume, making indicators unreliable. Require significantly stronger confluence before opening new positions in such assets.\n\n"
             "Goal: decisive, first-principles decisions per asset — minimize churn, capture edge, control downside.\n\n"
@@ -187,16 +185,21 @@ class TradingAgent:
                 kwargs["max_tokens"] = max(self.max_tokens, 16000)
 
             response = self.client.messages.create(**kwargs)
-            logging.info("Claude response: stop_reason=%s, usage=%s",
-                        response.stop_reason, response.usage)
+            u = response.usage
+            cache_hit = getattr(u, "cache_read_input_tokens", 0) or 0
+            cache_create = getattr(u, "cache_creation_input_tokens", 0) or 0
+            logging.info(
+                "Claude response: stop_reason=%s, input=%d, output=%d, cache_create=%d, cache_read=%d",
+                response.stop_reason, u.input_tokens, u.output_tokens, cache_create, cache_hit,
+            )
             if response.stop_reason == "max_tokens":
                 logging.warning(
                     "Response truncated at max_tokens=%d (used %d output tokens) — increase MAX_TOKENS if JSON is cut off",
-                    kwargs["max_tokens"], response.usage.output_tokens,
+                    kwargs["max_tokens"], u.output_tokens,
                 )
             with open("llm_requests.log", "a", encoding="utf-8") as f:
                 f.write(f"Response stop_reason: {response.stop_reason}\n")
-                f.write(f"Usage: input={response.usage.input_tokens}, output={response.usage.output_tokens}\n")
+                f.write(f"Usage: input={u.input_tokens}, output={u.output_tokens}, cache_create={cache_create}, cache_read={cache_hit}\n")
             return response
 
         def _handle_tool_call(tool_name, tool_input):
