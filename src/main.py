@@ -7,7 +7,7 @@ sys.path.append(str(pathlib.Path(__file__).parent.parent))
 from src.agent.decision_maker import TradingAgent
 from src.thesis_tracker import update_and_check
 from src.macro_filter import get_macro_context
-from src.indicators.local_indicators import compute_all, last_n, latest
+from src.indicators.local_indicators import compute_all, last_n, latest, swing_structure, volume_profile, rvol
 from src.risk_manager import RiskManager
 from src.trading.hyperliquid_api import HyperliquidAPI
 import asyncio
@@ -816,10 +816,27 @@ def main():
 
                     # Fetch candles from Hyperliquid and compute indicators locally
                     candles_5m = await hyperliquid.get_candles(asset, "5m", 100)
-                    candles_4h = await hyperliquid.get_candles(asset, "4h", 100)
+                    candles_1h = await hyperliquid.get_candles(asset, "1h", 220)
 
                     intra = compute_all(candles_5m, current_price=current_price)
-                    lt = compute_all(candles_4h, current_price=current_price)
+
+                    # 1h bias: swing_structure on rolling 200-bar window, VP on last 20 bars
+                    struct_1h = swing_structure(candles_1h[-200:], current_price=current_price) if len(candles_1h) >= 5 else None
+                    vp_1h = volume_profile(candles_1h[-20:]) if len(candles_1h) >= 20 else None
+                    rvol_1h_val = latest(rvol(candles_1h, period=20))
+
+                    swing_count_1h = struct_1h.get("swing_count", 0) if struct_1h else 0
+                    trend_1h = struct_1h.get("trend") if struct_1h else None
+                    if trend_1h == "HH_HL" and swing_count_1h >= 2:
+                        bias_dir = "bull"
+                    elif trend_1h == "LH_LL" and swing_count_1h >= 2:
+                        bias_dir = "bear"
+                    else:
+                        bias_dir = None
+
+                    vah_1h = vp_1h.get("vah") if vp_1h else None
+                    val_1h = vp_1h.get("val") if vp_1h else None
+                    va_width_1h = (vah_1h - val_1h) if (vah_1h is not None and val_1h is not None) else None
 
                     recent_mids = [entry["mid"] for entry in list(price_history.get(asset, []))[-10:]]
                     funding_annualized = round(funding * 24 * 365 * 100, 2) if funding else None
@@ -836,12 +853,16 @@ def main():
                             "rvol": round_or_none(latest(intra.get("rvol", [])), 3),
                             "obv_rising": obv_rising,
                         },
-                        "long_term": {
-                            "adx": round_or_none(latest(lt.get("adx", [])), 2),
-                            "rsi14": round_or_none(latest(lt.get("rsi14", [])), 2),
-                            "atr14": round_or_none(latest(lt.get("atr14", [])), 2),
-                            "structure": lt.get("swing_structure"),
-                            "volume_profile": lt.get("volume_profile"),
+                        "bias_1h": {
+                            "bias": bias_dir,
+                            "trend": trend_1h,
+                            "swing_count": swing_count_1h,
+                            "val": round_or_none(val_1h, 4),
+                            "vah": round_or_none(vah_1h, 4),
+                            "va_width": round_or_none(va_width_1h, 4),
+                            "rvol_1h": round_or_none(rvol_1h_val, 3),
+                            "tp_speculative_long": round_or_none(struct_1h.get("tp_speculative_long") if struct_1h else None, 4),
+                            "tp_speculative_short": round_or_none(struct_1h.get("tp_speculative_short") if struct_1h else None, 4),
                         },
                         "open_interest": round_or_none(oi, 2),
                         "funding_rate": round_or_none(funding, 8),
