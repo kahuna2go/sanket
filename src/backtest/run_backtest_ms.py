@@ -376,6 +376,56 @@ def _print_ms_table(asset: str, candles: list, all_stats: list, entry_tf: str = 
 
 
 # ---------------------------------------------------------------------------
+# Markdown file output
+# ---------------------------------------------------------------------------
+
+_RESULTS_FILE = pathlib.Path(__file__).parent.parent.parent / "backtest_results.md"
+
+
+_STRATEGY_LABEL = "1h MS (swing_count≥2) + VA Bounce + Confirmation bar + Partial exit"
+
+
+def _append_results_md(asset: str, candles: list, all_stats: list, entry_tf: str):
+    def _dt(ms):
+        return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+
+    period = (
+        f"{_dt(candles[0]['t'])} → {_dt(candles[-1]['t'])}"
+        if candles else "?"
+    )
+    run_date = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    lines = [
+        f"\n---\n\n",
+        f"**Asset:** {asset}  |  **Period:** {period}  |  **Run:** {run_date}  |  **Entry TF:** {entry_tf}\n\n",
+        f"**Strategy:** {_STRATEGY_LABEL}\n\n",
+        f"| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |\n",
+        f"|--------|--------|------|---------|--------|------|-------|---------|\n",
+    ]
+    for cfg, s in all_stats:
+        if not s or s.get("trades", 0) == 0:
+            lines.append(f"| {cfg.label} | — | | | | | | |\n")
+            continue
+        verdict = _verdict(s)
+        lines.append(
+            f"| {cfg.label} "
+            f"| {s['trades']} "
+            f"| {s['win_rate']*100:.1f}% "
+            f"| {s['avg_win_r']:.2f} "
+            f"| {s['total_r']:+.1f} "
+            f"| {s['avg_r']:+.3f} "
+            f"| {s['max_dd_r']:.1f}% "
+            f"| {verdict} |\n"
+        )
+
+    header_needed = not _RESULTS_FILE.exists() or _RESULTS_FILE.stat().st_size == 0
+    with open(_RESULTS_FILE, "a") as f:
+        if header_needed:
+            f.write("# Backtest Results Log\n\n")
+        f.writelines(lines)
+
+
+# ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
 
@@ -423,6 +473,7 @@ async def run_ms_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m"
         for i, cfg in enumerate(ALL_MS_CONFIGS)
     ]
     _print_ms_table(asset, entry_candles, all_stats, entry_tf=entry_tf)
+    _append_results_md(asset, entry_candles, all_stats, entry_tf=entry_tf)
 
 
 async def main_async(assets: list[str], years: int, fetch: bool, entry_tf: str):

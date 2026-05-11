@@ -34,3 +34,6 @@ thesis_history.json
 
 # Cached candle data for backtesting
 data/candles/
+
+# Local backtest output — not committed
+backtest_results.md
