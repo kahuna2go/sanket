@@ -36,4 +36,4 @@ thesis_history.json
 data/candles/
 
 # Local backtest output — not committed
-backtest_results.md
+backtest_results_ms.md
