@@ -37,7 +37,7 @@ class TradingAgent:
             "Goal: decisive, first-principles decisions per asset — minimize churn, capture edge, control downside.\n\n"
             "Core policy\n"
             "1) Respect prior plans: Do NOT close or flip early unless the explicit invalidation in exit_plan has occurred (or a stronger one has).\n"
-            "2) Hysteresis: To flip direction, require BOTH (a) 4h structure supporting the new direction (EMA cross, MACD regime) AND (b) intraday confirmation (break >~0.5×ATR + momentum alignment). Otherwise hold or update_tpsl.\n"
+            "2) Hysteresis: To flip direction, require BOTH (a) 4h market structure shifted to opposite trend (HH_HL → LH_LL or vice versa) AND (b) intraday BoS in new direction with RVOL ≥ 1.5. Otherwise hold or update_tpsl.\n"
             "3) Cooldown: After any direction change, impose at least 3 bars before another. Encode in exit_plan (e.g. \"cooldown_bars:3 until 2026-06-01T10:00Z\") and honor it on future cycles.\n"
             "4) Funding is a tilt, not a trigger: Do not flip solely due to funding unless it meaningfully exceeds expected edge (>~0.25×ATR over your holding horizon).\n"
             "5) Prefer adjustments over flips: If thesis weakens but is not invalidated — tighten stop (update_tpsl), trail TP, or take partial profits (buy/sell with close_fraction < 1.0). RSI extremes alone are not reversals. Flip only on hard invalidation + fresh confluence.\n\n"
@@ -51,12 +51,37 @@ class TradingAgent:
             "Rules enforced in code: thesis_strength == 1 + open position → immediate close (hold forbidden). "
             "thesis_strength <= 2 for 3+ consecutive cycles + open position → exit regardless of P&L.\n\n"
             "Core Entry Logic — crypto assets (BTC, ETH, SOL, and other pure-crypto perps)\n"
-            "Use Momentum Breakout only:\n"
-            "  4h bias (all required): EMA20 > EMA50, MACD histogram positive, ADX > 25\n"
-            "  5m entry (all required): close breaks above previous bar high, OBV rising, RSI 55–65\n"
-            "  TP: 2.25× ATR14 above entry. SL: 0.75× ATR14 below entry (R:R = 3:1)\n"
-            "  No new opens when ADX < 25 on any asset.\n"
-            "  Minimum thesis_strength to open: 4. Do not open new crypto positions at thesis_strength ≤ 3.\n\n"
+            "Use Market Structure Breakout only:\n"
+            "  4h bias (all required):\n"
+            "    - long_term.structure.trend = HH_HL (long) or LH_LL (short)\n"
+            "    - ADX > 25\n"
+            "    - RSI14 50–70 for longs; 30–50 for shorts\n"
+            "  5m entry — Volume Profile Retest:\n"
+            "    Setup:  a recent 5m candle closed above long_term.volume_profile.vah (long)\n"
+            "            or below long_term.volume_profile.val (short)\n"
+            "    Entry:  5m price retraces to touch vah from above (long) or val from below (short)\n"
+            "            — current_price within 0.3 % of the level counts as a valid retest\n"
+            "    Confirmation (all required):\n"
+            "    - intraday.obv_rising = true\n"
+            "    - intraday.rvol ≥ 1.5 on the breakout or retest candle\n"
+            "    - RSI14 55–65 for longs; 35–45 for shorts\n"
+            "    If no breakout above vah / below val has occurred recently, do not force an entry.\n"
+            "  SL placement:\n"
+            "    Long:  long_term.structure.sl_long  (last 4h swing low − 0.4× swing_range)\n"
+            "    Short: long_term.structure.sl_short (last 4h swing high + 0.4× swing_range)\n"
+            "  TP placement:\n"
+            "    Default (thesis_strength 3–4): use tp_conservative_long/short\n"
+            "      → nearest 4h S/R level ± 0.25× swing_range (conservative, avoids the obvious level)\n"
+            "    Speculative (thesis_strength = 5 AND swing_count ≥ 3): use tp_speculative_long/short\n"
+            "      → 127.2% Fibonacci extension of last swing (projects next HH or LL)\n"
+            "  R:R check: compute (TP − entry) ÷ (entry − SL). Require ≥ 2:1. If below 2:1, do not open.\n"
+            "  Exit / flip:\n"
+            "    Long:  first LH confirmed on 4h (Change of Character) → tighten SL to breakeven.\n"
+            "           Confirmed LL on 4h → thesis broken, close.\n"
+            "    Short: first HL confirmed on 4h (Change of Character) → tighten SL to breakeven.\n"
+            "           Confirmed HH on 4h → thesis broken, close.\n"
+            "  No new opens when ADX < 25 or long_term.structure.trend = mixed.\n"
+            "  Minimum thesis_strength to open: 4.\n\n"
             "Core Entry Logic — Gold (xyz:GOLD)\n"
             "Use Range Breakout only — do NOT apply the crypto Momentum Breakout rules to Gold:\n"
             "  4h setup (both required): BBands squeeze (band width at its narrowest in the last 8 bars) AND ADX rising (ADX now > ADX 5 bars ago)\n"
@@ -81,7 +106,7 @@ class TradingAgent:
             "- exit_plan: at least one explicit invalidation trigger + any cooldown guidance.\n"
             "- Leverage: system enforces a hard cap. Treat allocation_usd as notional exposure consistent with available margin.\n\n"
             "Tools\n"
-            "- Use fetch_indicator (indicator: ema/sma/rsi/macd/bbands/atr/adx/obv/vwap/stoch_rsi/all, asset, interval: 5m/4h, optional period) when an extra datapoint sharpens your thesis. Summarize findings in rationale — never paste raw output into JSON.\n\n"
+            "- Use fetch_indicator (indicator: ema/sma/rsi/macd/bbands/atr/adx/obv/vwap/stoch_rsi/rvol/swing_structure/volume_profile/all, asset, interval: 5m/4h, optional period) when an extra datapoint sharpens your thesis. Summarize findings in rationale — never paste raw output into JSON.\n\n"
             "Reasoning: assess Structure (trend, EMA slopes/cross), Momentum (MACD, RSI slope), Volatility (ATR), Positioning (funding, OI). Favor 4h+5m alignment.\n\n"
             "Output contract\n"
             "- Return ONLY a strict JSON object with one key: \"trade_decisions\" (array ordered to match assets list).\n"
@@ -107,7 +132,7 @@ class TradingAgent:
                 "properties": {
                     "indicator": {
                         "type": "string",
-                        "enum": ["ema", "sma", "rsi", "macd", "bbands", "atr", "adx", "obv", "vwap", "stoch_rsi", "all"],
+                        "enum": ["ema", "sma", "rsi", "macd", "bbands", "atr", "adx", "obv", "vwap", "stoch_rsi", "rvol", "swing_structure", "volume_profile", "all"],
                     },
                     "asset": {
                         "type": "string",
@@ -223,9 +248,12 @@ class TradingAgent:
                 all_indicators = compute_all(candles)
 
                 if indicator == "all":
-                    result = {k: {"latest": latest(v) if isinstance(v, list) else v,
-                                  "series": last_n(v, 10) if isinstance(v, list) else v}
-                              for k, v in all_indicators.items()}
+                    result = {}
+                    for k, v in all_indicators.items():
+                        if not isinstance(v, list):
+                            result[k] = v  # dict (e.g. swing_structure) or scalar — pass through
+                        else:
+                            result[k] = {"latest": latest(v), "series": last_n(v, 10)}
                 elif indicator == "macd":
                     result = {
                         "macd": {"latest": latest(all_indicators.get("macd", [])), "series": last_n(all_indicators.get("macd", []), 10)},
@@ -254,6 +282,18 @@ class TradingAgent:
                     from src.indicators.local_indicators import atr as _atr
                     series = _atr(candles, period)
                     result = {"latest": latest(series), "series": last_n(series, 10), "period": period}
+                elif indicator == "rvol":
+                    period = tool_input.get("period", 20)
+                    from src.indicators.local_indicators import rvol as _rvol
+                    series = _rvol(candles, period)
+                    result = {"latest": latest(series), "series": last_n(series, 10), "period": period}
+                elif indicator == "swing_structure":
+                    from src.indicators.local_indicators import swing_structure as _swing_structure
+                    current_px = candles[-1]["close"] if candles else None
+                    result = _swing_structure(candles, current_price=current_px) or {"error": "insufficient data"}
+                elif indicator == "volume_profile":
+                    from src.indicators.local_indicators import volume_profile as _volume_profile
+                    result = _volume_profile(candles) or {"error": "insufficient data"}
                 else:
                     key_map = {"adx": "adx", "obv": "obv", "vwap": "vwap", "stoch_rsi": "stoch_rsi"}
                     mapped = key_map.get(indicator, indicator)

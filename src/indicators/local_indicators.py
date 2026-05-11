@@ -375,14 +375,233 @@ def vwap(candles: list[dict]) -> list[float | None]:
 
 
 # ---------------------------------------------------------------------------
+# Relative Volume
+# ---------------------------------------------------------------------------
+
+def rvol(candles: list[dict], period: int = 20) -> list[float | None]:
+    """Relative Volume: current bar volume divided by N-bar average volume."""
+    volumes = _volumes(candles)
+    result: list[float | None] = []
+    for i in range(len(volumes)):
+        if i < period:
+            result.append(None)
+        else:
+            avg = sum(volumes[i - period:i]) / period
+            result.append(round(volumes[i] / avg, 4) if avg > 0 else None)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Swing Structure (Market Structure: HH/HL or LH/LL)
+# ---------------------------------------------------------------------------
+
+def swing_structure(candles: list[dict], lookback: int = 3,
+                    current_price: float | None = None) -> dict | None:
+    """Detect market structure from swing highs and lows.
+
+    Returns trend label, key levels, and pre-computed SL/TP levels, or None
+    when there are insufficient candles or swings to determine structure.
+
+    Buffers applied:
+      SL: 0.4 × swing_range beyond the invalidation swing
+      TP conservative: 0.25 × swing_range before the target level
+      TP speculative:  127.2% Fibonacci extension (0.272 × swing_range beyond last swing)
+    """
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    n = len(candles)
+
+    if n < 2 * lookback + 1:
+        return None
+
+    if current_price is None:
+        current_price = candles[-1]["close"]
+
+    # Confirmed swing high: strictly greatest high within ±lookback bars
+    # Confirmed swing low:  strictly lowest  low  within ±lookback bars
+    swing_high_prices: list[float] = []
+    swing_low_prices: list[float] = []
+
+    for i in range(lookback, n - lookback):
+        neighbors_h = [highs[j] for j in range(i - lookback, i + lookback + 1) if j != i]
+        neighbors_l = [lows[j]  for j in range(i - lookback, i + lookback + 1) if j != i]
+        if highs[i] > max(neighbors_h):
+            swing_high_prices.append(highs[i])
+        if lows[i] < min(neighbors_l):
+            swing_low_prices.append(lows[i])
+
+    if len(swing_high_prices) < 2 or len(swing_low_prices) < 2:
+        return None
+
+    # Trend: check last 3 confirmed swings for ascending/descending sequence
+    def _direction(series: list[float]) -> str:
+        recent = series[-3:] if len(series) >= 3 else series
+        if all(recent[i] < recent[i + 1] for i in range(len(recent) - 1)):
+            return "ascending"
+        if all(recent[i] > recent[i + 1] for i in range(len(recent) - 1)):
+            return "descending"
+        return "mixed"
+
+    h_dir = _direction(swing_high_prices)
+    l_dir = _direction(swing_low_prices)
+
+    if h_dir == "ascending" and l_dir == "ascending":
+        trend = "HH_HL"
+    elif h_dir == "descending" and l_dir == "descending":
+        trend = "LH_LL"
+    else:
+        trend = "mixed"
+
+    # Count consecutive swings confirming current trend
+    swing_count = 0
+    if trend == "HH_HL":
+        for i in range(len(swing_high_prices) - 1, 0, -1):
+            if swing_high_prices[i] > swing_high_prices[i - 1]:
+                swing_count += 1
+            else:
+                break
+    elif trend == "LH_LL":
+        for i in range(len(swing_high_prices) - 1, 0, -1):
+            if swing_high_prices[i] < swing_high_prices[i - 1]:
+                swing_count += 1
+            else:
+                break
+
+    last_swing_high = swing_high_prices[-1]
+    last_swing_low = swing_low_prices[-1]
+    swing_range = last_swing_high - last_swing_low
+
+    if swing_range <= 0:
+        return None
+
+    # Nearest resistance above and support below current price
+    above = sorted(h for h in swing_high_prices if h > current_price)
+    below = sorted((l for l in swing_low_prices if l < current_price), reverse=True)
+    next_resistance = above[0] if above else None
+    next_support = below[0] if below else None
+
+    # Break of structure relative to current price
+    bos: str | None = None
+    if current_price > last_swing_high:
+        bos = "bullish"
+    elif current_price < last_swing_low:
+        bos = "bearish"
+
+    sl_buf = 0.4 * swing_range
+    tp_buf = 0.25 * swing_range
+    fib = 0.272 * swing_range
+
+    tp_cons_long  = (next_resistance - tp_buf) if next_resistance else (last_swing_high + fib)
+    tp_cons_short = (next_support + tp_buf)    if next_support    else (last_swing_low  - fib)
+
+    return {
+        "trend": trend,
+        "swing_count": swing_count,
+        "last_swing_high": round(last_swing_high, 4),
+        "last_swing_low": round(last_swing_low, 4),
+        "swing_range": round(swing_range, 4),
+        "next_resistance": round(next_resistance, 4) if next_resistance else None,
+        "next_support": round(next_support, 4) if next_support else None,
+        "bos": bos,
+        "sl_long":  round(last_swing_low  - sl_buf, 4),
+        "sl_short": round(last_swing_high + sl_buf, 4),
+        "tp_conservative_long":  round(tp_cons_long,  4),
+        "tp_conservative_short": round(tp_cons_short, 4),
+        "tp_speculative_long":   round(last_swing_high + fib, 4),
+        "tp_speculative_short":  round(last_swing_low  - fib, 4),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Volume Profile
+# ---------------------------------------------------------------------------
+
+def volume_profile(candles: list[dict], bins: int = 50) -> dict | None:
+    """Volume Profile: distributes each candle's volume proportionally across
+    the price bins its high–low range covers.
+
+    Returns POC (highest-volume price), VAH and VAL (the bounds of the Value
+    Area — the contiguous region that contains 70 % of total volume, expanded
+    outward from the POC), plus the raw value-area percentage achieved.
+    Returns None when there are fewer than 2 candles or no volume.
+    """
+    if len(candles) < 2:
+        return None
+
+    highs = [c["high"] for c in candles]
+    lows  = [c["low"]  for c in candles]
+    price_min = min(lows)
+    price_max = max(highs)
+
+    if price_max <= price_min:
+        return None
+
+    bin_size = (price_max - price_min) / bins
+    bin_vol  = [0.0] * bins
+
+    for c in candles:
+        candle_range = c["high"] - c["low"]
+        vol = c["volume"]
+        if candle_range <= 0:
+            idx = min(int((c["close"] - price_min) / bin_size), bins - 1)
+            bin_vol[idx] += vol
+            continue
+        for i in range(bins):
+            bin_low  = price_min + i * bin_size
+            bin_high = bin_low + bin_size
+            overlap  = max(0.0, min(c["high"], bin_high) - max(c["low"], bin_low))
+            if overlap > 0:
+                bin_vol[i] += vol * (overlap / candle_range)
+
+    total_vol = sum(bin_vol)
+    if total_vol <= 0:
+        return None
+
+    poc_idx   = max(range(bins), key=lambda i: bin_vol[i])
+    poc_price = price_min + (poc_idx + 0.5) * bin_size
+
+    # Expand value area from POC until ≥ 70 % of volume is covered
+    target = 0.70 * total_vol
+    va_vol  = bin_vol[poc_idx]
+    lo_idx  = poc_idx
+    hi_idx  = poc_idx
+
+    while va_vol < target:
+        can_lo = lo_idx > 0
+        can_hi = hi_idx < bins - 1
+        if not can_lo and not can_hi:
+            break
+        vol_lo = bin_vol[lo_idx - 1] if can_lo else -1.0
+        vol_hi = bin_vol[hi_idx + 1] if can_hi else -1.0
+        if vol_hi >= vol_lo:
+            hi_idx += 1
+            va_vol += bin_vol[hi_idx]
+        else:
+            lo_idx -= 1
+            va_vol += bin_vol[lo_idx]
+
+    vah = price_min + (hi_idx + 1) * bin_size
+    val = price_min + lo_idx * bin_size
+
+    return {
+        "poc": round(poc_price, 4),
+        "vah": round(vah, 4),
+        "val": round(val, 4),
+        "value_area_pct": round(va_vol / total_vol * 100, 1),
+    }
+
+
+# ---------------------------------------------------------------------------
 # High-level helper: compute all standard indicators for an asset
 # ---------------------------------------------------------------------------
 
-def compute_all(candles: list[dict]) -> dict:
+def compute_all(candles: list[dict], current_price: float | None = None) -> dict:
     """Compute a standard suite of indicators from candle data.
 
     Args:
         candles: List of OHLCV dicts from Hyperliquid.
+        current_price: Live mid-price used for swing_structure level calculations.
+                       Defaults to the last candle close when omitted.
 
     Returns:
         Dict with indicator names as keys and series/values as values.
@@ -402,6 +621,9 @@ def compute_all(candles: list[dict]) -> dict:
     adx_series = adx(candles)
     obv_series = obv(candles)
     vwap_series = vwap(candles)
+    rvol_series  = rvol(candles)
+    structure    = swing_structure(candles, current_price=current_price)
+    vol_profile  = volume_profile(candles)
 
     return {
         "ema20": ema20_series,
@@ -419,6 +641,9 @@ def compute_all(candles: list[dict]) -> dict:
         "adx": adx_series,
         "obv": obv_series,
         "vwap": vwap_series,
+        "rvol": rvol_series,
+        "swing_structure": structure,
+        "volume_profile": vol_profile,
     }
 
 

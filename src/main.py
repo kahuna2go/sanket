@@ -818,34 +818,30 @@ def main():
                     candles_5m = await hyperliquid.get_candles(asset, "5m", 100)
                     candles_4h = await hyperliquid.get_candles(asset, "4h", 100)
 
-                    intra = compute_all(candles_5m)
-                    lt = compute_all(candles_4h)
+                    intra = compute_all(candles_5m, current_price=current_price)
+                    lt = compute_all(candles_4h, current_price=current_price)
 
                     recent_mids = [entry["mid"] for entry in list(price_history.get(asset, []))[-10:]]
                     funding_annualized = round(funding * 24 * 365 * 100, 2) if funding else None
+
+                    # OBV direction: True when OBV rose over the last 3 bars
+                    obv_vals = last_n(intra.get("obv", []), 5)
+                    obv_rising = len(obv_vals) >= 3 and obv_vals[-1] > obv_vals[-3]
 
                     market_sections.append({
                         "asset": asset,
                         "current_price": round_or_none(current_price, 2),
                         "intraday": {
-                            "ema20": round_or_none(latest(intra.get("ema20", [])), 2),
-                            "macd": round_or_none(latest(intra.get("macd", [])), 2),
-                            "rsi7": round_or_none(latest(intra.get("rsi7", [])), 2),
                             "rsi14": round_or_none(latest(intra.get("rsi14", [])), 2),
-                            "series": {
-                                "ema20": round_series(last_n(intra.get("ema20", []), 10), 2),
-                                "macd": round_series(last_n(intra.get("macd", []), 10), 2),
-                                "rsi7": round_series(last_n(intra.get("rsi7", []), 10), 2),
-                                "rsi14": round_series(last_n(intra.get("rsi14", []), 10), 2),
-                            }
+                            "rvol": round_or_none(latest(intra.get("rvol", [])), 3),
+                            "obv_rising": obv_rising,
                         },
                         "long_term": {
-                            "ema20": round_or_none(latest(lt.get("ema20", [])), 2),
-                            "ema50": round_or_none(latest(lt.get("ema50", [])), 2),
-                            "atr3": round_or_none(latest(lt.get("atr3", [])), 2),
+                            "adx": round_or_none(latest(lt.get("adx", [])), 2),
+                            "rsi14": round_or_none(latest(lt.get("rsi14", [])), 2),
                             "atr14": round_or_none(latest(lt.get("atr14", [])), 2),
-                            "macd_series": round_series(last_n(lt.get("macd", []), 10), 2),
-                            "rsi_series": round_series(last_n(lt.get("rsi14", []), 10), 2),
+                            "structure": lt.get("swing_structure"),
+                            "volume_profile": lt.get("volume_profile"),
                         },
                         "open_interest": round_or_none(oi, 2),
                         "funding_rate": round_or_none(funding, 8),
