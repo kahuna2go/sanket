@@ -106,6 +106,144 @@ Key takeaways vs. 1h HTF:
 
 ---
 
+---
+
+## MS + VA Bounce Strategy — SOL TP Split Comparison (2026-05-13)
+
+Strategy: 1h market structure bias (swing_count ≥ 2) + 5m Value Area bounce + confirmation bar + partial exit
+Period: 2024-05-07 → 2026-05-07 | Entry TF: 5m | Go/no-go: win_rate ≥ breakeven_win_rate + 5%
+
+Two structure detection methods compared: **Old MS** (pivot-based, ±3 bar lookback) vs **ZigZag dev=2%** (2% deviation threshold).
+Three TP split variants: **50/50** (baseline), **70/30**, **TP2-only** (full size runs to 127.2% fib extension, no breakeven move).
+
+### No filters
+
+| Approach | Split | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|----------|-------|-------:|-----:|--------:|-------:|-----:|------:|---------|
+| Old MS   | 50/50   | 395 | 30.1% | 2.79 | +56.1 | +0.142 | -25.6 | NO-GO ✗ |
+| Old MS   | 70/30   | 395 | 30.1% | 2.73 | +49.3 | +0.125 | -25.1 | NO-GO ✗ |
+| Old MS   | TP2only | 382 | 19.4% | 5.38 | +90.4 | +0.237 | -32.1 | NO-GO ✗ |
+| ZZ dev=2% | 50/50  | 459 | 30.1% | 2.92 | +82.1 | +0.179 | -29.0 | NO-GO ✗ |
+| ZZ dev=2% | 70/30  | 459 | 30.1% | 2.91 | +79.9 | +0.174 | -27.6 | NO-GO ✗ |
+| ZZ dev=2% | TP2only | 428 | 17.8% | 6.32 | +128.0 | +0.299 | -36.1 | NO-GO ✗ |
+
+### RVOL ≥ 1.2
+
+| Approach | Split | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|----------|-------|-------:|-----:|--------:|-------:|-----:|------:|---------|
+| Old MS   | 50/50   | 301 | 33.9% | 2.56 | +62.2 | +0.207 | -24.0 | GO ✓ |
+| Old MS   | 70/30   | 301 | 33.9% | 2.52 | +57.8 | +0.192 | -24.0 | GO ✓ |
+| Old MS   | TP2only | 294 | 22.1% | 4.73 | +78.2 | +0.266 | -18.8 | NO-GO ✗ |
+| ZZ dev=2% | 50/50  | 355 | 33.2% | 2.66 | +76.6 | +0.216 | -21.8 | GO ✓ |
+| ZZ dev=2% | 70/30  | 355 | 33.2% | 2.66 | +76.9 | +0.217 | -19.7 | GO ✓ |
+| ZZ dev=2% | TP2only | 341 | 19.9% | 5.59 | +107.0 | +0.314 | -23.7 | NO-GO ✗ |
+
+### RVOL ≥ 1.2 + Session (London / NY)
+
+| Approach | Split | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|----------|-------|-------:|-----:|--------:|-------:|-----:|------:|---------|
+| Old MS   | 50/50   | 124 | 33.1% | 2.73 | +29.1 | +0.235 | -10.6 | GO ✓ |
+| Old MS   | 70/30   | 124 | 33.1% | 2.68 | +26.9 | +0.217 |  -9.9 | GO ✓ |
+| Old MS   | TP2only | 123 | 21.1% | 4.98 | +32.5 | +0.264 | -18.5 | NO-GO ✗ |
+| ZZ dev=2% | 50/50  | 174 | 38.5% | 2.72 | +75.0 | +0.431 | -16.6 | GO ✓ |
+| ZZ dev=2% | 70/30  | 174 | 38.5% | 2.75 | +77.0 | +0.442 | -15.5 | GO ✓ |
+| ZZ dev=2% | TP2only | 171 | 22.2% | 5.66 | +82.3 | +0.481 | -15.0 | **GO ✓** |
+
+### Key findings
+
+- **70/30 is never better than 50/50.** Consistently equal win rate, lower or equal TotalR. No reason to use it.
+- **TP2-only fails the verdict in both systems except one case:** ZZ + RVOL≥1.2 + Session, where it clears GO with the highest AvgR of any config (+0.481) and lowest MaxDD of any session config (-15.0). Trade-off: 22% win rate requires patience.
+- **ZZ dev=2% is materially better than Old MS with RVOL+Session:** 38.5% vs 33.1% win rate, +0.431 vs +0.235 AvgR, 50% more trades. The ZigZag pivot definition (significance-based) appears to filter out more noise in this regime.
+- **Best overall config for SOL: ZZ dev=2% + RVOL≥1.2 + Session + TP2-only** — GO verdict, +0.481 AvgR, -15.0 MaxDD.
+- **ETH: NO-GO on all configs across both structure methods.** Not a SOL-specific finding — the VA Bounce strategy simply has no edge on ETH in this period.
+
+---
+
+## Fib 0.745 Entry vs VA Bounce — SOL SL & Entry Comparison (2026-05-13)
+
+All tests: ZigZag market structure bias, 1h HTF, 5m entry, 2024-05-07 → 2026-05-07.
+SL variants: **VA-SL** = VAL/VAH ± 15% VA-width | **TightSL** = swing_low/high ± 0.05 × swing_range (1.05 fib extension).
+
+### Fib 0.745 retracement entry + TightSL (dev=2% and dev=3%)
+
+Entry: 5m bar low touches swing_high − 0.745 × range (zone ±0.04), close above swing_low. No confirmation bar.
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|-------:|-----:|--------:|-------:|-----:|------:|---------|
+| dev=2% zone=0.08 no filters          | 569 | 29.5% | 3.32 | +157.2 | +0.276 | -42.9 | GO ✓ |
+| dev=2% zone=0.08 + RVOL≥1.2         | 409 | 29.6% | 3.14 |  +92.2 | +0.225 | -30.2 | GO ✓ |
+| dev=2% zone=0.08 + RVOL≥1.2 + Sess  | 179 | 29.1% | 3.26 |  +42.5 | +0.237 | -25.0 | GO ✓ |
+| dev=2% zone=0.08 + RVOL≥1.2 + Sess TP2only | 175 | 24.6% | 4.30 | +53.1 | +0.303 | -25.0 | GO ✓ |
+| dev=2% zone=0.12 + RVOL≥1.2 + Sess  | 185 | 31.4% | 3.04 |  +49.5 | +0.267 | -25.0 | GO ✓ |
+| dev=2% zone=0.12 + RVOL≥1.2 + Sess TP2only | 181 | 26.0% | 4.08 | +57.7 | +0.319 | -25.0 | GO ✓ |
+| dev=3% zone=0.08 no filters          | 266 | 28.6% | 3.66 |  +88.1 | +0.331 | -17.7 | GO ✓ |
+| dev=3% zone=0.08 + RVOL≥1.2         | 204 | 30.4% | 3.61 |  +81.7 | +0.400 | -12.4 | GO ✓ |
+| dev=3% zone=0.08 + RVOL≥1.2 + Sess  |  99 | 31.3% | 3.61 |  +43.8 | +0.443 |  -7.0 | GO ✓ |
+| dev=3% zone=0.08 + RVOL≥1.2 + Sess TP2only |  95 | 28.4% | 4.55 | +54.8 | +0.577 | -7.0 | **GO ✓** |
+
+### VA Bounce entry — VA-SL vs TightSL (dev=2%)
+
+Entry: 5m bar touches VAL/VAH zone + confirmation bar. SL either from VAL buffer or swing extreme.
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|-------:|-----:|--------:|-------:|-----:|------:|---------|
+| VA-SL  50/50  no filters             | 459 | 30.1% | 2.92 |  +82.1 | +0.179 | -29.0 | NO-GO ✗ |
+| TightSL 50/50  no filters            | 255 | 26.7% | 3.84 |  +74.0 | +0.290 | -32.3 | GO ✓ |
+| TightSL TP2only no filters           | 249 | 15.3% | 8.62 | +116.6 | +0.468 | -37.0 | NO-GO ✗ |
+| VA-SL  50/50  + RVOL≥1.2             | 355 | 33.2% | 2.66 |  +76.6 | +0.216 | -21.8 | GO ✓ |
+| TightSL 50/50  + RVOL≥1.2           | 164 | 29.9% | 4.02 |  +82.0 | +0.500 | -17.0 | GO ✓ |
+| TightSL TP2only + RVOL≥1.2          | 161 | 18.0% | 8.77 | +122.4 | +0.760 | -19.3 | **GO ✓** |
+| VA-SL  50/50  + RVOL≥1.2 + Session  | 174 | 38.5% | 2.72 |  +75.0 | +0.431 | -16.6 | GO ✓ |
+| TightSL 50/50  + RVOL≥1.2 + Session |  66 | 36.4% | 2.42 |  +16.1 | +0.245 |  -9.0 | GO ✓ |
+| VA-SL  TP2only + RVOL≥1.2 + Session | 171 | 22.2% | 5.66 |  +82.3 | +0.481 | -15.0 | GO ✓ |
+| TightSL TP2only + RVOL≥1.2 + Session |  66 | 21.2% | 5.43 |  +24.0 | +0.364 | -12.3 | GO ✓ |
+
+### Summary — best configs across all approaches (SOL, 2 years)
+
+| Approach | Trades | Win% | AvgR | MaxDD | Notes |
+|----------|-------:|-----:|-----:|------:|-------|
+| VA Bounce + VA-SL + Session + TP2only       | 171 | 22.2% | +0.481 | -15.0 | Previous best |
+| VA Bounce + TightSL + RVOL≥1.2 + TP2only   | 161 | 18.0% | +0.760 | -19.3 | Highest AvgR; low win rate, no session filter |
+| Fib 0.745 + TightSL + dev=3% + RVOL≥1.2 + Session + TP2only | 95 | 28.4% | +0.577 | -7.0 | Best MaxDD; fewest trades |
+
+### Key findings
+
+- **TightSL hurts VA Bounce when combined with session filter** — trade count collapses (174→66) and AvgR drops. The session-filtered VA entries are mid-swing, making the swing-extreme SL too far and killing R:R on many setups.
+- **TightSL helps VA Bounce without session filter** — RVOL≥1.2 + TP2only jumps from +0.216 to +0.760 AvgR. Best raw AvgR of any config tested, but 18% win rate and trades around the clock.
+- **Fib 0.745 entry is the most consistent** — all 12 configs are GO, MaxDD is lowest (-7.0 best case), and win rates are in the 28–31% range (more stable than the 18–22% of TP2only VA setups).
+- **Zone width (0.08 vs 0.12) has no meaningful effect** on fib entry results — the R:R filter is the active gate, not the zone boundary.
+- **dev=3% produces better quality than dev=2% for fib entry** — fewer trades but higher AvgR and lower MaxDD across all configs.
+
+---
+
+## Selected Strategies (2026-05-13)
+
+Period: 2024-05-07 → 2026-05-07 | Entry TF: 5m | Structure: 1h ZigZag MS (swing_count ≥ 2)
+Entry: Fib 0.745 retracement of last ZZ swing | SL: swing_low/high − 0.05 × swing_range (1.05 fib extension)
+
+| Asset | ZZ Dev | Zone | RVOL | Session | TP Split | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|-------|-------:|-----:|-----:|---------|----------|-------:|-----:|--------:|-------:|-----:|------:|---------|
+| SOL | 3% | 0.08 | ≥1.2 | London/NY | 50/50 | 99 | 31.3% | 3.61 | +43.8 | +0.443 | -7.0 | GO ✓ |
+| ETH | 2% | 0.08 | — | London/NY | TP2only | 193 | 27.5% | 4.40 | +93.4 | +0.484 | -23.2 | GO ✓ |
+
+### SOL — Fib 0.745 + dev=3% + RVOL≥1.2 + Session + 50/50
+
+- ~50 trades/year, 31.3% win rate, AvgWinR 3.61, AvgR +0.443 per trade
+- SL just below last confirmed Higher Low (1.05 fib extension) — tight risk, MaxDD only -7.0R over 2 years
+- 50% closes at last swing high (TP1), 50% runs to 127.2% fib extension (TP2); SL moves to breakeven after TP1
+- RVOL≥1.2 filters low-volume setups; session window (London 08:30–11:30 / NY 16:00–20:00 Vienna time)
+- dev=3% ZigZag produces fewer but more significant swings than dev=2% — better signal quality for SOL
+
+### ETH — Fib 0.745 + dev=2% + Session + TP2only
+
+- ~97 trades/year, 27.5% win rate, AvgWinR 4.40, AvgR +0.484 per trade
+- Full position runs to 127.2% fib extension — no partial exit, no breakeven move; accept full -1R on losers
+- Session filter (London/NY) is the only quality gate — RVOL filter consistently hurt ETH results
+- dev=2% required for ETH: smaller swings need tighter ZigZag deviation to produce enough signals
+- MaxDD -23.2R over 2 years is the main risk; psychologically demanding with 27.5% win rate
+
+---
+
 ## Run log
 
 | Date       | Asset | HTF | Period              | Command                                              |

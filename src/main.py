@@ -7,7 +7,7 @@ sys.path.append(str(pathlib.Path(__file__).parent.parent))
 from src.agent.decision_maker import TradingAgent
 from src.thesis_tracker import update_and_check
 from src.macro_filter import get_macro_context
-from src.indicators.local_indicators import compute_all, last_n, latest, swing_structure, volume_profile, rvol
+from src.indicators.local_indicators import compute_all, last_n, latest, swing_structure, zz_structure, volume_profile, rvol
 from src.risk_manager import RiskManager
 from src.trading.hyperliquid_api import HyperliquidAPI
 import asyncio
@@ -29,6 +29,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 
 _VIENNA_TZ = ZoneInfo("Europe/Vienna")
+
+# Per-asset strategy config
+# Fib assets use ZigZag + Fib 0.745 retracement entry; others use VA Bounce
+_FIB_ASSETS = {"SOL", "ETH"}
+_ZZ_DEV     = {"SOL": 3.0, "ETH": 2.0}   # ZigZag deviation_pct per asset
+_ZZ_DEV_DEFAULT = 2.0
 
 # Active trading windows (Vienna local time)
 _LONDON_START = 8 + 30 / 60  # 08:30
@@ -820,9 +826,9 @@ def main():
 
                     intra = compute_all(candles_5m, current_price=current_price)
 
-                    # 1h bias: swing_structure on rolling 200-bar window, VP on last 20 bars
-                    struct_1h = swing_structure(candles_1h[-200:], current_price=current_price) if len(candles_1h) >= 5 else None
-                    vp_1h = volume_profile(candles_1h[-20:]) if len(candles_1h) >= 20 else None
+                    # 1h bias: zz_structure per asset (dev varies); VP only for non-fib assets
+                    dev_pct = _ZZ_DEV.get(asset, _ZZ_DEV_DEFAULT)
+                    struct_1h = zz_structure(candles_1h[-200:], deviation_pct=dev_pct, current_price=current_price) if len(candles_1h) >= 5 else None
                     rvol_1h_val = latest(rvol(candles_1h, period=20))
 
                     swing_count_1h = struct_1h.get("swing_count", 0) if struct_1h else 0
@@ -834,9 +840,53 @@ def main():
                     else:
                         bias_dir = None
 
-                    vah_1h = vp_1h.get("vah") if vp_1h else None
-                    val_1h = vp_1h.get("val") if vp_1h else None
-                    va_width_1h = (vah_1h - val_1h) if (vah_1h is not None and val_1h is not None) else None
+                    _session_active = _get_session(datetime.now(timezone.utc))["active"]
+
+                    if asset in _FIB_ASSETS:
+                        sw_high = struct_1h.get("last_swing_high") if struct_1h else None
+                        sw_low  = struct_1h.get("last_swing_low")  if struct_1h else None
+                        sw_rng  = struct_1h.get("swing_range")      if struct_1h else None
+                        if sw_high is not None and sw_low is not None and sw_rng and sw_rng > 0:
+                            fib_entry_long  = round(sw_high - 0.745 * sw_rng, 4)
+                            fib_entry_short = round(sw_low  + 0.745 * sw_rng, 4)
+                            sl_long         = round(sw_low  - 0.05  * sw_rng, 4)
+                            sl_short        = round(sw_high + 0.05  * sw_rng, 4)
+                        else:
+                            fib_entry_long = fib_entry_short = sl_long = sl_short = None
+                        bias_section = {
+                            "bias":            bias_dir,
+                            "trend":           trend_1h,
+                            "swing_count":     swing_count_1h,
+                            "rvol_1h":         round_or_none(rvol_1h_val, 3),
+                            "last_swing_high": round_or_none(sw_high, 4),
+                            "last_swing_low":  round_or_none(sw_low,  4),
+                            "swing_range":     round_or_none(sw_rng,  4),
+                            "fib_entry_long":  fib_entry_long,
+                            "fib_entry_short": fib_entry_short,
+                            "sl_long":         sl_long,
+                            "sl_short":        sl_short,
+                            "tp1_long":        round_or_none(sw_high, 4),
+                            "tp1_short":       round_or_none(sw_low,  4),
+                            "tp2_long":        round_or_none(struct_1h.get("tp_speculative_long")  if struct_1h else None, 4),
+                            "tp2_short":       round_or_none(struct_1h.get("tp_speculative_short") if struct_1h else None, 4),
+                            "session_active":  _session_active,
+                        }
+                    else:
+                        vp_1h = volume_profile(candles_1h[-20:]) if len(candles_1h) >= 20 else None
+                        vah_1h = vp_1h.get("vah") if vp_1h else None
+                        val_1h = vp_1h.get("val") if vp_1h else None
+                        va_width_1h = (vah_1h - val_1h) if (vah_1h is not None and val_1h is not None) else None
+                        bias_section = {
+                            "bias":                   bias_dir,
+                            "trend":                  trend_1h,
+                            "swing_count":            swing_count_1h,
+                            "val":                    round_or_none(val_1h, 4),
+                            "vah":                    round_or_none(vah_1h, 4),
+                            "va_width":               round_or_none(va_width_1h, 4),
+                            "rvol_1h":                round_or_none(rvol_1h_val, 3),
+                            "tp_speculative_long":    round_or_none(struct_1h.get("tp_speculative_long")  if struct_1h else None, 4),
+                            "tp_speculative_short":   round_or_none(struct_1h.get("tp_speculative_short") if struct_1h else None, 4),
+                        }
 
                     recent_mids = [entry["mid"] for entry in list(price_history.get(asset, []))[-10:]]
                     funding_annualized = round(funding * 24 * 365 * 100, 2) if funding else None
@@ -853,17 +903,7 @@ def main():
                             "rvol": round_or_none(latest(intra.get("rvol", [])), 3),
                             "obv_rising": obv_rising,
                         },
-                        "bias_1h": {
-                            "bias": bias_dir,
-                            "trend": trend_1h,
-                            "swing_count": swing_count_1h,
-                            "val": round_or_none(val_1h, 4),
-                            "vah": round_or_none(vah_1h, 4),
-                            "va_width": round_or_none(va_width_1h, 4),
-                            "rvol_1h": round_or_none(rvol_1h_val, 3),
-                            "tp_speculative_long": round_or_none(struct_1h.get("tp_speculative_long") if struct_1h else None, 4),
-                            "tp_speculative_short": round_or_none(struct_1h.get("tp_speculative_short") if struct_1h else None, 4),
-                        },
+                        "bias_1h": bias_section,
                         "open_interest": round_or_none(oi, 2),
                         "funding_rate": round_or_none(funding, 8),
                         "funding_annualized_pct": funding_annualized,

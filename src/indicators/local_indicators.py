@@ -513,6 +513,155 @@ def swing_structure(candles: list[dict], lookback: int = 3,
 
 
 # ---------------------------------------------------------------------------
+# ZigZag + ZigZag Market Structure
+# ---------------------------------------------------------------------------
+
+def zigzag(candles: list[dict], deviation_pct: float = 3.0) -> list[dict]:
+    """ZigZag indicator: alternating confirmed swing HIGH/LOW points.
+
+    A new pivot is confirmed only when price reverses by at least deviation_pct%
+    from the last pivot. The final point in the returned list is always the
+    current forming (unconfirmed) pivot — drop it for structure analysis.
+
+    Each point: {"type": "HIGH"|"LOW", "price": float, "index": int, "t": int}
+    """
+    if not candles:
+        return []
+
+    dev = deviation_pct / 100.0
+    points: list[dict] = []
+
+    last_price = candles[0]["high"]
+    last_type  = "HIGH"
+    last_idx   = 0
+
+    for i in range(1, len(candles)):
+        c = candles[i]
+        if last_type == "HIGH":
+            if c["high"] > last_price:
+                last_price = c["high"]
+                last_idx   = i
+            elif c["low"] <= last_price * (1 - dev):
+                points.append({"type": "HIGH", "price": last_price, "index": last_idx, "t": candles[last_idx]["t"]})
+                last_price = c["low"]
+                last_type  = "LOW"
+                last_idx   = i
+        else:
+            if c["low"] < last_price:
+                last_price = c["low"]
+                last_idx   = i
+            elif c["high"] >= last_price * (1 + dev):
+                points.append({"type": "LOW", "price": last_price, "index": last_idx, "t": candles[last_idx]["t"]})
+                last_price = c["high"]
+                last_type  = "HIGH"
+                last_idx   = i
+
+    points.append({"type": last_type, "price": last_price, "index": last_idx, "t": candles[last_idx]["t"]})
+    return points
+
+
+def zz_structure(candles: list[dict], deviation_pct: float = 3.0,
+                 current_price: float | None = None) -> dict | None:
+    """Market structure from ZigZag pivots.
+
+    Drop-in replacement for swing_structure — returns the same keys.
+    Returns None when there are fewer than 4 confirmed pivots (2H + 2L minimum).
+    swing_count counts consecutive confirming pairs from the end on both highs
+    and lows; returns the minimum of the two streaks.
+    """
+    zz = zigzag(candles, deviation_pct)
+    confirmed = zz[:-1]  # last point is still forming — exclude
+
+    if len(confirmed) < 4:
+        return None
+
+    if current_price is None:
+        current_price = candles[-1]["close"]
+
+    highs = [p["price"] for p in confirmed if p["type"] == "HIGH"]
+    lows  = [p["price"] for p in confirmed if p["type"] == "LOW"]
+
+    if len(highs) < 2 or len(lows) < 2:
+        return None
+
+    def _direction(series: list[float]) -> str:
+        recent = series[-3:] if len(series) >= 3 else series
+        if all(recent[i] < recent[i + 1] for i in range(len(recent) - 1)):
+            return "ascending"
+        if all(recent[i] > recent[i + 1] for i in range(len(recent) - 1)):
+            return "descending"
+        return "mixed"
+
+    h_dir = _direction(highs)
+    l_dir = _direction(lows)
+
+    if h_dir == "ascending" and l_dir == "ascending":
+        trend = "HH_HL"
+    elif h_dir == "descending" and l_dir == "descending":
+        trend = "LH_LL"
+    else:
+        trend = "mixed"
+
+    def _streak(series: list[float], ascending: bool) -> int:
+        count = 0
+        for i in range(len(series) - 1, 0, -1):
+            if (ascending and series[i] > series[i - 1]) or \
+               (not ascending and series[i] < series[i - 1]):
+                count += 1
+            else:
+                break
+        return count
+
+    swing_count = 0
+    if trend == "HH_HL":
+        swing_count = min(_streak(highs, ascending=True), _streak(lows, ascending=True))
+    elif trend == "LH_LL":
+        swing_count = min(_streak(highs, ascending=False), _streak(lows, ascending=False))
+
+    last_swing_high = highs[-1]
+    last_swing_low  = lows[-1]
+    swing_range = last_swing_high - last_swing_low
+
+    if swing_range <= 0:
+        return None
+
+    above = sorted(h for h in highs if h > current_price)
+    below = sorted((l for l in lows  if l < current_price), reverse=True)
+    next_resistance = above[0] if above else None
+    next_support    = below[0] if below else None
+
+    bos: str | None = None
+    if current_price > last_swing_high:
+        bos = "bullish"
+    elif current_price < last_swing_low:
+        bos = "bearish"
+
+    sl_buf = 0.4 * swing_range
+    tp_buf = 0.25 * swing_range
+    fib    = 0.272 * swing_range
+
+    tp_cons_long  = (next_resistance - tp_buf) if next_resistance else (last_swing_high + fib)
+    tp_cons_short = (next_support    + tp_buf) if next_support    else (last_swing_low  - fib)
+
+    return {
+        "trend":          trend,
+        "swing_count":    swing_count,
+        "last_swing_high": round(last_swing_high, 4),
+        "last_swing_low":  round(last_swing_low,  4),
+        "swing_range":     round(swing_range, 4),
+        "next_resistance": round(next_resistance, 4) if next_resistance else None,
+        "next_support":    round(next_support,    4) if next_support    else None,
+        "bos": bos,
+        "sl_long":  round(last_swing_low  - sl_buf, 4),
+        "sl_short": round(last_swing_high + sl_buf, 4),
+        "tp_conservative_long":  round(tp_cons_long,  4),
+        "tp_conservative_short": round(tp_cons_short, 4),
+        "tp_speculative_long":   round(last_swing_high + fib, 4),
+        "tp_speculative_short":  round(last_swing_low  - fib, 4),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Volume Profile
 # ---------------------------------------------------------------------------
 
