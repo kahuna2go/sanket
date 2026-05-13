@@ -757,7 +757,7 @@ def main():
 
             use_sonnet = first_run or price_moved or tpsl_near or health_check_due
 
-            if use_sonnet and macro_ctx.get("block_new_opens") and not active_trades:
+            if use_sonnet and macro_ctx.get("block_new_opens") and not active_trades and not health_check_due and not price_moved:
                 use_sonnet = False
                 add_event("Skipping LLM: block_new_opens=True and no open positions to manage")
 
