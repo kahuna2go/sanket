@@ -8,6 +8,7 @@ the trading agent can depend on predictable, non-blocking IO.
 
 import asyncio
 import logging
+import math
 import aiohttp
 from typing import TYPE_CHECKING
 from src.config_loader import CONFIG
@@ -143,6 +144,14 @@ class HyperliquidAPI:
                     continue
                 break
         raise last_err if last_err else RuntimeError("Hyperliquid retry: unknown error")
+
+    @staticmethod
+    def round_price(price: float) -> float:
+        """Round price to Hyperliquid's 5-significant-figure limit."""
+        if not price:
+            return price
+        mag = math.floor(math.log10(abs(price)))
+        return round(price, max(0, 4 - mag))
 
     def round_size(self, asset, amount):
         """Round order size to the asset precision defined by market metadata.
@@ -281,6 +290,9 @@ class HyperliquidAPI:
         from hyperliquid.utils.constants import MAINNET_API_URL
 
         amount = self.round_size(asset, amount)
+        limit_price = self.round_price(limit_price)
+        tp_price = self.round_price(tp_price)
+        sl_price = self.round_price(sl_price)
         orders = [
             {
                 "coin": asset,
@@ -342,6 +354,7 @@ class HyperliquidAPI:
             Raw SDK response from `Exchange.order`.
         """
         amount = self.round_size(asset, amount)
+        tp_price = self.round_price(tp_price)
         order_type = {"trigger": {"triggerPx": tp_price, "isMarket": True, "tpsl": "tp"}}
         return await self._retry(lambda: self.exchange.order(asset, not is_buy, amount, tp_price, order_type, True))
 
@@ -359,6 +372,7 @@ class HyperliquidAPI:
             Raw SDK response from `Exchange.order`.
         """
         amount = self.round_size(asset, amount)
+        sl_price = self.round_price(sl_price)
         order_type = {"trigger": {"triggerPx": sl_price, "isMarket": True, "tpsl": "sl"}}
         return await self._retry(lambda: self.exchange.order(asset, not is_buy, amount, sl_price, order_type, True))
 
