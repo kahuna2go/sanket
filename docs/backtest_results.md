@@ -108,6 +108,68 @@ Key takeaways vs. 1h HTF:
 
 ---
 
+## 1h MS + VA Bounce — SOL Filter Sweep (2026-05-11)
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Entry TF:** 5m
+**Strategy:** 1h MS (swing_count≥2) + VA Bounce + Confirmation bar + Partial exit (50/50 split)
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| No filters | 395 | 30.1% | 2.79 | +56.1 | +0.142 | -25.6% | NO-GO ✗ |
+| + RVOL ≥ 1.2 | 301 | 33.9% | 2.56 | +62.2 | +0.207 | -24.0% | GO ✓ |
+| + RVOL ≥ 1.5 | 255 | 33.3% | 2.61 | +51.9 | +0.204 | -19.9% | GO ✓ |
+| + Session | 184 | 27.7% | 2.67 | +3.1 | +0.017 | -23.1% | NO-GO ✗ |
+| + RVOL ≥ 1.2 + Session | 124 | 33.1% | 2.73 | +29.1 | +0.235 | -10.6% | GO ✓ |
+| + RVOL ≥ 1.5 + Session | 93 | 31.2% | 2.89 | +19.7 | +0.212 | -9.6% | GO ✓ |
+
+---
+
+## 1h ZigZag MS + VA Bounce — BTC / ETH / SOL (2026-05-13)
+
+**Period:** 2024-05-07 → 2026-05-07  |  **Entry TF:** 5m
+**Strategy:** 1h ZigZag MS (swing_count≥2) + VA Bounce + Confirmation bar + Partial exit (50/50 split)
+
+### BTC
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| dev=2% no filters | 309 | 23.6% | 3.21 | -1.4 | -0.005 | -34.5% | NO-GO ✗ |
+| dev=2% + RVOL≥1.2 | 270 | 21.5% | 3.23 | -24.6 | -0.091 | -47.1% | NO-GO ✗ |
+| dev=3% no filters | 189 | 26.5% | 3.59 | +40.4 | +0.214 | -17.6% | NO-GO ✗ |
+| dev=3% + RVOL≥1.2 | 151 | 24.5% | 3.92 | +31.1 | +0.206 | -15.6% | NO-GO ✗ |
+| dev=3% + Session | 109 | 25.7% | 3.65 | +21.3 | +0.195 | -18.0% | NO-GO ✗ |
+| dev=3% + RVOL≥1.2 + Session | 79 | 29.1% | 4.10 | +38.4 | +0.485 | -12.0% | GO ✓ |
+| dev=5% no filters | 32 | 25.0% | 2.14 | -6.9 | -0.216 | -14.1% | NO-GO ✗ |
+| dev=5% + RVOL≥1.2 | 29 | 24.1% | 2.13 | -7.1 | -0.244 | -14.0% | NO-GO ✗ |
+
+### ETH
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| dev=2% no filters | 437 | 23.6% | 3.18 | -6.6 | -0.015 | -84.3% | NO-GO ✗ |
+| dev=2% + RVOL≥1.2 | 364 | 24.5% | 3.15 | +5.7 | +0.016 | -50.4% | NO-GO ✗ |
+| dev=3% no filters | 283 | 24.4% | 2.84 | -18.0 | -0.064 | -61.1% | NO-GO ✗ |
+| dev=3% + RVOL≥1.2 | 230 | 26.1% | 2.56 | -16.3 | -0.071 | -41.7% | NO-GO ✗ |
+| dev=3% + Session | 152 | 23.0% | 2.47 | -30.6 | -0.201 | -41.3% | NO-GO ✗ |
+| dev=3% + RVOL≥1.2 + Session | 113 | 26.5% | 2.42 | -10.4 | -0.092 | -22.9% | NO-GO ✗ |
+| dev=5% no filters | 97 | 22.7% | 3.29 | -2.6 | -0.027 | -19.4% | NO-GO ✗ |
+| dev=5% + RVOL≥1.2 | 86 | 26.7% | 2.56 | -4.1 | -0.048 | -18.9% | NO-GO ✗ |
+
+### SOL
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| dev=2% no filters | 459 | 30.1% | 2.92 | +82.1 | +0.179 | -29.0% | NO-GO ✗ |
+| dev=2% + RVOL≥1.2 | 355 | 33.2% | 2.66 | +76.6 | +0.216 | -21.8% | GO ✓ |
+| dev=3% no filters | 364 | 28.3% | 3.20 | +69.0 | +0.190 | -50.9% | NO-GO ✗ |
+| dev=3% + RVOL≥1.2 | 298 | 31.2% | 2.70 | +46.1 | +0.155 | -38.8% | NO-GO ✗ |
+| dev=3% + Session | 194 | 29.9% | 2.70 | +20.4 | +0.105 | -35.4% | NO-GO ✗ |
+| dev=3% + RVOL≥1.2 + Session | 149 | 33.6% | 2.48 | +25.0 | +0.168 | -29.2% | NO-GO ✗ |
+| dev=5% no filters | 191 | 23.0% | 2.48 | -37.7 | -0.197 | -44.4% | NO-GO ✗ |
+| dev=5% + RVOL≥1.2 | 156 | 24.4% | 2.36 | -28.2 | -0.181 | -35.8% | NO-GO ✗ |
+
+---
+
 ## MS + VA Bounce Strategy — SOL TP Split Comparison (2026-05-13)
 
 Strategy: 1h market structure bias (swing_count ≥ 2) + 5m Value Area bounce + confirmation bar + partial exit
@@ -241,6 +303,27 @@ Entry: Fib 0.745 retracement of last ZZ swing | SL: swing_low/high − 0.05 × s
 - Session filter (London/NY) is the only quality gate — RVOL filter consistently hurt ETH results
 - dev=2% required for ETH: smaller swings need tighter ZigZag deviation to produce enough signals
 - MaxDD -23.2R over 2 years is the main risk; psychologically demanding with 27.5% win rate
+
+---
+
+## Weekend vs Weekday Split — Active Strategies (2026-05-18)
+
+Period: 2024-05-07 → 2026-05-07 | Entry TF: 5m | Both strategies use London/NY session filter
+
+| Strategy | Segment | n | Win% | AvgWinR | TotalR | AvgR | MaxDD |
+|----------|---------|--:|-----:|--------:|-------:|-----:|------:|
+| SOL dev=3% RVOL≥1.2 Session 50/50 | Overall | 99 | 31.3% | 3.61 | +43.8 | +0.443 | -7.0 |
+| | Weekday | 81 | 30.9% | 3.85 | +40.3 | +0.497 | -9.0 |
+| | Weekend | 18 | 33.3% | 2.60 | +3.6 | +0.198 | -4.0 |
+| ETH dev=2% Session TP2only | Overall | 193 | 27.5% | 4.40 | +93.4 | +0.484 | -23.2 |
+| | Weekday | 161 | 26.7% | 4.32 | +67.8 | +0.421 | -19.2 |
+| | Weekend | 32 | 31.2% | 4.76 | +25.6 | +0.800 | -6.0 |
+
+**SOL weekends:** similar win rate (33.3% vs 30.9%) but AvgWinR drops from 3.85 to 2.60 — winners run shorter. Still profitable (+0.198 avgR), not a clear cut.
+
+**ETH weekends:** best sub-segment in the data — +0.800 avgR vs +0.421 on weekdays, higher win rate and AvgWinR. Turning off weekends would remove 17% of trades that outperform the weekday average.
+
+**Conclusion: do not turn the agent off on weekends.** The session filter already gates entry quality; weekend trades that pass it are legitimate session-hour setups. ETH especially should not be cut.
 
 ---
 

@@ -4,12 +4,19 @@ Uses the Anthropic Claude API directly for trade decisions.
 """
 
 import asyncio
-import anthropic
-from src.config_loader import CONFIG
-from src.indicators.local_indicators import compute_all, last_n, latest
 import json
 import logging
 from datetime import datetime
+
+import anthropic
+
+from src.config_loader import CONFIG
+from src.indicators.local_indicators import (
+    compute_all, last_n, latest,
+    ema as _ema, sma as _sma, rsi as _rsi, atr as _atr, rvol as _rvol,
+    swing_structure as _swing_structure,
+    volume_profile as _volume_profile,
+)
 
 
 class TradingAgent:
@@ -17,18 +24,25 @@ class TradingAgent:
 
     def __init__(self, hyperliquid=None):
         self.model = CONFIG["llm_model"]
-        self.client = anthropic.Anthropic(api_key=CONFIG["anthropic_api_key"])
+        self.client = anthropic.AsyncAnthropic(api_key=CONFIG["anthropic_api_key"])
         self.hyperliquid = hyperliquid
         self.sanitize_model = CONFIG.get("sanitize_model") or "claude-haiku-4-5-20251001"
         self.haiku_model = CONFIG.get("haiku_model") or "claude-haiku-4-5-20251001"
         self.max_tokens = int(CONFIG.get("max_tokens") or 4096)
 
-    def decide_trade(self, assets, context, model=None, macro_context=None):
+    async def decide_trade(self, assets, context, model=None, macro_context=None):
         """Decide for multiple assets in one call."""
-        return self._decide(context, assets=assets, model=model, macro_context=macro_context)
+        return await self._decide(context, assets=assets, model=model, macro_context=macro_context)
 
-    def _decide(self, context, assets, model=None, macro_context=None):
+    async def _decide(self, context, assets, model=None, macro_context=None):
         """Dispatch decision request to Claude and enforce output contract."""
+        enable_tools = CONFIG.get("enable_tool_calling", False)
+
+        tool_instruction = (
+            "Tools\n"
+            "- Use fetch_indicator (indicator: ema/sma/rsi/macd/bbands/atr/adx/obv/vwap/stoch_rsi/rvol/swing_structure/volume_profile/all, asset, interval: 5m/4h, optional period) when an extra datapoint sharpens your thesis. Summarize findings in rationale — never paste raw output into JSON.\n\n"
+        ) if enable_tools else ""
+
         system_prompt = (
             "You are a senior quantitative trader managing perpetual futures on Hyperliquid, optimizing risk-adjusted returns under real execution, margin, and funding constraints.\n"
             "You receive market + account context including per-asset intraday (5m) and 1h bias data, active trades with exit plans, recent history, and hard-enforced risk limits.\n\n"
@@ -129,9 +143,8 @@ class TradingAgent:
             "- TP/SL sanity: BUY → tp_price > current_price, sl_price < current_price. SELL → tp_price < current_price, sl_price > current_price. Use null if levels can't be set. Mandatory SL auto-applied on buy/sell opens if not set.\n"
             "- exit_plan: at least one explicit invalidation trigger + any cooldown guidance.\n"
             "- Leverage: system enforces a hard cap. Treat allocation_usd as notional exposure consistent with available margin.\n\n"
-            "Tools\n"
-            "- Use fetch_indicator (indicator: ema/sma/rsi/macd/bbands/atr/adx/obv/vwap/stoch_rsi/rvol/swing_structure/volume_profile/all, asset, interval: 5m/4h, optional period) when an extra datapoint sharpens your thesis. Summarize findings in rationale — never paste raw output into JSON.\n\n"
-            "Reasoning: assess Structure (1h trend, swing_count, VA levels), Momentum (5m RVOL, RSI slope), Volatility (ATR), Positioning (funding, OI). Favor 1h+5m alignment.\n\n"
+            + tool_instruction
+            + "Reasoning: assess Structure (1h trend, swing_count, VA levels), Momentum (5m RVOL, RSI slope), Volatility (ATR), Positioning (funding, OI). Favor 1h+5m alignment.\n\n"
             "Output contract\n"
             "- Return ONLY a strict JSON object with one key: \"trade_decisions\" (array ordered to match assets list).\n"
             "- Each item: asset, action, allocation_usd, order_type, limit_price, tp_price, sl_price, exit_plan, rationale, close_fraction, thesis_strength.\n"
@@ -180,9 +193,11 @@ class TradingAgent:
         if macro_context:
             fg = macro_context.get("fear_greed", 50)
             fg_label = (
-                "extreme fear" if fg < 20 else
-                "extreme greed" if fg > 80 else
-                "neutral"
+                "extreme fear"  if fg < 25 else
+                "fear"          if fg < 45 else
+                "neutral"       if fg < 56 else
+                "greed"         if fg < 76 else
+                "extreme greed"
             )
             _session_name = macro_context.get("session", "unknown").upper()
             macro_section = (
@@ -200,23 +215,11 @@ class TradingAgent:
 
         messages = [{"role": "user", "content": user_content}]
 
-        def _log_request(model, messages_to_log):
-            with open("llm_requests.log", "a", encoding="utf-8") as f:
-                f.write(f"\n\n=== {datetime.now()} ===\n")
-                f.write(f"Model: {model}\n")
-                f.write(f"Messages count: {len(messages_to_log)}\n")
-                # Log last message content (truncated)
-                last = messages_to_log[-1]
-                content_str = str(last.get("content", ""))[:500]
-                f.write(f"Last message role: {last.get('role')}\n")
-                f.write(f"Last message content (truncated): {content_str}\n")
-
         effective_model = model or self.model
-        enable_tools = CONFIG.get("enable_tool_calling", False)
+        thinking_enabled = CONFIG.get("thinking_enabled")
+        thinking_budget = int(CONFIG.get("thinking_budget_tokens") or 10000)
 
-        def _call_claude(msgs, use_tools=True):
-            """Make a Claude API call with optional tool use."""
-            _log_request(effective_model, msgs)
+        async def _call_claude(msgs, use_tools=True):
             kwargs = {
                 "model": effective_model,
                 "max_tokens": self.max_tokens,
@@ -225,115 +228,114 @@ class TradingAgent:
             }
             if use_tools and enable_tools:
                 kwargs["tools"] = tools
-            if CONFIG.get("thinking_enabled"):
-                kwargs["thinking"] = {"type": "adaptive"}
+            if thinking_enabled:
+                kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
                 kwargs["max_tokens"] = max(self.max_tokens, 16000)
 
-            response = self.client.messages.create(**kwargs)
-            u = response.usage
-            cache_hit = getattr(u, "cache_read_input_tokens", 0) or 0
-            cache_create = getattr(u, "cache_creation_input_tokens", 0) or 0
-            logging.info(
-                "Claude response: stop_reason=%s, input=%d, output=%d, cache_create=%d, cache_read=%d",
-                response.stop_reason, u.input_tokens, u.output_tokens, cache_create, cache_hit,
-            )
-            if response.stop_reason == "max_tokens":
-                logging.warning(
-                    "Response truncated at max_tokens=%d (used %d output tokens) — increase MAX_TOKENS if JSON is cut off",
-                    kwargs["max_tokens"], u.output_tokens,
-                )
             with open("llm_requests.log", "a", encoding="utf-8") as f:
+                f.write(f"\n\n=== {datetime.now()} ===\n")
+                f.write(f"Model: {effective_model}\n")
+                f.write(f"Messages count: {len(msgs)}\n")
+                last = msgs[-1]
+                f.write(f"Last message role: {last.get('role')}\n")
+                f.write(f"Last message content (truncated): {str(last.get('content', ''))[:500]}\n")
+
+                response = await self.client.messages.create(**kwargs)
+                u = response.usage
+                cache_hit = getattr(u, "cache_read_input_tokens", 0) or 0
+                cache_create = getattr(u, "cache_creation_input_tokens", 0) or 0
+                logging.info(
+                    "Claude response: stop_reason=%s, input=%d, output=%d, cache_create=%d, cache_read=%d",
+                    response.stop_reason, u.input_tokens, u.output_tokens, cache_create, cache_hit,
+                )
+                if response.stop_reason == "max_tokens":
+                    logging.warning(
+                        "Response truncated at max_tokens=%d (used %d output tokens) — increase MAX_TOKENS if JSON is cut off",
+                        kwargs["max_tokens"], u.output_tokens,
+                    )
                 f.write(f"Response stop_reason: {response.stop_reason}\n")
                 f.write(f"Usage: input={u.input_tokens}, output={u.output_tokens}, cache_create={cache_create}, cache_read={cache_hit}\n")
+
             return response
 
-        def _handle_tool_call(tool_name, tool_input):
-            """Execute a tool call and return the result string."""
+        async def _handle_tool_call(tool_name, tool_input):
             if tool_name != "fetch_indicator":
                 return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
             try:
-                asset = tool_input["asset"]
-                interval = tool_input["interval"]
+                asset     = tool_input["asset"]
+                interval  = tool_input["interval"]
                 indicator = tool_input["indicator"]
+                period    = tool_input.get("period")
 
-                # Fetch candles from Hyperliquid
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        candles = pool.submit(
-                            asyncio.run,
-                            self.hyperliquid.get_candles(asset, interval, 100)
-                        ).result(timeout=30)
-                else:
-                    candles = asyncio.run(self.hyperliquid.get_candles(asset, interval, 100))
-
-                all_indicators = compute_all(candles)
+                candles = await self.hyperliquid.get_candles(asset, interval, 100)
 
                 if indicator == "all":
+                    all_indicators = compute_all(candles)
                     result = {}
                     for k, v in all_indicators.items():
                         if not isinstance(v, list):
-                            result[k] = v  # dict (e.g. swing_structure) or scalar — pass through
+                            result[k] = v
                         else:
                             result[k] = {"latest": latest(v), "series": last_n(v, 10)}
                 elif indicator == "macd":
+                    ai = compute_all(candles)
                     result = {
-                        "macd": {"latest": latest(all_indicators.get("macd", [])), "series": last_n(all_indicators.get("macd", []), 10)},
-                        "signal": {"latest": latest(all_indicators.get("macd_signal", [])), "series": last_n(all_indicators.get("macd_signal", []), 10)},
-                        "histogram": {"latest": latest(all_indicators.get("macd_histogram", [])), "series": last_n(all_indicators.get("macd_histogram", []), 10)},
+                        "macd":      {"latest": latest(ai.get("macd", [])),           "series": last_n(ai.get("macd", []), 10)},
+                        "signal":    {"latest": latest(ai.get("macd_signal", [])),    "series": last_n(ai.get("macd_signal", []), 10)},
+                        "histogram": {"latest": latest(ai.get("macd_histogram", [])), "series": last_n(ai.get("macd_histogram", []), 10)},
                     }
                 elif indicator == "bbands":
+                    ai = compute_all(candles)
                     result = {
-                        "upper": {"latest": latest(all_indicators.get("bbands_upper", [])), "series": last_n(all_indicators.get("bbands_upper", []), 10)},
-                        "middle": {"latest": latest(all_indicators.get("bbands_middle", [])), "series": last_n(all_indicators.get("bbands_middle", []), 10)},
-                        "lower": {"latest": latest(all_indicators.get("bbands_lower", [])), "series": last_n(all_indicators.get("bbands_lower", []), 10)},
+                        "upper":  {"latest": latest(ai.get("bbands_upper", [])),  "series": last_n(ai.get("bbands_upper", []), 10)},
+                        "middle": {"latest": latest(ai.get("bbands_middle", [])), "series": last_n(ai.get("bbands_middle", []), 10)},
+                        "lower":  {"latest": latest(ai.get("bbands_lower", [])),  "series": last_n(ai.get("bbands_lower", []), 10)},
                     }
-                elif indicator in ("ema", "sma"):
-                    period = tool_input.get("period", 20)
-                    from src.indicators.local_indicators import ema as _ema, sma as _sma
-                    closes = [c["close"] for c in candles]
-                    series = _ema(closes, period) if indicator == "ema" else _sma(closes, period)
-                    result = {"latest": latest(series), "series": last_n(series, 10), "period": period}
+                elif indicator == "ema":
+                    p = period or 20
+                    series = _ema([c["close"] for c in candles], p)
+                    result = {"latest": latest(series), "series": last_n(series, 10), "period": p}
+                elif indicator == "sma":
+                    p = period or 20
+                    series = _sma([c["close"] for c in candles], p)
+                    result = {"latest": latest(series), "series": last_n(series, 10), "period": p}
                 elif indicator == "rsi":
-                    period = tool_input.get("period", 14)
-                    from src.indicators.local_indicators import rsi as _rsi
-                    series = _rsi(candles, period)
-                    result = {"latest": latest(series), "series": last_n(series, 10), "period": period}
+                    p = period or 14
+                    series = _rsi(candles, p)
+                    result = {"latest": latest(series), "series": last_n(series, 10), "period": p}
                 elif indicator == "atr":
-                    period = tool_input.get("period", 14)
-                    from src.indicators.local_indicators import atr as _atr
-                    series = _atr(candles, period)
-                    result = {"latest": latest(series), "series": last_n(series, 10), "period": period}
+                    p = period or 14
+                    series = _atr(candles, p)
+                    result = {"latest": latest(series), "series": last_n(series, 10), "period": p}
                 elif indicator == "rvol":
-                    period = tool_input.get("period", 20)
-                    from src.indicators.local_indicators import rvol as _rvol
-                    series = _rvol(candles, period)
-                    result = {"latest": latest(series), "series": last_n(series, 10), "period": period}
+                    p = period or 20
+                    series = _rvol(candles, p)
+                    result = {"latest": latest(series), "series": last_n(series, 10), "period": p}
                 elif indicator == "swing_structure":
-                    from src.indicators.local_indicators import swing_structure as _swing_structure
                     current_px = candles[-1]["close"] if candles else None
                     result = _swing_structure(candles, current_price=current_px) or {"error": "insufficient data"}
                 elif indicator == "volume_profile":
-                    from src.indicators.local_indicators import volume_profile as _volume_profile
                     result = _volume_profile(candles) or {"error": "insufficient data"}
                 else:
+                    # adx, obv, vwap, stoch_rsi
+                    ai = compute_all(candles)
                     key_map = {"adx": "adx", "obv": "obv", "vwap": "vwap", "stoch_rsi": "stoch_rsi"}
                     mapped = key_map.get(indicator, indicator)
-                    series = all_indicators.get(mapped, [])
-                    result = {"latest": latest(series) if isinstance(series, list) else series,
-                              "series": last_n(series, 10) if isinstance(series, list) else series}
+                    series = ai.get(mapped, [])
+                    result = {
+                        "latest": latest(series) if isinstance(series, list) else series,
+                        "series": last_n(series, 10) if isinstance(series, list) else series,
+                    }
 
                 return json.dumps(result, default=str)
             except Exception as ex:
                 logging.error("Tool call error: %s", ex)
                 return json.dumps({"error": str(ex)})
 
-        def _sanitize_output(raw_content: str, assets_list):
-            """Use a cheap Claude model to normalize malformed output."""
+        async def _sanitize_output(raw_content: str, assets_list):
             try:
-                response = self.client.messages.create(
+                response = await self.client.messages.create(
                     model=self.sanitize_model,
                     max_tokens=max(self.max_tokens, 4096),
                     system=(
@@ -342,7 +344,8 @@ class TradingAgent:
                         "Each trade_decisions item must have: asset, action (buy/sell/hold), "
                         "allocation_usd (number), order_type (\"market\" or \"limit\"), "
                         "limit_price (number or null), tp_price (number or null), sl_price (number or null), "
-                        "exit_plan (string), rationale (string), thesis_strength (integer 1-5). "
+                        "exit_plan (string), rationale (string), thesis_strength (integer 1-5), "
+                        "close_fraction (number 0.01-1.0). "
                         f"Valid assets: {json.dumps(list(assets_list))}. "
                         "If input is wrapped in markdown or has prose, extract just the JSON. Do not add fields."
                     ),
@@ -364,22 +367,38 @@ class TradingAgent:
                 logging.error("Sanitize failed: %s", se)
                 return {"reasoning": "", "trade_decisions": []}
 
+        def _fallback_hold(reason: str):
+            return {
+                "reasoning": reason,
+                "trade_decisions": [{
+                    "asset": a,
+                    "action": "hold",
+                    "allocation_usd": 0.0,
+                    "order_type": "market",
+                    "limit_price": None,
+                    "tp_price": None,
+                    "sl_price": None,
+                    "exit_plan": "",
+                    "rationale": reason,
+                    "close_fraction": 1.0,
+                    "thesis_strength": 3,
+                } for a in assets]
+            }
+
         # Main loop: up to 6 iterations to handle tool calls
         for iteration in range(6):
             try:
-                response = _call_claude(messages)
+                response = await _call_claude(messages)
             except anthropic.APIError as e:
                 logging.error("Claude API error: %s", e)
                 with open("llm_requests.log", "a", encoding="utf-8") as f:
                     f.write(f"API Error: {e}\n")
                 break
 
-            # Check if the response contains tool use
             tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
-            text_blocks = [b for b in response.content if b.type == "text"]
+            text_blocks     = [b for b in response.content if b.type == "text"]
 
             if tool_use_blocks and response.stop_reason == "tool_use":
-                # Build assistant message with all content blocks
                 assistant_content = []
                 for block in response.content:
                     if block.type == "text":
@@ -395,40 +414,34 @@ class TradingAgent:
                         assistant_content.append({
                             "type": "thinking",
                             "thinking": block.thinking,
+                            "signature": block.signature,
                         })
                 messages.append({"role": "assistant", "content": assistant_content})
 
-                # Process each tool call
-                tool_results = []
-                for block in tool_use_blocks:
-                    result_str = _handle_tool_call(block.name, block.input)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result_str,
-                    })
+                # Execute all tool calls in parallel
+                results = await asyncio.gather(
+                    *[_handle_tool_call(b.name, b.input) for b in tool_use_blocks]
+                )
+                tool_results = [
+                    {"type": "tool_result", "tool_use_id": b.id, "content": result_str}
+                    for b, result_str in zip(tool_use_blocks, results)
+                ]
                 messages.append({"role": "user", "content": tool_results})
                 continue
 
             # No tool calls — parse the text response as JSON
-            raw_text = ""
-            for block in text_blocks:
-                raw_text += block.text
+            raw_text = "".join(b.text for b in text_blocks)
 
             if not raw_text.strip():
                 logging.error("Empty response from Claude")
                 break
 
-            # Strip markdown code fences if present
             cleaned = raw_text.strip()
             if cleaned.startswith("```"):
-                # Remove opening fence (```json or ```)
                 first_newline = cleaned.index("\n")
                 cleaned = cleaned[first_newline + 1:]
             if cleaned.endswith("```"):
                 cleaned = cleaned[:-3].rstrip()
-
-            # If Claude prefaced the JSON with prose, skip to the first '{'
             if not cleaned.startswith("{"):
                 brace_pos = cleaned.find("{")
                 if brace_pos >= 0:
@@ -438,7 +451,7 @@ class TradingAgent:
                 parsed = json.loads(cleaned)
                 if not isinstance(parsed, dict):
                     logging.error("Expected dict, got: %s; attempting sanitize", type(parsed))
-                    return _sanitize_output(raw_text, assets)
+                    return await _sanitize_output(raw_text, assets)
 
                 reasoning_text = parsed.get("reasoning", "") or ""
                 decisions = parsed.get("trade_decisions")
@@ -462,39 +475,16 @@ class TradingAgent:
                     return {"reasoning": reasoning_text, "trade_decisions": normalized}
 
                 logging.error("trade_decisions missing or invalid; attempting sanitize")
-                sanitized = _sanitize_output(raw_text, assets)
+                sanitized = await _sanitize_output(raw_text, assets)
                 if sanitized.get("trade_decisions"):
                     return sanitized
                 return {"reasoning": reasoning_text, "trade_decisions": []}
 
             except (json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
                 logging.error("JSON parse error: %s, content: %s", e, raw_text[:200])
-                sanitized = _sanitize_output(raw_text, assets)
+                sanitized = await _sanitize_output(raw_text, assets)
                 if sanitized.get("trade_decisions"):
                     return sanitized
-                return {
-                    "reasoning": "Parse error",
-                    "trade_decisions": [{
-                        "asset": a,
-                        "action": "hold",
-                        "allocation_usd": 0.0,
-                        "tp_price": None,
-                        "sl_price": None,
-                        "exit_plan": "",
-                        "rationale": "Parse error"
-                    } for a in assets]
-                }
+                return _fallback_hold("Parse error")
 
-        # Exhausted tool loop
-        return {
-            "reasoning": "tool loop cap",
-            "trade_decisions": [{
-                "asset": a,
-                "action": "hold",
-                "allocation_usd": 0.0,
-                "tp_price": None,
-                "sl_price": None,
-                "exit_plan": "",
-                "rationale": "tool loop cap"
-            } for a in assets]
-        }
+        return _fallback_hold("tool loop cap")
