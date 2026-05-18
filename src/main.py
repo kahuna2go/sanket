@@ -7,7 +7,7 @@ sys.path.append(str(pathlib.Path(__file__).parent.parent))
 from src.agent.decision_maker import TradingAgent
 from src.thesis_tracker import update_and_check
 from src.macro_filter import get_macro_context
-from src.indicators.local_indicators import compute_all, last_n, latest, swing_structure, zz_structure, volume_profile, rvol
+from src.indicators.local_indicators import compute_all, last_n, latest, swing_structure, zz_structure, volume_profile, rvol, ema
 from src.risk_manager import RiskManager
 from src.trading.hyperliquid_api import HyperliquidAPI
 import asyncio
@@ -42,16 +42,29 @@ _LONDON_END   = 11.5          # 11:30
 _NY_START     = 16.0          # 16:00
 _NY_END       = 20.0          # 20:00
 
+# S&P 500 ORB session window (Vienna local time)
+_SP500_PRESESSION = 15.0      # 15:00 — pre-session bias eval starts
+_SP500_END        = 20.0      # 20:00 — time stop / session end
+_SP500_ASSETS     = frozenset({"xyz:SP500"})
+
 
 def _get_session(utc_now: datetime) -> dict:
     hf = utc_now.astimezone(_VIENNA_TZ)
     hf = hf.hour + hf.minute / 60
     if _LONDON_START <= hf < _LONDON_END:
         return {"name": "london", "active": True,  "interval_secs": 180, "move_pct": 0.003}
+    elif _SP500_PRESESSION <= hf < _NY_START:
+        return {"name": "sp500",  "active": True,  "interval_secs": 300, "move_pct": 0.003}
     elif _NY_START <= hf < _NY_END:
         return {"name": "ny",     "active": True,  "interval_secs": 300, "move_pct": 0.003}
     else:
         return {"name": "off",    "active": False, "interval_secs": 900, "move_pct": 0.005}
+
+
+def _vhour(ts_ms: int) -> float:
+    """Return candle open time as decimal hours in Vienna local time."""
+    dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).astimezone(_VIENNA_TZ)
+    return dt.hour + dt.minute / 60 + dt.second / 3600
 
 
 def clear_terminal():
@@ -110,6 +123,7 @@ def main():
     invocation_count = 0
     trade_log = []  # For Sharpe: list of returns
     active_trades = []  # {'asset','is_long','amount','entry_price','tp_oid','sl_oid','exit_plan'}
+    orb_state: dict = {}  # Per-asset ORB day state for SP500 session
     recent_events = deque(maxlen=200)
     diary_path = "diary.jsonl"
     initial_account_value = None
@@ -822,71 +836,185 @@ def main():
 
                     # Fetch candles from Hyperliquid and compute indicators locally
                     candles_5m = await hyperliquid.get_candles(asset, "5m", 100)
-                    candles_1h = await hyperliquid.get_candles(asset, "1h", 220)
-
                     intra = compute_all(candles_5m, current_price=current_price)
 
-                    # 1h bias: zz_structure per asset (dev varies); VP only for non-fib assets
-                    dev_pct = _ZZ_DEV.get(asset, _ZZ_DEV_DEFAULT)
-                    struct_1h = zz_structure(candles_1h[-200:], deviation_pct=dev_pct, current_price=current_price) if len(candles_1h) >= 5 else None
-                    rvol_1h_val = latest(rvol(candles_1h, period=20))
+                    if asset in _SP500_ASSETS:
+                        # --- ORB state machine for S&P 500 ---
+                        _now_v = datetime.now(timezone.utc).astimezone(_VIENNA_TZ)
+                        _today_v = _now_v.date()
+                        _hf_v = _now_v.hour + _now_v.minute / 60 + _now_v.second / 3600
 
-                    swing_count_1h = struct_1h.get("swing_count", 0) if struct_1h else 0
-                    trend_1h = struct_1h.get("trend") if struct_1h else None
-                    if trend_1h == "HH_HL" and swing_count_1h >= 2:
-                        bias_dir = "bull"
-                    elif trend_1h == "LH_LL" and swing_count_1h >= 2:
-                        bias_dir = "bear"
-                    else:
-                        bias_dir = None
+                        _orb = orb_state.get(asset)
+                        if _orb is None or _orb.get("date") != _today_v:
+                            _orb = {
+                                "date": _today_v,
+                                "bias": None,
+                                "funding_ok_long": True,
+                                "funding_ok_short": True,
+                                "orh": None,
+                                "orl": None,
+                                "trade_taken": False,
+                                "bias_evaluated": False,
+                            }
+                            orb_state[asset] = _orb
 
-                    _session_active = _get_session(datetime.now(timezone.utc))["active"]
-
-                    if asset in _FIB_ASSETS:
-                        sw_high = struct_1h.get("last_swing_high") if struct_1h else None
-                        sw_low  = struct_1h.get("last_swing_low")  if struct_1h else None
-                        sw_rng  = struct_1h.get("swing_range")      if struct_1h else None
-                        if sw_high is not None and sw_low is not None and sw_rng and sw_rng > 0:
-                            fib_entry_long  = round(sw_high - 0.745 * sw_rng, 4)
-                            fib_entry_short = round(sw_low  + 0.745 * sw_rng, 4)
-                            sl_long         = round(sw_low  - 0.05  * sw_rng, 4)
-                            sl_short        = round(sw_high + 0.05  * sw_rng, 4)
+                        # Phase
+                        if _hf_v < _SP500_PRESESSION:
+                            _orb_phase = "pre_session"
+                        elif _hf_v < 15.5:
+                            _orb_phase = "pre_open"
+                        elif _hf_v < 15.75:
+                            _orb_phase = "or_formation"
+                        elif _hf_v < 17.5:
+                            _orb_phase = "breakout_watch"
+                        elif _hf_v < _SP500_END:
+                            _orb_phase = "in_session"
                         else:
-                            fib_entry_long = fib_entry_short = sl_long = sl_short = None
+                            _orb_phase = "time_stop"
+
+                        # One-time bias + funding evaluation at/after 15:00 CET
+                        if not _orb["bias_evaluated"] and _hf_v >= _SP500_PRESESSION:
+                            _candles_4h = await hyperliquid.get_candles(asset, "4h", 50)
+                            if len(_candles_4h) >= 21:
+                                _closes_4h = [c["close"] for c in _candles_4h]
+                                _ema21 = ema(_closes_4h, 21)
+                                _last_c4 = _closes_4h[-1]
+                                _last_e = next((v for v in reversed(_ema21) if v is not None), None)
+                                _prev_e = next((v for v in reversed(_ema21[:-1]) if v is not None), None)
+                                if _last_e and _prev_e:
+                                    if _last_c4 > _last_e and _last_e > _prev_e:
+                                        _orb["bias"] = "bull"
+                                    elif _last_c4 < _last_e and _last_e < _prev_e:
+                                        _orb["bias"] = "bear"
+                                    else:
+                                        _orb["bias"] = "neutral"
+                            _fund_rate = funding
+                            if _fund_rate is not None:
+                                _FUND_THRESH = 0.0003  # 0.03% per 8h
+                                _orb["funding_ok_long"] = _fund_rate <= _FUND_THRESH
+                                _orb["funding_ok_short"] = _fund_rate >= -_FUND_THRESH
+                            _orb["bias_evaluated"] = True
+
+                        # OR formation: derive ORH/ORL from 5m candles in [15:30, 15:45) CET
+                        if _orb["orh"] is None and _hf_v >= 15.5:
+                            _or_candles = [
+                                c for c in candles_5m
+                                if c.get("t") and 15.5 <= _vhour(c["t"]) < 15.75
+                            ]
+                            if _or_candles:
+                                _orb["orh"] = max(c["high"] for c in _or_candles)
+                                _orb["orl"] = min(c["low"]  for c in _or_candles)
+
+                        # Breakout detection on latest closed 5m bar
+                        _breakout_long = False
+                        _breakout_short = False
+                        if _orb_phase == "breakout_watch" and _orb["orh"] is not None and not _orb["trade_taken"]:
+                            if candles_5m:
+                                _last_c5 = candles_5m[-1]
+                                if _last_c5.get("t") and _vhour(_last_c5["t"]) + 5/60 > 15.75:
+                                    if _last_c5["close"] > _orb["orh"] and _orb["bias"] == "bull" and _orb["funding_ok_long"]:
+                                        _breakout_long = True
+                                    elif _last_c5["close"] < _orb["orl"] and _orb["bias"] == "bear" and _orb["funding_ok_short"]:
+                                        _breakout_short = True
+
+                        # Pre-compute TP/SL levels (based on ORH/ORL as proxy for entry)
+                        _orh_v = _orb["orh"]
+                        _orl_v = _orb["orl"]
+                        _or_range = (_orh_v - _orl_v) if (_orh_v is not None and _orl_v is not None) else None
+                        _SL_BUF = 0.1
+                        if _or_range:
+                            _tp1_l = round(_orh_v + 0.5 * _or_range, 2)
+                            _tp2_l = round(_orh_v + 1.0 * _or_range, 2)
+                            _sl_l  = round(_orl_v - _SL_BUF * _or_range, 2)
+                            _tp1_s = round(_orl_v - 0.5 * _or_range, 2)
+                            _tp2_s = round(_orl_v - 1.0 * _or_range, 2)
+                            _sl_s  = round(_orh_v + _SL_BUF * _or_range, 2)
+                        else:
+                            _tp1_l = _tp2_l = _sl_l = _tp1_s = _tp2_s = _sl_s = None
+
                         bias_section = {
-                            "bias":            bias_dir,
-                            "trend":           trend_1h,
-                            "swing_count":     swing_count_1h,
-                            "rvol_1h":         round_or_none(rvol_1h_val, 3),
-                            "last_swing_high": round_or_none(sw_high, 4),
-                            "last_swing_low":  round_or_none(sw_low,  4),
-                            "swing_range":     round_or_none(sw_rng,  4),
-                            "fib_entry_long":  fib_entry_long,
-                            "fib_entry_short": fib_entry_short,
-                            "sl_long":         sl_long,
-                            "sl_short":        sl_short,
-                            "tp1_long":        round_or_none(sw_high, 4),
-                            "tp1_short":       round_or_none(sw_low,  4),
-                            "tp2_long":        round_or_none(struct_1h.get("tp_speculative_long")  if struct_1h else None, 4),
-                            "tp2_short":       round_or_none(struct_1h.get("tp_speculative_short") if struct_1h else None, 4),
-                            "session_active":  _session_active,
+                            "phase":             _orb_phase,
+                            "bias":              _orb["bias"],
+                            "funding_ok_long":   _orb["funding_ok_long"],
+                            "funding_ok_short":  _orb["funding_ok_short"],
+                            "orh":               round_or_none(_orh_v, 2),
+                            "orl":               round_or_none(_orl_v, 2),
+                            "or_range":          round_or_none(_or_range, 2),
+                            "trade_taken_today": _orb["trade_taken"],
+                            "breakout_long":     _breakout_long,
+                            "breakout_short":    _breakout_short,
+                            "tp1_long":          _tp1_l,
+                            "tp2_long":          _tp2_l,
+                            "sl_long":           _sl_l,
+                            "tp1_short":         _tp1_s,
+                            "tp2_short":         _tp2_s,
+                            "sl_short":          _sl_s,
                         }
+
                     else:
-                        vp_1h = volume_profile(candles_1h[-20:]) if len(candles_1h) >= 20 else None
-                        vah_1h = vp_1h.get("vah") if vp_1h else None
-                        val_1h = vp_1h.get("val") if vp_1h else None
-                        va_width_1h = (vah_1h - val_1h) if (vah_1h is not None and val_1h is not None) else None
-                        bias_section = {
-                            "bias":                   bias_dir,
-                            "trend":                  trend_1h,
-                            "swing_count":            swing_count_1h,
-                            "val":                    round_or_none(val_1h, 4),
-                            "vah":                    round_or_none(vah_1h, 4),
-                            "va_width":               round_or_none(va_width_1h, 4),
-                            "rvol_1h":                round_or_none(rvol_1h_val, 3),
-                            "tp_speculative_long":    round_or_none(struct_1h.get("tp_speculative_long")  if struct_1h else None, 4),
-                            "tp_speculative_short":   round_or_none(struct_1h.get("tp_speculative_short") if struct_1h else None, 4),
-                        }
+                        candles_1h = await hyperliquid.get_candles(asset, "1h", 220)
+
+                        # 1h bias: zz_structure per asset (dev varies); VP only for non-fib assets
+                        dev_pct = _ZZ_DEV.get(asset, _ZZ_DEV_DEFAULT)
+                        struct_1h = zz_structure(candles_1h[-200:], deviation_pct=dev_pct, current_price=current_price) if len(candles_1h) >= 5 else None
+                        rvol_1h_val = latest(rvol(candles_1h, period=20))
+
+                        swing_count_1h = struct_1h.get("swing_count", 0) if struct_1h else 0
+                        trend_1h = struct_1h.get("trend") if struct_1h else None
+                        if trend_1h == "HH_HL" and swing_count_1h >= 2:
+                            bias_dir = "bull"
+                        elif trend_1h == "LH_LL" and swing_count_1h >= 2:
+                            bias_dir = "bear"
+                        else:
+                            bias_dir = None
+
+                        _session_active = _get_session(datetime.now(timezone.utc))["active"]
+
+                        if asset in _FIB_ASSETS:
+                            sw_high = struct_1h.get("last_swing_high") if struct_1h else None
+                            sw_low  = struct_1h.get("last_swing_low")  if struct_1h else None
+                            sw_rng  = struct_1h.get("swing_range")      if struct_1h else None
+                            if sw_high is not None and sw_low is not None and sw_rng and sw_rng > 0:
+                                fib_entry_long  = round(sw_high - 0.745 * sw_rng, 4)
+                                fib_entry_short = round(sw_low  + 0.745 * sw_rng, 4)
+                                sl_long         = round(sw_low  - 0.05  * sw_rng, 4)
+                                sl_short        = round(sw_high + 0.05  * sw_rng, 4)
+                            else:
+                                fib_entry_long = fib_entry_short = sl_long = sl_short = None
+                            bias_section = {
+                                "bias":            bias_dir,
+                                "trend":           trend_1h,
+                                "swing_count":     swing_count_1h,
+                                "rvol_1h":         round_or_none(rvol_1h_val, 3),
+                                "last_swing_high": round_or_none(sw_high, 4),
+                                "last_swing_low":  round_or_none(sw_low,  4),
+                                "swing_range":     round_or_none(sw_rng,  4),
+                                "fib_entry_long":  fib_entry_long,
+                                "fib_entry_short": fib_entry_short,
+                                "sl_long":         sl_long,
+                                "sl_short":        sl_short,
+                                "tp1_long":        round_or_none(sw_high, 4),
+                                "tp1_short":       round_or_none(sw_low,  4),
+                                "tp2_long":        round_or_none(struct_1h.get("tp_speculative_long")  if struct_1h else None, 4),
+                                "tp2_short":       round_or_none(struct_1h.get("tp_speculative_short") if struct_1h else None, 4),
+                                "session_active":  _session_active,
+                            }
+                        else:
+                            vp_1h = volume_profile(candles_1h[-20:]) if len(candles_1h) >= 20 else None
+                            vah_1h = vp_1h.get("vah") if vp_1h else None
+                            val_1h = vp_1h.get("val") if vp_1h else None
+                            va_width_1h = (vah_1h - val_1h) if (vah_1h is not None and val_1h is not None) else None
+                            bias_section = {
+                                "bias":                   bias_dir,
+                                "trend":                  trend_1h,
+                                "swing_count":            swing_count_1h,
+                                "val":                    round_or_none(val_1h, 4),
+                                "vah":                    round_or_none(vah_1h, 4),
+                                "va_width":               round_or_none(va_width_1h, 4),
+                                "rvol_1h":                round_or_none(rvol_1h_val, 3),
+                                "tp_speculative_long":    round_or_none(struct_1h.get("tp_speculative_long")  if struct_1h else None, 4),
+                                "tp_speculative_short":   round_or_none(struct_1h.get("tp_speculative_short") if struct_1h else None, 4),
+                            }
 
                     recent_mids = [entry["mid"] for entry in list(price_history.get(asset, []))[-10:]]
                     funding_annualized = round(funding * 24 * 365 * 100, 2) if funding else None
@@ -1253,6 +1381,8 @@ def main():
                                 "exit_plan": output["exit_plan"],
                                 "opened_at": datetime.now().isoformat()
                             })
+                            if asset in _SP500_ASSETS and asset in orb_state:
+                                orb_state[asset]["trade_taken"] = True
                         add_event(f"{action.upper()} {asset} amount {amount:.4f} at ~{current_price}")
                         if rationale:
                             add_event(f"Post-trade rationale for {asset}: {rationale}")
