@@ -1180,39 +1180,85 @@ def main():
                         continue
                     elif action == "update_tpsl":
                         tr = next((t for t in active_trades if t.get("asset") == asset), None)
-                        if not tr:
-                            add_event(f"UPDATE_TPSL {asset}: no active trade tracked — skipping")
-                            continue
                         new_tp = output.get("tp_price")
                         new_sl = output.get("sl_price")
-                        is_long = tr.get("is_long")
-                        amount = tr.get("amount")
                         try:
-                            if new_tp is not None:
-                                await hyperliquid.cancel_order(asset, tr.get("tp_oid")) if tr.get("tp_oid") else None
-                                tp_order = await hyperliquid.place_take_profit(asset, is_long, amount, float(new_tp))
-                                tp_oids = hyperliquid.extract_oids(tp_order)
-                                tr["tp_oid"] = tp_oids[0] if tp_oids else None
-                                tr["tp_price"] = float(new_tp)
-                                add_event(f"UPDATE_TPSL {asset}: TP → {new_tp}")
-                            if new_sl is not None:
-                                await hyperliquid.cancel_order(asset, tr.get("sl_oid")) if tr.get("sl_oid") else None
-                                sl_order = await hyperliquid.place_stop_loss(asset, is_long, amount, float(new_sl))
-                                sl_oids = hyperliquid.extract_oids(sl_order)
-                                tr["sl_oid"] = sl_oids[0] if sl_oids else None
-                                tr["sl_price"] = float(new_sl)
-                                add_event(f"UPDATE_TPSL {asset}: SL → {new_sl}")
-                            with open(diary_path, "a") as f:
-                                f.write(json.dumps({
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                    "asset": asset,
-                                    "action": "tpsl_update",
-                                    "tp_price": tr.get("tp_price"),
-                                    "tp_oid": tr.get("tp_oid"),
-                                    "sl_price": tr.get("sl_price"),
-                                    "sl_oid": tr.get("sl_oid"),
-                                    "rationale": rationale,
-                                }) + "\n")
+                            if not tr:
+                                # No tracked trade — resolve position from exchange
+                                state = await hyperliquid.get_user_state()
+                                live_pos = next(
+                                    (p for p in state.get("positions", [])
+                                     if hyperliquid._coin_matches(p.get("coin", ""), asset)),
+                                    None
+                                )
+                                if not live_pos or float(live_pos.get("szi", 0)) == 0:
+                                    add_event(f"UPDATE_TPSL {asset}: no active position on exchange — skipping")
+                                    continue
+                                szi = float(live_pos["szi"])
+                                is_long = szi > 0
+                                amount = abs(szi)
+                                # Cancel existing trigger (TP/SL) orders before placing new ones
+                                open_orders = await hyperliquid.get_open_orders()
+                                for o in open_orders:
+                                    if hyperliquid._coin_matches(o.get("coin", ""), asset) and hyperliquid._is_trigger_order(o):
+                                        oid = o.get("oid")
+                                        if oid:
+                                            await hyperliquid.cancel_order(asset, oid)
+                                tp_price_placed = None
+                                sl_price_placed = None
+                                tp_oid_placed = None
+                                sl_oid_placed = None
+                                if new_tp is not None:
+                                    tp_order = await hyperliquid.place_take_profit(asset, is_long, amount, float(new_tp))
+                                    tp_oids = hyperliquid.extract_oids(tp_order)
+                                    tp_oid_placed = tp_oids[0] if tp_oids else None
+                                    tp_price_placed = float(new_tp)
+                                    add_event(f"UPDATE_TPSL {asset}: TP → {new_tp} (live position, no tracked trade)")
+                                if new_sl is not None:
+                                    sl_order = await hyperliquid.place_stop_loss(asset, is_long, amount, float(new_sl))
+                                    sl_oids = hyperliquid.extract_oids(sl_order)
+                                    sl_oid_placed = sl_oids[0] if sl_oids else None
+                                    sl_price_placed = float(new_sl)
+                                    add_event(f"UPDATE_TPSL {asset}: SL → {new_sl} (live position, no tracked trade)")
+                                with open(diary_path, "a") as f:
+                                    f.write(json.dumps({
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "asset": asset,
+                                        "action": "tpsl_update",
+                                        "tp_price": tp_price_placed,
+                                        "tp_oid": tp_oid_placed,
+                                        "sl_price": sl_price_placed,
+                                        "sl_oid": sl_oid_placed,
+                                        "rationale": rationale,
+                                    }) + "\n")
+                            else:
+                                is_long = tr.get("is_long")
+                                amount = tr.get("amount")
+                                if new_tp is not None:
+                                    await hyperliquid.cancel_order(asset, tr.get("tp_oid")) if tr.get("tp_oid") else None
+                                    tp_order = await hyperliquid.place_take_profit(asset, is_long, amount, float(new_tp))
+                                    tp_oids = hyperliquid.extract_oids(tp_order)
+                                    tr["tp_oid"] = tp_oids[0] if tp_oids else None
+                                    tr["tp_price"] = float(new_tp)
+                                    add_event(f"UPDATE_TPSL {asset}: TP → {new_tp}")
+                                if new_sl is not None:
+                                    await hyperliquid.cancel_order(asset, tr.get("sl_oid")) if tr.get("sl_oid") else None
+                                    sl_order = await hyperliquid.place_stop_loss(asset, is_long, amount, float(new_sl))
+                                    sl_oids = hyperliquid.extract_oids(sl_order)
+                                    tr["sl_oid"] = sl_oids[0] if sl_oids else None
+                                    tr["sl_price"] = float(new_sl)
+                                    add_event(f"UPDATE_TPSL {asset}: SL → {new_sl}")
+                                with open(diary_path, "a") as f:
+                                    f.write(json.dumps({
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        "asset": asset,
+                                        "action": "tpsl_update",
+                                        "tp_price": tr.get("tp_price"),
+                                        "tp_oid": tr.get("tp_oid"),
+                                        "sl_price": tr.get("sl_price"),
+                                        "sl_oid": tr.get("sl_oid"),
+                                        "rationale": rationale,
+                                    }) + "\n")
                         except Exception as tpsl_err:
                             add_event(f"UPDATE_TPSL error {asset}: {tpsl_err}")
                         continue
