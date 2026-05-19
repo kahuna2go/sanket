@@ -22,10 +22,14 @@ import json
 from aiohttp import web
 from src.utils.formatting import format_number as fmt, format_size as fmt_sz
 from src.utils.prompt_utils import json_default, round_or_none, round_series
+from src.utils.display import (
+    setup_logging, print_loop_header, print_position_table,
+    print_decision, print_claude_stats, print_orb_status,
+)
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+setup_logging()
 
 
 _VIENNA_TZ = ZoneInfo("Europe/Vienna")
@@ -232,6 +236,7 @@ def main():
             invocation_count += 1
             _loop_now = datetime.now(timezone.utc)
             _session = _get_session(_loop_now)
+            print_loop_header(_session["name"], _session["interval_secs"], args.assets)
             minutes_since_start = (_loop_now - start_time).total_seconds() / 60
 
             macro_ctx = await get_macro_context()
@@ -736,6 +741,32 @@ def main():
                 except Exception as e:
                     add_event(f"Price fetch error {asset}: {e}")
 
+            # Compact position summary table
+            _pos_rows = []
+            for _tr in active_trades:
+                _a = _tr.get("asset")
+                _cur = asset_prices.get(_a)
+                _entry = _tr.get("entry_price")
+                _is_long = _tr.get("is_long")
+                _amt = _tr.get("amount")
+                _pnl = None
+                if _cur and _entry and _amt:
+                    _pnl = (_cur - _entry) * _amt * (1 if _is_long else -1)
+                _sl = _tr.get("sl_price")
+                _tp = _tr.get("tp_price")
+                _pos_rows.append({
+                    "asset": _a,
+                    "side": "long" if _is_long else "short",
+                    "amount": _amt,
+                    "entry": _entry,
+                    "current": _cur,
+                    "pnl_usd": _pnl,
+                    "sl_dist_pts": abs(_cur - _sl) if _cur and _sl else None,
+                    "tp_dist_pts": abs(_cur - _tp) if _cur and _tp else None,
+                })
+            if _pos_rows:
+                print_position_table(_pos_rows)
+
             # Escalation logic: check triggers before building expensive prompt.
             # Sonnet fires when ANY of:
             #   1. First run (no prior state)
@@ -1024,6 +1055,22 @@ def main():
                             "tp2_short":         _tp2_s,
                             "sl_short":          _sl_s,
                         }
+                        # Compute R:R for display
+                        _rr_display = None
+                        if _breakout_long and _tp2_l and _sl_l and current_price:
+                            _rr_display = round((_tp2_l - current_price) / max(current_price - _sl_l, 0.01), 2)
+                        elif _breakout_short and _tp2_s and _sl_s and current_price:
+                            _rr_display = round((current_price - _tp2_s) / max(_sl_s - current_price, 0.01), 2)
+                        print_orb_status(
+                            phase=_orb_phase,
+                            bias=_orb["bias"],
+                            orh=_orh_v,
+                            orl=_orl_v,
+                            breakout_long=_breakout_long,
+                            breakout_short=_breakout_short,
+                            trade_taken=_orb["trade_taken"],
+                            rr=_rr_display,
+                        )
 
                     else:
                         candles_1h = await hyperliquid.get_candles(asset, "1h", 220)
@@ -1235,12 +1282,13 @@ def main():
                     current_price = asset_prices.get(asset, 0)
                     action = output["action"]
                     rationale = output.get("rationale", "")
-                    if rationale:
-                        add_event(f"Decision rationale for {asset}: {rationale}")
+                    thesis_strength = output.get("thesis_strength")
                     if action == "cancel_limits":
                         try:
                             result = await hyperliquid.cancel_limit_orders(asset)
-                            add_event(f"CANCEL_LIMITS {asset}: {result.get('cancelled_count', 0)} order(s) cancelled — {rationale}")
+                            n = result.get("cancelled_count", 0)
+                            print_decision(asset, "cancel_limits", rationale, thesis_strength, extra=f"{n} order(s) cancelled")
+                            add_event(f"CANCEL_LIMITS {asset}: {n} order(s) cancelled")
                             with open(diary_path, "a") as f:
                                 f.write(json.dumps({
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1524,9 +1572,10 @@ def main():
                             })
                             if asset in _SP500_ASSETS and asset in orb_state:
                                 orb_state[asset]["trade_taken"] = True
-                        add_event(f"{action.upper()} {asset} amount {amount:.4f} at ~{current_price}")
-                        if rationale:
-                            add_event(f"Post-trade rationale for {asset}: {rationale}")
+                        tp_str = f"TP {output.get('tp_price')}  " if output.get("tp_price") else ""
+                        sl_str = f"SL {output.get('sl_price')}" if output.get("sl_price") else ""
+                        print_decision(asset, action, rationale, thesis_strength,
+                                       extra=f"{amount:.4f} @ {current_price}  {tp_str}{sl_str}")
                         # Write to diary after confirming fills status
                         with open(diary_path, "a") as f:
                             if existing_tr:
@@ -1560,7 +1609,7 @@ def main():
                                 }
                             f.write(json.dumps(diary_entry) + "\n")
                     else:  # hold
-                        add_event(f"Hold {asset}")
+                        print_decision(asset, "hold", rationale, thesis_strength)
                         # Write hold to diary
                         with open(diary_path, "a") as f:
                             diary_entry = {

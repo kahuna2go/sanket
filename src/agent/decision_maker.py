@@ -11,6 +11,7 @@ from datetime import datetime
 import anthropic
 
 from src.config_loader import CONFIG
+from src.utils.display import print_claude_stats
 from src.indicators.local_indicators import (
     compute_all, last_n, latest,
     ema as _ema, sma as _sma, rsi as _rsi, atr as _atr, rvol as _rvol,
@@ -272,9 +273,12 @@ class TradingAgent:
                 u = response.usage
                 cache_hit = getattr(u, "cache_read_input_tokens", 0) or 0
                 cache_create = getattr(u, "cache_creation_input_tokens", 0) or 0
-                logging.info(
-                    "Claude response: stop_reason=%s, input=%d, output=%d, cache_create=%d, cache_read=%d",
-                    response.stop_reason, u.input_tokens, u.output_tokens, cache_create, cache_hit,
+                print_claude_stats(
+                    input_tokens=u.input_tokens,
+                    output_tokens=u.output_tokens,
+                    cache_create=cache_create,
+                    cache_read=cache_hit,
+                    stop_reason=response.stop_reason,
                 )
                 if response.stop_reason == "max_tokens":
                     logging.warning(
