@@ -842,6 +842,10 @@ def main():
 
             # Breakout pre-check: fire LLM when price crosses ORH/ORL in breakout_watch.
             # Uses cached orb_state levels (populated by the or_formation LLM run above).
+            # Cooldown: if the LLM already declined to trade at a given breakout price,
+            # suppress re-triggering until either:
+            #   (a) price retraces back inside the OR → breakout failed, clear cooldown
+            #   (b) price extends >= 30% of OR range further → genuine continuation
             orb_breakout = False
             for _sp_asset in _SP500_ASSETS:
                 if _sp_asset not in args.assets:
@@ -861,12 +865,38 @@ def main():
                 _sp_price = asset_prices.get(_sp_asset)
                 if _sp_price is None:
                     continue
-                if _sp_price > _orh_c and _bias_c == "bull" and _fund_long_c:
-                    orb_breakout = True
-                    break
-                if _sp_price < _orl_c and _bias_c == "bear" and _fund_short_c:
-                    orb_breakout = True
-                    break
+                _or_range_c = _orh_c - _orl_c
+                _continuation_threshold = 0.30 * _or_range_c if _or_range_c > 0 else 0
+
+                # Check if price has retraced back inside OR → reset cooldown
+                _declined_px = _orb_cached.get("declined_px")
+                if _declined_px is not None:
+                    _inside_or = _orl_c <= _sp_price <= _orh_c
+                    if _inside_or:
+                        _orb_cached.pop("declined_px", None)
+                        add_event(f"ORB {_sp_asset}: price retraced inside OR — cooldown cleared")
+                        continue  # breakout no longer active, don't trigger
+
+                is_long_breakout  = _sp_price > _orh_c and _bias_c == "bull" and _fund_long_c
+                is_short_breakout = _sp_price < _orl_c and _bias_c == "bear" and _fund_short_c
+
+                if not (is_long_breakout or is_short_breakout):
+                    continue
+
+                # In cooldown — only re-trigger on meaningful continuation
+                if _declined_px is not None:
+                    if is_long_breakout:
+                        _extension = _sp_price - _declined_px
+                    else:
+                        _extension = _declined_px - _sp_price
+                    if _extension < _continuation_threshold:
+                        continue  # still within cooldown, suppress trigger
+                    # Meaningful continuation — reset cooldown so next decline gets a fresh baseline
+                    _orb_cached.pop("declined_px", None)
+                    add_event(f"ORB {_sp_asset}: continuation +{_extension:.1f}pt — re-triggering LLM")
+
+                orb_breakout = True
+                break
 
             # During breakout_watch with pending trade, poll every 60s regardless of session interval.
             _orb_watching = any(
@@ -1610,6 +1640,19 @@ def main():
                             f.write(json.dumps(diary_entry) + "\n")
                     else:  # hold
                         print_decision(asset, "hold", rationale, thesis_strength)
+                        # ORB cooldown: suppress repeated LLM calls after declined breakout
+                        if asset in _SP500_ASSETS and asset in orb_state:
+                            _orb_s = orb_state[asset]
+                            _orh_h = _orb_s.get("orh")
+                            _orl_h = _orb_s.get("orl")
+                            _cp_h = asset_prices.get(asset)
+                            if (_orh_h and _orl_h and _cp_h
+                                    and not _orb_s.get("trade_taken")
+                                    and 15.75 <= _hf_orb < 17.5):
+                                _outside_or = _cp_h > _orh_h or _cp_h < _orl_h
+                                if _outside_or:
+                                    _orb_s["declined_px"] = _cp_h
+                                    add_event(f"ORB {asset}: LLM held at {_cp_h} — cooldown set")
                         # Write hold to diary
                         with open(diary_path, "a") as f:
                             diary_entry = {
