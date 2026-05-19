@@ -56,7 +56,7 @@ def _get_session(utc_now: datetime) -> dict:
     hf = utc_now.astimezone(_VIENNA_TZ)
     hf = hf.hour + hf.minute / 60
     if _LONDON_START <= hf < _LONDON_END:
-        return {"name": "london", "active": True,  "interval_secs": 180, "move_pct": 0.003}
+        return {"name": "london", "active": True,  "interval_secs": 300, "move_pct": 0.003}
     elif _SP500_PRESESSION <= hf < _NY_START:
         return {"name": "sp500",  "active": True,  "interval_secs": 300, "move_pct": 0.003}
     elif _NY_START <= hf < _NY_END:
