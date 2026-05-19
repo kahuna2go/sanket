@@ -177,9 +177,9 @@ class TradingAgent:
             "- Return ONLY a strict JSON object with one key: \"trade_decisions\" (array ordered to match assets list).\n"
             "- Each item: asset, action, allocation_usd, order_type, limit_price, tp_price, sl_price, exit_plan, rationale, close_fraction, thesis_strength.\n"
             "  • thesis_strength: integer 1–5, required for every item every cycle.\n"
-            "  • close_fraction: 0.01–1.0 for closing an existing position (1.0 = full, 0.5 = half). Ignored when opening.\n"
+            "  • close_fraction: 0.01–1.0. For buy/sell close actions: fraction of position to exit. For update_tpsl: fraction of position the TP order covers (e.g. 0.5 for TP1 at 50%); SL always covers full position. Defaults to 1.0.\n"
             "  • cancel_limits: allocation_usd=0, order_type=\"market\", limit_price=null, tp_price=null, sl_price=null.\n"
-            "  • update_tpsl: allocation_usd=0, order_type=\"market\", limit_price=null. null tp/sl = keep existing.\n"
+            "  • update_tpsl: allocation_usd=0, order_type=\"market\", limit_price=null. null tp/sl = keep existing. close_fraction sets TP size.\n"
             "- No Markdown, no code fences, no extra properties.\n"
         )
 

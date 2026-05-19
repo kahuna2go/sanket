@@ -415,10 +415,13 @@ class HyperliquidAPI:
 
     def _is_trigger_order(self, o) -> bool:
         """Return True if order is a TP/SL trigger regardless of orderType format."""
+        ot = o.get('orderType')
         return (
             bool(o.get('isTrigger'))
-            or (isinstance(o.get('orderType'), dict) and 'trigger' in o.get('orderType', {}))
+            or (isinstance(ot, dict) and 'trigger' in ot)
+            or (isinstance(ot, str) and 'trigger' in ot.lower())
             or o.get('triggerPx') is not None
+            or o.get('triggerCondition') is not None
         )
 
     async def cancel_limit_orders(self, asset):

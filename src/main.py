@@ -1182,9 +1182,14 @@ def main():
                         tr = next((t for t in active_trades if t.get("asset") == asset), None)
                         new_tp = output.get("tp_price")
                         new_sl = output.get("sl_price")
+                        # close_fraction applies to TP size (e.g. 0.5 for TP1); SL always full position
+                        cf = float(output.get("close_fraction") or 1.0)
+                        cf = max(0.01, min(1.0, cf))
                         try:
                             if not tr:
-                                # No tracked trade — resolve position from exchange
+                                # No tracked trade (e.g. after restart) — resolve from exchange.
+                                # Execute the LLM's intent fully: cancel all existing trigger
+                                # orders for this asset, then place the requested TP/SL.
                                 state = await hyperliquid.get_user_state()
                                 live_pos = next(
                                     (p for p in state.get("positions", [])
@@ -1197,29 +1202,36 @@ def main():
                                 szi = float(live_pos["szi"])
                                 is_long = szi > 0
                                 amount = abs(szi)
-                                # Cancel existing trigger (TP/SL) orders before placing new ones
                                 open_orders = await hyperliquid.get_open_orders()
                                 for o in open_orders:
-                                    if hyperliquid._coin_matches(o.get("coin", ""), asset) and hyperliquid._is_trigger_order(o):
-                                        oid = o.get("oid")
-                                        if oid:
-                                            await hyperliquid.cancel_order(asset, oid)
+                                    if not hyperliquid._coin_matches(o.get("coin", ""), asset):
+                                        continue
+                                    if not hyperliquid._is_trigger_order(o):
+                                        continue
+                                    oid = o.get("oid")
+                                    if not oid:
+                                        continue
+                                    try:
+                                        await hyperliquid.cancel_order(asset, oid)
+                                    except Exception as cancel_err:
+                                        add_event(f"UPDATE_TPSL {asset}: cancel oid {oid} failed — {cancel_err}")
                                 tp_price_placed = None
                                 sl_price_placed = None
                                 tp_oid_placed = None
                                 sl_oid_placed = None
                                 if new_tp is not None:
-                                    tp_order = await hyperliquid.place_take_profit(asset, is_long, amount, float(new_tp))
+                                    tp_amount = round(amount * cf, 8)
+                                    tp_order = await hyperliquid.place_take_profit(asset, is_long, tp_amount, float(new_tp))
                                     tp_oids = hyperliquid.extract_oids(tp_order)
                                     tp_oid_placed = tp_oids[0] if tp_oids else None
                                     tp_price_placed = float(new_tp)
-                                    add_event(f"UPDATE_TPSL {asset}: TP → {new_tp} (live position, no tracked trade)")
+                                    add_event(f"UPDATE_TPSL {asset}: TP → {new_tp} (size {tp_amount}, no tracked trade)")
                                 if new_sl is not None:
                                     sl_order = await hyperliquid.place_stop_loss(asset, is_long, amount, float(new_sl))
                                     sl_oids = hyperliquid.extract_oids(sl_order)
                                     sl_oid_placed = sl_oids[0] if sl_oids else None
                                     sl_price_placed = float(new_sl)
-                                    add_event(f"UPDATE_TPSL {asset}: SL → {new_sl} (live position, no tracked trade)")
+                                    add_event(f"UPDATE_TPSL {asset}: SL → {new_sl} (size {amount}, no tracked trade)")
                                 with open(diary_path, "a") as f:
                                     f.write(json.dumps({
                                         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1235,19 +1247,28 @@ def main():
                                 is_long = tr.get("is_long")
                                 amount = tr.get("amount")
                                 if new_tp is not None:
-                                    await hyperliquid.cancel_order(asset, tr.get("tp_oid")) if tr.get("tp_oid") else None
-                                    tp_order = await hyperliquid.place_take_profit(asset, is_long, amount, float(new_tp))
+                                    if tr.get("tp_oid"):
+                                        try:
+                                            await hyperliquid.cancel_order(asset, tr["tp_oid"])
+                                        except Exception as cancel_err:
+                                            add_event(f"UPDATE_TPSL {asset}: cancel tp_oid {tr['tp_oid']} failed — {cancel_err}")
+                                    tp_amount = round(amount * cf, 8)
+                                    tp_order = await hyperliquid.place_take_profit(asset, is_long, tp_amount, float(new_tp))
                                     tp_oids = hyperliquid.extract_oids(tp_order)
                                     tr["tp_oid"] = tp_oids[0] if tp_oids else None
                                     tr["tp_price"] = float(new_tp)
-                                    add_event(f"UPDATE_TPSL {asset}: TP → {new_tp}")
+                                    add_event(f"UPDATE_TPSL {asset}: TP → {new_tp} (size {tp_amount})")
                                 if new_sl is not None:
-                                    await hyperliquid.cancel_order(asset, tr.get("sl_oid")) if tr.get("sl_oid") else None
+                                    if tr.get("sl_oid"):
+                                        try:
+                                            await hyperliquid.cancel_order(asset, tr["sl_oid"])
+                                        except Exception as cancel_err:
+                                            add_event(f"UPDATE_TPSL {asset}: cancel sl_oid {tr['sl_oid']} failed — {cancel_err}")
                                     sl_order = await hyperliquid.place_stop_loss(asset, is_long, amount, float(new_sl))
                                     sl_oids = hyperliquid.extract_oids(sl_order)
                                     tr["sl_oid"] = sl_oids[0] if sl_oids else None
                                     tr["sl_price"] = float(new_sl)
-                                    add_event(f"UPDATE_TPSL {asset}: SL → {new_sl}")
+                                    add_event(f"UPDATE_TPSL {asset}: SL → {new_sl} (size {amount})")
                                 with open(diary_path, "a") as f:
                                     f.write(json.dumps({
                                         "timestamp": datetime.now(timezone.utc).isoformat(),
