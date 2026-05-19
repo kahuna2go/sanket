@@ -267,7 +267,9 @@ def print_orb_status(
     if orh is not None and orl is not None:
         range_str = f"  ORH {orh:.1f}  ORL {orl:.1f}  range {orh - orl:.1f}pt"
 
+    bias_str = f"  [dim]{bias}[/dim]" if bias else ""
+
     console.print(
-        f"  [label]ORB[/label]  [dim]{phase}[/dim]{range_str}  "
+        f"  [label]ORB[/label]  [dim]{phase}[/dim]{range_str}{bias_str}  "
         f"[{style}]{direction}[/{style}]{rr_str}{taken_str}"
     )
