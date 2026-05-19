@@ -210,7 +210,6 @@ def main():
                 }
                 for _asset, _entry in diary_trades.items():
                     if _asset not in set(args.assets):
-                        add_event(f"Skipping diary restore for {_asset} — not in ASSETS (manual management)")
                         continue
                     if _asset in _live_coins:
                         active_trades.append({
