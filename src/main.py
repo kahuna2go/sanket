@@ -124,6 +124,7 @@ def main():
     trade_log = []  # For Sharpe: list of returns
     active_trades = []  # {'asset','is_long','amount','entry_price','tp_oid','sl_oid','exit_plan'}
     orb_state: dict = {}  # Per-asset ORB day state for SP500 session
+    orb_phase_tracker: dict = {}  # asset → last phase seen (lightweight, runs every loop)
     recent_events = deque(maxlen=200)
     diary_path = "diary.jsonl"
     initial_account_value = None
@@ -775,9 +776,80 @@ def main():
                 or (datetime.now(timezone.utc) - last_sonnet_time).total_seconds() / 60 >= health_check_minutes
             )
 
-            use_sonnet = first_run or price_moved or tpsl_near or health_check_due
+            # ORB triggers — all time-based, run every loop, no LLM needed.
+            _now_orb = datetime.now(timezone.utc).astimezone(_VIENNA_TZ)
+            _hf_orb = _now_orb.hour + _now_orb.minute / 60 + _now_orb.second / 3600
+            _today_orb = _now_orb.date()
 
-            if use_sonnet and macro_ctx.get("block_new_opens") and not active_trades and not health_check_due and not price_moved:
+            # Compute current ORB phase from clock alone (mirrors the in-LLM logic).
+            def _orb_phase_now(hf):
+                if hf < _SP500_PRESESSION:      return "pre_session"
+                elif hf < 15.5:                 return "pre_open"
+                elif hf < 15.75:                return "or_formation"
+                elif hf < 17.5:                 return "breakout_watch"
+                elif hf < _SP500_END:           return "in_session"
+                else:                           return "time_stop"
+
+            # Phase-transition trigger: fire LLM when clock enters or_formation (15:30)
+            # or breakout_watch (15:45). This guarantees ORH/ORL are computed from real
+            # OR candles before any breakout check can succeed.
+            orb_phase_trigger = False
+            for _sp_asset in _SP500_ASSETS:
+                if _sp_asset not in args.assets:
+                    continue
+                _orb_cached = orb_state.get(_sp_asset)
+                if _orb_cached and _orb_cached.get("trade_taken"):
+                    continue
+                _phase_now = _orb_phase_now(_hf_orb)
+                _phase_key = f"{_sp_asset}:{_today_orb}"
+                _phase_prev = orb_phase_tracker.get(_phase_key)
+                if _phase_now != _phase_prev:
+                    orb_phase_tracker[_phase_key] = _phase_now
+                    if _phase_now in ("or_formation", "breakout_watch"):
+                        orb_phase_trigger = True
+                        add_event(f"ORB phase → {_phase_now} for {_sp_asset} — firing LLM")
+
+            # Breakout pre-check: fire LLM when price crosses ORH/ORL in breakout_watch.
+            # Uses cached orb_state levels (populated by the or_formation LLM run above).
+            orb_breakout = False
+            for _sp_asset in _SP500_ASSETS:
+                if _sp_asset not in args.assets:
+                    continue
+                _orb_cached = orb_state.get(_sp_asset)
+                if not _orb_cached or _orb_cached.get("trade_taken"):
+                    continue
+                _orh_c = _orb_cached.get("orh")
+                _orl_c = _orb_cached.get("orl")
+                _bias_c = _orb_cached.get("bias")
+                _fund_long_c = _orb_cached.get("funding_ok_long", True)
+                _fund_short_c = _orb_cached.get("funding_ok_short", True)
+                if _orh_c is None or _orl_c is None:
+                    continue
+                if not (15.75 <= _hf_orb < 17.5):
+                    continue
+                _sp_price = asset_prices.get(_sp_asset)
+                if _sp_price is None:
+                    continue
+                if _sp_price > _orh_c and _bias_c == "bull" and _fund_long_c:
+                    orb_breakout = True
+                    break
+                if _sp_price < _orl_c and _bias_c == "bear" and _fund_short_c:
+                    orb_breakout = True
+                    break
+
+            # During breakout_watch with pending trade, poll every 60s regardless of session interval.
+            _orb_watching = any(
+                _sp_asset in args.assets
+                and 15.75 <= _hf_orb < 17.5
+                and orb_state.get(_sp_asset, {}).get("orh") is not None
+                and not orb_state.get(_sp_asset, {}).get("trade_taken")
+                for _sp_asset in _SP500_ASSETS
+            )
+            _effective_interval_secs = 60 if _orb_watching else _session["interval_secs"]
+
+            use_sonnet = first_run or price_moved or tpsl_near or health_check_due or orb_breakout or orb_phase_trigger
+
+            if use_sonnet and macro_ctx.get("block_new_opens") and not active_trades and not health_check_due and not price_moved and not orb_breakout and not orb_phase_trigger:
                 use_sonnet = False
                 add_event("Skipping LLM: block_new_opens=True and no open positions to manage")
 
@@ -790,7 +862,7 @@ def main():
                 prev_positions_count = len(active_trades)
                 prev_account_value = account_value
                 prev_asset_prices = dict(asset_prices)
-                await asyncio.sleep(_session["interval_secs"])
+                await asyncio.sleep(_effective_interval_secs)
                 continue
 
             model_usage["sonnet"] += 1
@@ -814,14 +886,16 @@ def main():
                         _cur is not None and _last is not None and _last != 0
                         and abs(_cur - _last) / _last > price_move_threshold
                     )
-                    if _a in assets_with_position or _moved:
+                    _orb_relevant = _a in _SP500_ASSETS and (orb_breakout or orb_phase_trigger)
+                    if _a in assets_with_position or _moved or _orb_relevant:
                         assets_to_evaluate.append(_a)
                     else:
                         assets_auto_hold.append(_a)
 
             add_event(
                 f"Sonnet triggered: first_run={first_run}, price_moved={price_moved}, "
-                f"tpsl_near={tpsl_near}, health_check_due={health_check_due} — "
+                f"tpsl_near={tpsl_near}, health_check_due={health_check_due}, "
+                f"orb_phase={orb_phase_trigger}, orb_breakout={orb_breakout} — "
                 f"evaluating {len(assets_to_evaluate)}/{len(args.assets)} assets"
                 + (f" | auto-hold (quiet): {assets_auto_hold}" if assets_auto_hold else "")
             )
@@ -1511,7 +1585,7 @@ def main():
                 "account": dashboard,
             }
 
-            await asyncio.sleep(_session["interval_secs"])
+            await asyncio.sleep(_effective_interval_secs)
 
     async def handle_diary(request):
         """Return diary entries as JSON or newline-delimited text."""
