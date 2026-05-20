@@ -215,7 +215,6 @@ class TradingAgent:
                 },
                 "required": ["indicator", "asset", "interval"],
             },
-            "cache_control": {"type": "ephemeral"},
         }]
 
         user_content = context
@@ -252,7 +251,7 @@ class TradingAgent:
             kwargs = {
                 "model": effective_model,
                 "max_tokens": self.max_tokens,
-                "system": [{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+                "system": system_prompt,
                 "messages": msgs,
             }
             if use_tools and enable_tools:
