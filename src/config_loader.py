@@ -102,6 +102,7 @@ CONFIG = {
     "mandatory_tp_pct": _get_env("MANDATORY_TP_PCT", "10"),
     "max_concurrent_positions": _get_env("MAX_CONCURRENT_POSITIONS", "10"),
     "min_balance_reserve_pct": _get_env("MIN_BALANCE_RESERVE_PCT", "10"),
+    "target_risk_usd": _get_env("TARGET_RISK_USD", "0"),  # Fixed dollar risk per trade (0 = disabled)
 
     # Model escalation
     "sonnet_price_move_pct": _get_env("SONNET_PRICE_MOVE_PCT", "0.5"),

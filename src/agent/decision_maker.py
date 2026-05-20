@@ -167,7 +167,7 @@ class TradingAgent:
             "- TP/SL (is_trigger=true): if levels appear misplaced, use update_tpsl to correct them.\n\n"
             "Decision discipline\n"
             "- Choose one per asset: buy / sell / hold / cancel_limits / update_tpsl.\n"
-            "- allocation_usd controls position size (system caps it per risk limits).\n"
+            "- allocation_usd: the system overrides this with fixed-risk sizing (target ~$50 risk per trade based on your SL distance). Set it to any non-zero value as a signal to trade — the actual notional is computed as target_risk_usd / sl_distance_pct. Your sl_price placement is what drives position size.\n"
             "- order_type: \"market\" (default) or \"limit\". Limit requires limit_price; market sets it null.\n"
             "- TP/SL sanity: BUY → tp_price > current_price, sl_price < current_price. SELL → tp_price < current_price, sl_price > current_price. Use null if levels can't be set. Mandatory SL auto-applied on buy/sell opens if not set.\n"
             "- exit_plan: at least one explicit invalidation trigger + any cooldown guidance.\n"

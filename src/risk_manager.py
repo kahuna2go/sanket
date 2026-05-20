@@ -24,6 +24,7 @@ class RiskManager:
         self.mandatory_tp_pct = float(CONFIG.get("mandatory_tp_pct") or 10)
         self.max_concurrent_positions = int(CONFIG.get("max_concurrent_positions") or 10)
         self.min_balance_reserve_pct = float(CONFIG.get("min_balance_reserve_pct") or 20)
+        self.target_risk_usd = float(CONFIG.get("target_risk_usd") or 0)
 
         # Daily tracking
         self.daily_high_value = None
@@ -252,7 +253,30 @@ class RiskManager:
         if not ok:
             return False, reason, trade
 
-        # 3. Position size limit — include existing notional if trade adds to same-direction position
+        # 3. Enforce SL early so risk-based sizing can use it
+        current_price = float(trade.get("current_price", 0))
+        entry_price = current_price if current_price > 0 else 1.0
+        sl_price = trade.get("sl_price")
+        enforced_sl = self.enforce_stop_loss(sl_price, entry_price, is_buy)
+        if sl_price is None:
+            logging.info("RISK: Auto-setting SL at %.2f (%.1f%% from entry)",
+                        enforced_sl, self.mandatory_sl_pct)
+        trade = {**trade, "sl_price": enforced_sl}
+
+        # 4. Fixed-risk position sizing: override allocation so dollar risk ≈ target_risk_usd.
+        #    Less risk is accepted when downstream caps (leverage, exposure) trim the allocation.
+        if self.target_risk_usd > 0 and entry_price > 0:
+            sl_distance_pct = abs(entry_price - enforced_sl) / entry_price
+            if sl_distance_pct > 0:
+                risk_based_alloc = self.target_risk_usd / sl_distance_pct
+                logging.info(
+                    "RISK: Fixed-risk sizing — SL %.3f%% from entry → allocation $%.2f (target risk $%.2f)",
+                    sl_distance_pct * 100, risk_based_alloc, self.target_risk_usd,
+                )
+                alloc_usd = risk_based_alloc
+                trade = {**trade, "allocation_usd": alloc_usd}
+
+        # 5. Position size limit — include existing notional if trade adds to same-direction position
         asset = trade.get("asset", "")
         existing_notional = 0.0
         for p in positions:
@@ -272,17 +296,17 @@ class RiskManager:
             alloc_usd = max_alloc
             trade = {**trade, "allocation_usd": alloc_usd}
 
-        # 4. Total exposure (includes resting limit notional)
+        # 6. Total exposure (includes resting limit notional)
         ok, reason = self.check_total_exposure(positions, alloc_usd, account_value, open_orders)
         if not ok:
             return False, reason, trade
 
-        # 5. Leverage check
+        # 7. Leverage check — this is the binding cap for very tight SLs
         ok, reason = self.check_leverage(alloc_usd, balance)
         if not ok:
             return False, reason, trade
 
-        # 6. Concurrent positions
+        # 8. Concurrent positions
         active_count = sum(
             1 for p in positions
             if abs(float(p.get("szi") or p.get("quantity") or 0)) > 0
@@ -291,17 +315,7 @@ class RiskManager:
         if not ok:
             return False, reason, trade
 
-        # 7. Enforce mandatory stop-loss
-        current_price = float(trade.get("current_price", 0))
-        entry_price = current_price if current_price > 0 else 1.0
-        sl_price = trade.get("sl_price")
-        enforced_sl = self.enforce_stop_loss(sl_price, entry_price, is_buy)
-        if sl_price is None:
-            logging.info("RISK: Auto-setting SL at %.2f (%.1f%% from entry)",
-                        enforced_sl, self.mandatory_sl_pct)
-        trade = {**trade, "sl_price": enforced_sl}
-
-        # 8. Enforce mandatory take-profit
+        # 9. Enforce mandatory take-profit
         tp_price = trade.get("tp_price")
         enforced_tp = self.enforce_take_profit(tp_price, entry_price, is_buy)
         if tp_price is None:
@@ -324,4 +338,5 @@ class RiskManager:
             "max_concurrent_positions": self.max_concurrent_positions,
             "min_balance_reserve_pct": self.min_balance_reserve_pct,
             "circuit_breaker_active": self.circuit_breaker_active,
+            "target_risk_usd": self.target_risk_usd,
         }
