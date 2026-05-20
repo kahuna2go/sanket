@@ -245,7 +245,7 @@ def main():
             with open("llm_requests.log", "a", encoding="utf-8") as _mf:
                 _mf.write(f"\n=== Macro context {datetime.now(timezone.utc).isoformat()} ===\n{json.dumps(macro_ctx)}\n")
             if macro_ctx["block_new_opens"]:
-                logging.info("Macro filter: block_new_opens=True (session=%s)", _session["name"])
+                logging.info("Session filter: block_new_opens=True (session=%s)", _session["name"])
 
             # Global account state
             state = await hyperliquid.get_user_state()

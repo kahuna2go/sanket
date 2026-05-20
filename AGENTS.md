@@ -158,13 +158,9 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 - External CDN dependency: SheetJS 0.20.3 (`trading-journal.html` only, loaded from cdn.sheetjs.com)
 
 ### Commands
-- Install: n/a (no dependencies to install)
-- Build: n/a (no build step — files are served as-is)
-- Test (all): n/a (no test suite)
-- Test (single file): n/a
-- Lint: n/a
-- Typecheck: n/a
-- Run locally: open `tictactoe.html` or `trading-journal.html` directly in a browser
+- Python interpreter: `/Users/peermagnus/Library/Caches/pypoetry/virtualenvs/trading-agent-iHVPNt-P-py3.12/bin/python3.12`
+- Run backtest: `/Users/peermagnus/Library/Caches/pypoetry/virtualenvs/trading-agent-iHVPNt-P-py3.12/bin/python3.12 -m src.backtest.run_backtest_ms --assets SOL`
+- Run agent: `/Users/peermagnus/Library/Caches/pypoetry/virtualenvs/trading-agent-iHVPNt-P-py3.12/bin/python3.12 -m src.main --assets SOL ETH --interval 5m`
 
 ### Layout
 - Source lives in: project root (`/`) — each app is a single self-contained `.html` file
