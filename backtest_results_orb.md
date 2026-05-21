@@ -56,3 +56,30 @@
 - Same total R as breakout entry despite 2 fewer trades (missed retests)
 
 **Caveat:** Only 10–13 trades. Statistically meaningless. Waiting for more xyz:SP500 history to accumulate.
+
+---
+
+**Asset:** xyz:SP500  |  **Period:** ~12 trading days cached  |  **Run:** 2026-05-21  |  **Entry TF:** 5m
+
+**Strategy:** ORB — SL mode comparison: or_extreme vs retest_low (retest entry only)
+
+**SL or_extreme:** SL = ORL − sl_buffer × range (long) / ORH + sl_buffer × range (short)  
+**SL retest_low:** SL = retest candle low − sl_buffer × range (long) / retest candle high + sl_buffer × range (short)
+
+**SL diagnostic (from raw candle data):**
+- Retest penetration depth: min=0pt, median=3.6pt (21.6% of range), p90=9.3pt (59.4% of range)
+- MAE on winners: min=3.6pt, median=7.5pt (48.7% of range), p90=11.8pt (67.9% of range)
+- All 3 SL hits had MAE > 100% of range — genuine reversals, not noise
+
+| Config | Entry | SL mode | TP | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Exits |
+|--------|-------|---------|----|--------|------|---------|--------|------|-------|-------|
+| SL=10% / slope≥0.02% | retest | **or_extreme** | range | 10 | **90.0%** | 0.80 | **+6.2** | +0.623 | -1.0R | sl=4 tp2=6 |
+| SL=10% / slope≥0.02% | retest | retest_low | range | 10 | 40.0% | 0.96 | -2.2 | -0.217 | -2.5R | sl=9 tp2=1 |
+| SL=5%  / slope≥0.02% | retest | **or_extreme** | range | 10 | **90.0%** | 0.82 | **+6.4** | +0.636 | -1.0R | sl=4 tp2=6 |
+| SL=5%  / slope≥0.02% | retest | retest_low | range | 10 | 40.0% | 1.06 | -1.8 | -0.177 | -2.5R | sl=9 tp2=1 |
+| SL=10% / slope≥0.02% | retest | **or_extreme** | fixed_rr | 10 | **70.0%** | 1.05 | **+4.4** | +0.437 | -2.0R | sl=3 time_stop=7 |
+| SL=10% / slope≥0.02% | retest | retest_low | fixed_rr | 10 | 30.0% | 2.00 | -1.0 | -0.100 | -3.0R | sl=7 tp2=3 |
+
+**Key finding:** retest_low SL is clearly inferior — 9/10 trades stopped out. Winner MAE (median 48.7% of range) exceeds the retest candle SL in most cases. The or_extreme SL is already well-placed: all real losers traveled >100% of range (genuine reversals), so no tighter SL would have filtered them without cutting winners.
+
+**Conclusion:** or_extreme SL is the correct anchor. The current SL formula is not the problem.
