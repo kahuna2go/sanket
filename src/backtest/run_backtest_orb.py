@@ -143,6 +143,7 @@ def _simulate_day(
     no_bias: bool = False,
     tp_mode: str = "range",
     entry_mode: str = "breakout",
+    sl_mode: str = "or_extreme",
 ) -> Trade | None:
     """Return a Trade if an entry was taken, else None."""
     if not no_bias and bias == "neutral":
@@ -183,16 +184,20 @@ def _simulate_day(
         return None  # no breakout before 17:30
 
     # --- Determine entry price and bar ---
+    retest_bar_extreme = None  # low (long) or high (short) of the retest candle
     if entry_mode == "retest":
-        # Wait for price to pull back and touch ORH (long) or ORL (short)
         entry_px     = None
         entry_bar_t  = None
         post_breakout = [b for b in watch_bars if b["t"] > breakout_bar_t]
         for bar in post_breakout:
             if direction == "long" and bar["low"] <= orh:
-                entry_px, entry_bar_t = orh, bar["t"]; break
+                entry_px, entry_bar_t = orh, bar["t"]
+                retest_bar_extreme = bar["low"]
+                break
             if direction == "short" and bar["high"] >= orl:
-                entry_px, entry_bar_t = orl, bar["t"]; break
+                entry_px, entry_bar_t = orl, bar["t"]
+                retest_bar_extreme = bar["high"]
+                break
         if entry_px is None:
             return None  # no retest within watch window
     else:  # "breakout" — enter at close of breakout bar
@@ -202,10 +207,17 @@ def _simulate_day(
 
     # --- Levels ---
     buf = sl_buffer * or_range
-    if direction == "long":
-        sl_px = orl - buf
-    else:
-        sl_px = orh + buf
+    if sl_mode == "retest_low" and retest_bar_extreme is not None:
+        # Anchor SL to the retest candle's extreme, with a small buffer
+        if direction == "long":
+            sl_px = retest_bar_extreme - buf
+        else:
+            sl_px = retest_bar_extreme + buf
+    else:  # "or_extreme" — SL outside the opposite OR edge
+        if direction == "long":
+            sl_px = orl - buf
+        else:
+            sl_px = orh + buf
 
     sl_dist = abs(entry_px - sl_px)
 
@@ -300,8 +312,9 @@ class ORBConfig:
     min_range_pts:     float = 0.0    # minimum OR size in points (0 = no filter)
     ema_period:        int   = 21
     slope_threshold:   float = 0.0005 # minimum |slope| fraction for non-neutral bias
-    tp_mode:           str   = "range"     # "range" or "fixed_rr"
-    entry_mode:        str   = "breakout"  # "breakout" or "retest"
+    tp_mode:           str   = "range"      # "range" or "fixed_rr"
+    entry_mode:        str   = "breakout"   # "breakout" or "retest"
+    sl_mode:           str   = "or_extreme" # "or_extreme" or "retest_low"
     label:             str   = "Baseline"
 
 
@@ -315,10 +328,12 @@ _BASE_PARAMS = [
 ]
 
 ALL_ORB_CONFIGS = (
-    [ORBConfig(**{**p, "label": p["label"] + " [range/breakout]"},    tp_mode="range",    entry_mode="breakout") for p in _BASE_PARAMS] +
-    [ORBConfig(**{**p, "label": p["label"] + " [range/retest]"},      tp_mode="range",    entry_mode="retest")   for p in _BASE_PARAMS] +
-    [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/breakout]"}, tp_mode="fixed_rr", entry_mode="breakout") for p in _BASE_PARAMS] +
-    [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/retest]"},   tp_mode="fixed_rr", entry_mode="retest")   for p in _BASE_PARAMS]
+    [ORBConfig(**{**p, "label": p["label"] + " [range/breakout/or_extreme]"},    tp_mode="range",    entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [range/retest/or_extreme]"},      tp_mode="range",    entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [range/retest/retest_low]"},      tp_mode="range",    entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/breakout/or_extreme]"}, tp_mode="fixed_rr", entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/retest/or_extreme]"},   tp_mode="fixed_rr", entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/retest/retest_low]"},   tp_mode="fixed_rr", entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS]
 )
 
 
@@ -334,7 +349,7 @@ def _run_config(cfg: ORBConfig, candles_5m: list, candles_4h: list, no_bias: boo
     trades = []
     for day in sorted(days):
         bias = _compute_4h_bias(candles_4h, day, cfg.ema_period, cfg.slope_threshold)
-        trade = _simulate_day(day, days[day], bias, cfg.sl_buffer, cfg.min_range_pts, no_bias, cfg.tp_mode, cfg.entry_mode)
+        trade = _simulate_day(day, days[day], bias, cfg.sl_buffer, cfg.min_range_pts, no_bias, cfg.tp_mode, cfg.entry_mode, cfg.sl_mode)
         if trade:
             trades.append(trade)
     return trades
@@ -381,7 +396,7 @@ def _print_results(cfg: ORBConfig, trades: list[Trade]):
     )
 
 
-async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConfig | None, no_bias: bool = False, tp_mode_filter: str | None = None, entry_mode_filter: str | None = None):
+async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConfig | None, no_bias: bool = False, tp_mode_filter: str | None = None, entry_mode_filter: str | None = None, sl_mode_filter: str | None = None):
     from src.trading.hyperliquid_api import HyperliquidAPI
 
     hl = HyperliquidAPI()
@@ -423,16 +438,17 @@ async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConf
             configs = [c for c in configs if c.tp_mode == tp_mode_filter]
         if entry_mode_filter:
             configs = [c for c in configs if c.entry_mode == entry_mode_filter]
+        if sl_mode_filter:
+            configs = [c for c in configs if c.sl_mode == sl_mode_filter]
     current_group = None
     for cfg in configs:
-        group = (cfg.entry_mode, cfg.tp_mode)
+        group = (cfg.entry_mode, cfg.sl_mode, cfg.tp_mode)
         if group != current_group:
             current_group = group
-            entry_lbl = "BREAKOUT entry (at breakout bar close)" if cfg.entry_mode == "breakout" \
-                        else "RETEST entry   (at ORH/ORL touch after breakout)"
-            tp_lbl    = "range-based TP (TP1=+0.5R, TP2=+1.0R)" if cfg.tp_mode == "range" \
-                        else "fixed R:R TP  (TP1=+2×SL, TP2=+3×SL)"
-            print(f"\n  {entry_lbl}  |  {tp_lbl}")
+            entry_lbl = "BREAKOUT entry" if cfg.entry_mode == "breakout" else "RETEST entry  "
+            sl_lbl    = "SL=OR extreme+buf" if cfg.sl_mode == "or_extreme" else "SL=retest low+buf"
+            tp_lbl    = "TP=range (0.5R/1.0R)" if cfg.tp_mode == "range" else "TP=fixed R:R (2×/3×SL)"
+            print(f"\n  {entry_lbl}  |  {sl_lbl}  |  {tp_lbl}")
             print(f"  {'-'*105}")
         trades = _run_config(cfg, candles_5m, candles_4h, no_bias)
         _print_results(cfg, trades)
@@ -455,20 +471,24 @@ def main():
                         help="TP mode: 'range' (default) or 'fixed_rr' (2:1 / 3:1 off SL)")
     parser.add_argument("--entry-mode", default=None, choices=["breakout", "retest"],
                         help="Entry mode: 'breakout' (default) or 'retest' (wait for ORH/ORL touch)")
+    parser.add_argument("--sl-mode",    default=None, choices=["or_extreme", "retest_low"],
+                        help="SL mode: 'or_extreme' (default, SL outside OR) or 'retest_low' (SL below retest candle)")
     args = parser.parse_args()
 
     single = None
     if args.sl_buffer is not None:
         tp_mode    = args.tp_mode    or "range"
         entry_mode = args.entry_mode or "breakout"
+        sl_mode    = args.sl_mode    or "or_extreme"
         single = ORBConfig(
             sl_buffer=args.sl_buffer,
             slope_threshold=args.slope if args.slope is not None else 0.0005,
             tp_mode=tp_mode,
             entry_mode=entry_mode,
-            label=f"SL={args.sl_buffer:.0%} / slope={args.slope or 0.0005:.4f} [{tp_mode}/{entry_mode}]",
+            sl_mode=sl_mode,
+            label=f"SL={args.sl_buffer:.0%} / slope={args.slope or 0.0005:.4f} [{tp_mode}/{entry_mode}/{sl_mode}]",
         )
-    asyncio.run(main_async(args.asset, args.fetch, args.years, single, no_bias=args.no_bias, tp_mode_filter=args.tp_mode, entry_mode_filter=args.entry_mode))
+    asyncio.run(main_async(args.asset, args.fetch, args.years, single, no_bias=args.no_bias, tp_mode_filter=args.tp_mode, entry_mode_filter=args.entry_mode, sl_mode_filter=args.sl_mode))
 
 
 if __name__ == "__main__":
