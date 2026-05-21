@@ -839,12 +839,11 @@ def main():
                         orb_phase_trigger = True
                         add_event(f"ORB phase → {_phase_now} for {_sp_asset} — firing LLM")
 
-            # Breakout pre-check: fire LLM when price crosses ORH/ORL in breakout_watch.
-            # Uses cached orb_state levels (populated by the or_formation LLM run above).
-            # Cooldown: if the LLM already declined to trade at a given breakout price,
-            # suppress re-triggering until either:
-            #   (a) price retraces back inside the OR → breakout failed, clear cooldown
-            #   (b) price extends >= 30% of OR range further → genuine continuation
+            # Retest-entry ORB: don't trigger LLM on initial breakout — wait for price to
+            # touch back to ORH (long) or ORL (short), then enter at that level.
+            # Phase 1 — breakout detected: record direction in breakout_pending, no LLM.
+            # Phase 2 — retest: price touches back to ORH/ORL → trigger LLM.
+            # Failure: price fully retraces through OR → clear breakout_pending.
             orb_breakout = False
             for _sp_asset in _SP500_ASSETS:
                 if _sp_asset not in args.assets:
@@ -864,38 +863,37 @@ def main():
                 _sp_price = asset_prices.get(_sp_asset)
                 if _sp_price is None:
                     continue
-                _or_range_c = _orh_c - _orl_c
-                _continuation_threshold = 0.30 * _or_range_c if _or_range_c > 0 else 0
 
-                # Check if price has retraced back inside OR → reset cooldown
-                _declined_px = _orb_cached.get("declined_px")
-                if _declined_px is not None:
-                    _inside_or = _orl_c <= _sp_price <= _orh_c
-                    if _inside_or:
-                        _orb_cached.pop("declined_px", None)
-                        add_event(f"ORB {_sp_asset}: price retraced inside OR — cooldown cleared")
-                        continue  # breakout no longer active, don't trigger
+                _bp = _orb_cached.get("breakout_pending")
 
-                is_long_breakout  = _sp_price > _orh_c and _bias_c == "bull" and _fund_long_c
-                is_short_breakout = _sp_price < _orl_c and _bias_c == "bear" and _fund_short_c
-
-                if not (is_long_breakout or is_short_breakout):
-                    continue
-
-                # In cooldown — only re-trigger on meaningful continuation
-                if _declined_px is not None:
-                    if is_long_breakout:
-                        _extension = _sp_price - _declined_px
-                    else:
-                        _extension = _declined_px - _sp_price
-                    if _extension < _continuation_threshold:
-                        continue  # still within cooldown, suppress trigger
-                    # Meaningful continuation — reset cooldown so next decline gets a fresh baseline
-                    _orb_cached.pop("declined_px", None)
-                    add_event(f"ORB {_sp_asset}: continuation +{_extension:.1f}pt — re-triggering LLM")
-
-                orb_breakout = True
-                break
+                if _bp is None:
+                    # Phase 1: watch for initial breakout
+                    if _sp_price > _orh_c and _bias_c == "bull" and _fund_long_c:
+                        _orb_cached["breakout_pending"] = "long"
+                        add_event(f"ORB {_sp_asset}: long breakout at {_sp_price:.2f} — waiting for retest of ORH {_orh_c:.2f}")
+                    elif _sp_price < _orl_c and _bias_c == "bear" and _fund_short_c:
+                        _orb_cached["breakout_pending"] = "short"
+                        add_event(f"ORB {_sp_asset}: short breakout at {_sp_price:.2f} — waiting for retest of ORL {_orl_c:.2f}")
+                elif _bp == "long":
+                    if _sp_price < _orl_c:
+                        _orb_cached["breakout_pending"] = None
+                        add_event(f"ORB {_sp_asset}: long breakout failed (price {_sp_price:.2f} < ORL {_orl_c:.2f}) — cleared")
+                    elif _sp_price <= _orh_c:
+                        # Price touched back to ORH — retest confirmed, trigger LLM
+                        orb_breakout = True
+                        add_event(f"ORB {_sp_asset}: long retest at {_sp_price:.2f} (ORH {_orh_c:.2f}) — triggering LLM")
+                        break
+                    # else: still above ORH, waiting
+                else:  # _bp == "short"
+                    if _sp_price > _orh_c:
+                        _orb_cached["breakout_pending"] = None
+                        add_event(f"ORB {_sp_asset}: short breakout failed (price {_sp_price:.2f} > ORH {_orh_c:.2f}) — cleared")
+                    elif _sp_price >= _orl_c:
+                        # Price touched back to ORL — retest confirmed, trigger LLM
+                        orb_breakout = True
+                        add_event(f"ORB {_sp_asset}: short retest at {_sp_price:.2f} (ORL {_orl_c:.2f}) — triggering LLM")
+                        break
+                    # else: still below ORL, waiting
 
             # During breakout_watch with pending trade, poll every 60s regardless of session interval.
             _orb_watching = any(
@@ -989,6 +987,7 @@ def main():
                                 "orl": None,
                                 "trade_taken": False,
                                 "bias_evaluated": False,
+                                "breakout_pending": None,  # "long"/"short" — waiting for retest
                             }
                             orb_state[asset] = _orb
 
@@ -1039,17 +1038,17 @@ def main():
                                 _orb["orh"] = max(c["high"] for c in _or_candles)
                                 _orb["orl"] = min(c["low"]  for c in _or_candles)
 
-                        # Breakout detection on latest closed 5m bar
+                        # Retest detection: set breakout_long/short when price is at ORH/ORL
+                        # after an initial breakout (breakout_pending set by the pre-check above).
                         _breakout_long = False
                         _breakout_short = False
                         if _orb_phase == "breakout_watch" and _orb["orh"] is not None and not _orb["trade_taken"]:
-                            if candles_5m:
-                                _last_c5 = candles_5m[-1]
-                                if _last_c5.get("t") and _vhour(_last_c5["t"]) + 5/60 > 15.75:
-                                    if _last_c5["close"] > _orb["orh"] and _orb["bias"] == "bull" and _orb["funding_ok_long"]:
-                                        _breakout_long = True
-                                    elif _last_c5["close"] < _orb["orl"] and _orb["bias"] == "bear" and _orb["funding_ok_short"]:
-                                        _breakout_short = True
+                            _bp_dir = _orb.get("breakout_pending")
+                            _cp = current_price or 0
+                            if _bp_dir == "long" and _cp <= _orh_v:
+                                _breakout_long = True
+                            elif _bp_dir == "short" and _cp >= _orl_v:
+                                _breakout_short = True
 
                         # Pre-compute TP/SL levels (based on ORH/ORL as proxy for entry)
                         _orh_v = _orb["orh"]
@@ -1084,12 +1083,12 @@ def main():
                             "tp2_short":         _tp2_s,
                             "sl_short":          _sl_s,
                         }
-                        # Compute R:R for display
+                        # Compute R:R for display — entry is at ORH/ORL (retest entry)
                         _rr_display = None
-                        if _breakout_long and _tp2_l and _sl_l and current_price:
-                            _rr_display = round((_tp2_l - current_price) / max(current_price - _sl_l, 0.01), 2)
-                        elif _breakout_short and _tp2_s and _sl_s and current_price:
-                            _rr_display = round((current_price - _tp2_s) / max(_sl_s - current_price, 0.01), 2)
+                        if _breakout_long and _tp2_l and _sl_l and _orh_v:
+                            _rr_display = round((_tp2_l - _orh_v) / max(_orh_v - _sl_l, 0.01), 2)
+                        elif _breakout_short and _tp2_s and _sl_s and _orl_v:
+                            _rr_display = round((_orl_v - _tp2_s) / max(_sl_s - _orl_v, 0.01), 2)
                         print_orb_status(
                             phase=_orb_phase,
                             bias=_orb["bias"],
