@@ -56,17 +56,30 @@ def _in_session(ts_ms: int) -> bool:
 
 @dataclass
 class FibConfig:
-    deviation_pct:  float = 2.0
-    fib_center:     float = 0.745  # retracement level from the swing extreme
-    fib_zone:       float = 0.08   # total zone width (±0.04 around center)
-    rvol_min:       float = 0.0
-    session_filter: bool  = False
-    min_rr:         float = 1.5
-    tp1_frac:       float = 0.5
-    label:          str   = "Baseline"
+    deviation_pct:   float = 2.0
+    fib_center:      float = 0.745  # retracement level from the swing extreme
+    fib_zone:        float = 0.08   # total zone width (±0.04 around center)
+    rvol_min:        float = 0.0    # 5m RVOL filter (intraday)
+    rvol_1h_min:     float = 0.0    # 1h RVOL filter (more appropriate for 4h-scale structure)
+    session_filter:  bool  = False
+    min_rr:          float = 1.5
+    tp1_frac:        float = 0.5
+    swing_count_min: int   = 2      # min confirmed ZZ pairs (≥3 = stronger 4h-style structure)
+    label:           str   = "Baseline"
 
 
 ALL_FIB_CONFIGS = [
+    # dev=1.0% — tight 1h scope (intraday pivots, hours lookback)
+    FibConfig(deviation_pct=1.0, fib_zone=0.08, rvol_min=0.0, tp1_frac=0.5, label="dev=1% zone=0.08 no filters"),
+    FibConfig(deviation_pct=1.0, fib_zone=0.08, rvol_min=1.2, tp1_frac=0.5, label="dev=1% zone=0.08 + RVOL≥1.2"),
+    FibConfig(deviation_pct=1.0, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=1% zone=0.08 + RVOL≥1.2 + Session"),
+    FibConfig(deviation_pct=1.0, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=1% zone=0.08 + RVOL≥1.2 + Session TP2only"),
+    # dev=1.5% — standard 1h scope per research
+    FibConfig(deviation_pct=1.5, fib_zone=0.08, rvol_min=0.0, tp1_frac=0.5, label="dev=1.5% zone=0.08 no filters"),
+    FibConfig(deviation_pct=1.5, fib_zone=0.08, rvol_min=1.2, tp1_frac=0.5, label="dev=1.5% zone=0.08 + RVOL≥1.2"),
+    FibConfig(deviation_pct=1.5, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=1.5% zone=0.08 + RVOL≥1.2 + Session"),
+    FibConfig(deviation_pct=1.5, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=1.5% zone=0.08 + RVOL≥1.2 + Session TP2only"),
+    # dev=2.0% — current ETH live setting / upper 1h range
     FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=0.0, tp1_frac=0.5, label="dev=2% zone=0.08 no filters"),
     FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.2, tp1_frac=0.5, label="dev=2% zone=0.08 + RVOL≥1.2"),
     FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=2% zone=0.08 + RVOL≥1.2 + Session"),
@@ -75,10 +88,38 @@ ALL_FIB_CONFIGS = [
     FibConfig(deviation_pct=2.0, fib_zone=0.12, rvol_min=1.2, tp1_frac=0.5, label="dev=2% zone=0.12 + RVOL≥1.2"),
     FibConfig(deviation_pct=2.0, fib_zone=0.12, rvol_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=2% zone=0.12 + RVOL≥1.2 + Session"),
     FibConfig(deviation_pct=2.0, fib_zone=0.12, rvol_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=2% zone=0.12 + RVOL≥1.2 + Session TP2only"),
-    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_min=0.0, tp1_frac=0.5, label="dev=3% zone=0.08 no filters"),
-    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_min=1.2, tp1_frac=0.5, label="dev=3% zone=0.08 + RVOL≥1.2"),
-    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=3% zone=0.08 + RVOL≥1.2 + Session"),
-    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=3% zone=0.08 + RVOL≥1.2 + Session TP2only"),
+    # dev=3.0% — current SOL live setting / 4h-scale on 1h bars
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_min=0.0, tp1_frac=0.5, label="dev=3% no filters"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_min=1.2, tp1_frac=0.5, label="dev=3% + RVOL5m≥1.2"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=3% + RVOL5m≥1.2 + Session [LIVE SOL]"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=3% + RVOL5m≥1.2 + Session TP2only"),
+    # -- 4h-appropriate filter alternatives for dev=3% --
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, session_filter=True, tp1_frac=0.5, label="dev=3% + Session only (no RVOL)"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, session_filter=True, tp1_frac=0.0, label="dev=3% + Session only TP2only"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_1h_min=1.2, tp1_frac=0.5, label="dev=3% + RVOL1h≥1.2"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_1h_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=3% + RVOL1h≥1.2 + Session"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, rvol_1h_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=3% + RVOL1h≥1.2 + Session TP2only"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, swing_count_min=3, tp1_frac=0.5, label="dev=3% + swingcount≥3"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, swing_count_min=3, session_filter=True, tp1_frac=0.5, label="dev=3% + swingcount≥3 + Session"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, swing_count_min=3, rvol_1h_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=3% + swingcount≥3 + RVOL1h≥1.2 + Session"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, swing_count_min=3, rvol_1h_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=3% + swingcount≥3 + RVOL1h≥1.2 + Session TP2only"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, min_rr=2.0, tp1_frac=0.5, label="dev=3% + minRR=2.0 no filters"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, min_rr=2.0, session_filter=True, tp1_frac=0.5, label="dev=3% + minRR=2.0 + Session"),
+    FibConfig(deviation_pct=3.0, fib_zone=0.08, min_rr=2.0, session_filter=True, tp1_frac=0.0, label="dev=3% + minRR=2.0 + Session TP2only"),
+    # -- 4h-appropriate filter alternatives for dev=2% (ETH live) --
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=2% + RVOL5m≥1.2 + Session TP2only [LIVE ETH]"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, session_filter=True, tp1_frac=0.5, label="dev=2% + Session only (no RVOL)"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, session_filter=True, tp1_frac=0.0, label="dev=2% + Session only TP2only"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_1h_min=1.2, tp1_frac=0.5, label="dev=2% + RVOL1h≥1.2"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_1h_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=2% + RVOL1h≥1.2 + Session"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_1h_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=2% + RVOL1h≥1.2 + Session TP2only"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, swing_count_min=3, tp1_frac=0.5, label="dev=2% + swingcount≥3"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, swing_count_min=3, session_filter=True, tp1_frac=0.5, label="dev=2% + swingcount≥3 + Session"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, swing_count_min=3, rvol_1h_min=1.2, session_filter=True, tp1_frac=0.5, label="dev=2% + swingcount≥3 + RVOL1h≥1.2 + Session"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, swing_count_min=3, rvol_1h_min=1.2, session_filter=True, tp1_frac=0.0, label="dev=2% + swingcount≥3 + RVOL1h≥1.2 + Session TP2only"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, min_rr=2.0, tp1_frac=0.5, label="dev=2% + minRR=2.0 no filters"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, min_rr=2.0, session_filter=True, tp1_frac=0.5, label="dev=2% + minRR=2.0 + Session"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, min_rr=2.0, session_filter=True, tp1_frac=0.0, label="dev=2% + minRR=2.0 + Session TP2only"),
 ]
 
 
@@ -87,26 +128,34 @@ ALL_FIB_CONFIGS = [
 # ---------------------------------------------------------------------------
 
 def _compute_bias_fib(candles_1h: list, deviation_pct: float) -> list[dict]:
-    """Rolling ZigZag bias per 1h bar — carries struct levels for fib entry."""
+    """Rolling ZigZag bias per 1h bar — carries struct levels for fib entry.
+
+    Stores swing_count and rvol_1h in each entry so the simulation can apply
+    swing_count_min and rvol_1h_min filters without recomputing the bias.
+    """
     if len(candles_1h) < 10:
         return []
 
     print(f"  Pre-computing 1h ZZ bias (dev={deviation_pct}%) for {len(candles_1h)} bars…", flush=True)
+    rvol_1h_series = rvol_fn(candles_1h, 20)
+
     results = []
     for i, bar in enumerate(candles_1h):
         window = candles_1h[max(0, i - STRUCT_WINDOW + 1):i + 1]
         struct = zz_struct_fn(window, deviation_pct=deviation_pct, current_price=bar["close"])
+        r1h = rvol_1h_series[i]
 
         if struct is None or struct["trend"] == "mixed":
-            results.append({"t": bar["t"], "bias": None, "structure": None})
+            results.append({"t": bar["t"], "bias": None, "structure": None, "swing_count": 0, "rvol_1h": r1h})
             continue
 
-        if struct.get("swing_count", 0) < 2:
-            results.append({"t": bar["t"], "bias": None, "structure": None})
+        sc = struct.get("swing_count", 0)
+        if sc < 2:
+            results.append({"t": bar["t"], "bias": None, "structure": None, "swing_count": sc, "rvol_1h": r1h})
             continue
 
         bias = "bull" if struct["trend"] == "HH_HL" else "bear"
-        results.append({"t": bar["t"], "bias": bias, "structure": struct})
+        results.append({"t": bar["t"], "bias": bias, "structure": struct, "swing_count": sc, "rvol_1h": r1h})
 
     return results
 
@@ -192,6 +241,14 @@ def _run_simulation_fib(candles_5m: list, bias_list: list[dict], cfg: FibConfig,
 
         if bias is None or struct is None:
             continue
+
+        if h4.get("swing_count", 0) < cfg.swing_count_min:
+            continue
+
+        if cfg.rvol_1h_min > 0:
+            r1h = h4.get("rvol_1h")
+            if r1h is None or r1h < cfg.rvol_1h_min:
+                continue
 
         if cfg.session_filter and not _in_session(ts):
             continue
