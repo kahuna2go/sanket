@@ -200,20 +200,32 @@ async def handle_stop(request):
     return web.json_response(result)
 
 
+_STUB_STATE = {
+    "status": "stopped", "balance": 0, "total_value": 0,
+    "positions": [], "uptime_minutes": 0, "invocation_count": 0,
+    "model_usage": {}, "recent_decisions": [],
+}
+
 async def handle_proxy(request):
-    """Proxy LLM strategy API endpoints to port 3001 so dashboard works unchanged."""
+    """Proxy LLM strategy API endpoints to port 3001 so dashboard works unchanged.
+    When LLM is not running, return stub data so the dashboard renders (overlay clears)
+    and the launcher control bar is visible.
+    """
     import aiohttp as _aio
-    path  = request.path          # e.g. /state, /history, /diary, /logs
-    port  = _strategies["llm"]["port"]
-    url   = f"http://127.0.0.1:{port}{path}"
+    path = request.path
+    port = _strategies["llm"]["port"]
+    url  = f"http://127.0.0.1:{port}{path}"
     try:
         async with _aio.ClientSession() as sess:
             async with sess.get(url, timeout=_aio.ClientTimeout(total=5)) as r:
-                body    = await r.read()
-                ctype   = r.headers.get("Content-Type", "application/json")
+                body  = await r.read()
+                ctype = r.headers.get("Content-Type", "application/json")
                 return web.Response(body=body, content_type=ctype.split(";")[0].strip(), status=r.status)
-    except Exception as e:
-        return web.json_response({"error": f"LLM strategy not reachable: {e}"}, status=503)
+    except Exception:
+        # LLM strategy not running — return stub so dashboard renders
+        if path == "/state":
+            return web.json_response(_STUB_STATE)
+        return web.json_response([] if path in ("/history", "/diary") else {})
 
 
 async def handle_logs_sse(request):
