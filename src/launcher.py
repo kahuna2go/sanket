@@ -76,11 +76,27 @@ async def _read_logs(name: str, proc: asyncio.subprocess.Process):
     logging.info("%s process exited (rc=%s)", name, proc.returncode)
 
 
+async def _kill_port(port: int):
+    """Kill any process occupying the given port so the strategy can bind to it."""
+    proc = await asyncio.create_subprocess_exec(
+        "lsof", "-ti", f":{port}",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+    )
+    out, _ = await proc.communicate()
+    for pid in out.decode().split():
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except (ProcessLookupError, ValueError):
+            pass
+    await asyncio.sleep(0.5)
+
+
 async def _start(name: str, extra_env: dict | None = None, args: list[str] | None = None):
     if _is_running(name):
         return {"ok": False, "error": f"{name} already running"}
 
     s = _strategies[name]
+    await _kill_port(s["port"])
     env = {**os.environ, "API_PORT": str(s["port"])}
     if extra_env:
         env.update(extra_env)
