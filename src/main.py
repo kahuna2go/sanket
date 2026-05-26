@@ -1895,6 +1895,11 @@ def main():
         await runner.setup()
         site = web.TCPSite(runner, CFG.get("api_host"), int(CFG.get("api_port")))
         await site.start()
+        if (CFG.get("strategy") or "llm").lower() == "hybrid":
+        from src.strategies.hybrid.hybrid_manager import HybridManager
+        mgr = HybridManager(hyperliquid, risk_mgr)
+        await mgr.run()
+    else:
         await run_loop()
 
     def calculate_total_return(state, trade_log):

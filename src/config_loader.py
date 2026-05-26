@@ -116,6 +116,10 @@ CONFIG = {
     # Macro filters
     "finnhub_api_key": _get_env("FINNHUB_API_KEY"),
 
+    # Hybrid strategy
+    "strategy": _get_env("STRATEGY", "llm"),   # "llm" (default) or "hybrid"
+    "dry_run": _get_bool("DRY_RUN", False),
+
     # Legacy / optional
     "taapi_api_key": _get_env("TAAPI_API_KEY"),
     "openrouter_api_key": _get_env("OPENROUTER_API_KEY"),

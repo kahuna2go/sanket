@@ -1,0 +1,46 @@
+funding_scalper:
+  enabled: true
+  assets:
+    - "xyz:SP500"
+    - "ETH"
+    - "SOL"
+  min_funding_rate: 0.01       # 0.01% per 8h minimum (1 basis point) to trade
+  pre_funding_window: 40       # minutes before funding time to enter
+  post_funding_window: 10      # minutes after funding time to check for fade
+  entry_discount: 0.003        # wait for 0.3% dip/pump before market entry
+  post_funding_threshold: 0.005  # 0.5% move from funding price triggers fade trade
+  position_size_usd: 500       # USD notional per trade
+  position_size_multiplier: 1.0
+
+stat_arb:
+  enabled: true
+  sol_asset: "SOL"
+  eth_asset: "ETH"
+  spx_ticker: "^GSPC"          # yfinance ticker for SPX regression factor
+  lookback_periods: 120        # 1-min bars (= 2 hours) for rolling OLS regression
+  entry_z_score: 2.0           # enter when |z-score| exceeds this
+  exit_z_score: 0.5            # exit when |z-score| drops below this
+  stop_loss_z_score: 3.0       # stop-loss when |z-score| exceeds this
+  check_interval: 60           # seconds between signal checks
+  position_size: 1000          # USD notional on the SOL leg; ETH/SPX legs are beta-scaled
+
+micro_grid:
+  enabled: true
+  peak_hours_start: 13         # UTC hour (inclusive)
+  peak_hours_end: 17           # UTC hour (exclusive)
+  assets:
+    "xyz:SP500":
+      spacing_pct: 0.10        # grid spacing as % of price
+      grid_levels: 10          # total levels (5 above + 5 below current price)
+      position_size: 100       # contracts per level (review against account size)
+    "ETH":
+      spacing_pct: 0.15
+      grid_levels: 10
+      position_size: 0.5       # ETH contracts per level (~$1250 at $2500/ETH)
+    "SOL":
+      spacing_pct: 0.20
+      grid_levels: 10
+      position_size: 5         # SOL contracts per level (~$750 at $150/SOL)
+
+risk:
+  daily_loss_kill_switch_pct: 3.0  # halt all new hybrid trades if daily drawdown > 3%
