@@ -390,6 +390,15 @@
     <span id="cb-detail" style="margin-left:auto;font-weight:400;letter-spacing:.05em;text-transform:none;font-family:var(--font-data);font-size:10px"></span>
   </div>
 
+  <!-- SOL Momentum log panel (only shown when launcher is active) -->
+  <div id="mom-log-panel" style="display:none;margin-bottom:14px;background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid var(--border);">
+      <span style="font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);">SOL Momentum — Live Output</span>
+      <button onclick="document.getElementById('mom-log-body').innerHTML=''" style="font-family:var(--font-label);font-size:10px;background:none;border:none;color:var(--muted);cursor:pointer;letter-spacing:.06em;">CLEAR</button>
+    </div>
+    <div id="mom-log-body" style="font-family:var(--font-data);font-size:11px;line-height:1.7;padding:12px 18px;height:220px;overflow-y:auto;color:var(--muted);white-space:pre-wrap;word-break:break-all;"></div>
+  </div>
+
   <!-- Metrics strip -->
   <div class="metrics">
     <div class="mc a" id="mc-bal">
@@ -1040,20 +1049,6 @@
   startProgress();
 
   // ── Launcher controls (only active when served via launcher on port 3000) ──
-  async function lcRefresh() {
-    try {
-      const d = await fetch('/api/status').then(r => r.json());
-      document.getElementById('launcher-bar').style.display = 'flex';
-      const llmR = d.strategies?.llm?.running;
-      const solR = d.strategies?.sol_momentum?.running;
-      document.getElementById('llm-dot').style.background  = llmR ? '#0aab5c' : '#d42f2f';
-      document.getElementById('sol-dot').style.background  = solR ? '#0aab5c' : '#d42f2f';
-      document.getElementById('llm-start-btn').disabled = llmR;
-      document.getElementById('llm-stop-btn').disabled  = !llmR;
-      document.getElementById('sol-start-btn').disabled = solR;
-      document.getElementById('sol-stop-btn').disabled  = !solR;
-    } catch { /* launcher not running — hide the bar */ }
-  }
   function lcToggleAsset(el) {
     const on = el.dataset.selected !== '1';
     el.dataset.selected  = on ? '1' : '';
@@ -1077,6 +1072,49 @@
     await fetch('/api/stop', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({strategy:name}) });
     lcRefresh();
   }
+  // SOL Momentum log streaming
+  let _momEs = null;
+  function connectMomLogs() {
+    if (_momEs) return;
+    _momEs = new EventSource('/api/logs/sol_momentum');
+    _momEs.onmessage = e => {
+      const el   = document.getElementById('mom-log-body');
+      const line = JSON.parse(e.data);
+      const div  = document.createElement('div');
+      const l    = line.toLowerCase();
+      div.style.color =
+        (l.includes('signal') || l.includes('crossover')) ? 'var(--accent)' :
+        (l.includes(' win')   || l.includes('tp '))       ? 'var(--profit)' :
+        (l.includes(' loss')  || l.includes('sl '))       ? 'var(--loss)'   :
+        (l.includes('error')  || l.includes('exception')) ? 'var(--loss)'   :
+        (l.includes('warn'))                               ? 'var(--warn)'   : '';
+      div.textContent = line;
+      el.appendChild(div);
+      while (el.children.length > 500) el.removeChild(el.firstChild);
+      el.scrollTop = el.scrollHeight;
+    };
+    _momEs.onerror = () => { _momEs.close(); _momEs = null; setTimeout(connectMomLogs, 5000); };
+  }
+
+  async function lcRefresh() {
+    try {
+      const d = await fetch('/api/status').then(r => r.json());
+      document.getElementById('launcher-bar').style.display = 'flex';
+      const solR = d.strategies?.sol_momentum?.running;
+      // Show log panel whenever launcher is reachable
+      document.getElementById('mom-log-panel').style.display = '';
+      connectMomLogs();
+
+      const llmR = d.strategies?.llm?.running;
+      document.getElementById('llm-dot').style.background  = llmR ? '#0aab5c' : '#d42f2f';
+      document.getElementById('sol-dot').style.background  = solR ? '#0aab5c' : '#d42f2f';
+      document.getElementById('llm-start-btn').disabled = llmR;
+      document.getElementById('llm-stop-btn').disabled  = !llmR;
+      document.getElementById('sol-start-btn').disabled = solR;
+      document.getElementById('sol-stop-btn').disabled  = !solR;
+    } catch { /* launcher not running */ }
+  }
+
   // Pre-select ETH on load
   const _ethChip = document.querySelector('.lc-chip[data-v="ETH"]');
   if (_ethChip) lcToggleAsset(_ethChip);
