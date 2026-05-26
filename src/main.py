@@ -115,7 +115,8 @@ def main():
     if not args.interval and interval_env:
         args.interval = interval_env
 
-    if not args.assets or not args.interval:
+    strategy = (CONFIG.get("strategy") or "llm").lower()
+    if strategy == "llm" and (not args.assets or not args.interval):
         parser.error("Please provide --assets and --interval, or set ASSETS and INTERVAL in .env")
 
     hyperliquid = HyperliquidAPI()
