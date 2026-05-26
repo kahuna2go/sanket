@@ -350,6 +350,39 @@
     </div>
   </header>
 
+  <!-- ─── STRATEGY CONTROLS ──────────────────────────────────────────── -->
+  <div id="launcher-bar" style="display:none;margin-bottom:14px;background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 20px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
+    <!-- LLM -->
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="llm-dot" style="width:8px;height:8px;border-radius:50%;background:#d42f2f;display:inline-block;"></span>
+      <span style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">LLM</span>
+      <select id="lc-assets" multiple style="font-family:var(--font-data);font-size:11px;background:var(--surface-alt);border:1px solid var(--border-2);border-radius:6px;color:var(--text);padding:3px 6px;height:58px;outline:none;">
+        <option value="BTC">BTC</option>
+        <option value="ETH" selected>ETH</option>
+        <option value="SOL">SOL</option>
+        <option value="xyz:SP500">SP500</option>
+        <option value="AVAX">AVAX</option>
+        <option value="LINK">LINK</option>
+      </select>
+      <select id="lc-interval" style="font-family:var(--font-data);font-size:11px;background:var(--surface-alt);border:1px solid var(--border-2);border-radius:6px;color:var(--text);padding:4px 8px;outline:none;">
+        <option value="5m">5m</option>
+        <option value="15m">15m</option>
+        <option value="1h">1h</option>
+      </select>
+      <button id="llm-start-btn" onclick="lcStart('llm')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
+      <button id="llm-stop-btn"  onclick="lcStop('llm')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
+    </div>
+    <div style="width:1px;height:40px;background:var(--border-2);"></div>
+    <!-- SOL Momentum -->
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="sol-dot" style="width:8px;height:8px;border-radius:50%;background:#d42f2f;display:inline-block;"></span>
+      <span style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">SOL Momentum</span>
+      <span style="font-family:var(--font-data);font-size:10px;color:var(--muted);">EMA9/21 · RSI · 15m · Session</span>
+      <button id="sol-start-btn" onclick="lcStart('sol_momentum')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
+      <button id="sol-stop-btn"  onclick="lcStop('sol_momentum')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
+    </div>
+  </div>
+
   <!-- Circuit breaker banner -->
   <div class="cb-banner" id="cb-banner">
     <div class="cb-dot"></div>
@@ -1005,6 +1038,41 @@
   fetchState();
   setInterval(fetchState, INTERVAL);
   startProgress();
+
+  // ── Launcher controls (only active when served via launcher on port 3000) ──
+  async function lcRefresh() {
+    try {
+      const d = await fetch('/api/status').then(r => r.json());
+      document.getElementById('launcher-bar').style.display = 'flex';
+      const llmR = d.strategies?.llm?.running;
+      const solR = d.strategies?.sol_momentum?.running;
+      document.getElementById('llm-dot').style.background  = llmR ? '#0aab5c' : '#d42f2f';
+      document.getElementById('sol-dot').style.background  = solR ? '#0aab5c' : '#d42f2f';
+      document.getElementById('llm-start-btn').disabled = llmR;
+      document.getElementById('llm-stop-btn').disabled  = !llmR;
+      document.getElementById('sol-start-btn').disabled = solR;
+      document.getElementById('sol-stop-btn').disabled  = !solR;
+    } catch { /* launcher not running — hide the bar */ }
+  }
+  async function lcStart(name) {
+    const body = { strategy: name };
+    if (name === 'llm') {
+      const sel = document.getElementById('lc-assets');
+      body.assets   = [...sel.options].filter(o => o.selected).map(o => o.value);
+      body.interval = document.getElementById('lc-interval').value;
+      if (!body.assets.length) { alert('Select at least one asset.'); return; }
+    }
+    const r = await fetch('/api/start', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.ok) alert('Failed: ' + d.error);
+    lcRefresh();
+  }
+  async function lcStop(name) {
+    await fetch('/api/stop', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({strategy:name}) });
+    lcRefresh();
+  }
+  lcRefresh();
+  setInterval(lcRefresh, 5000);
 </script>
 </body>
 </html>
