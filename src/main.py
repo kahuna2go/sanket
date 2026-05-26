@@ -1,5 +1,16 @@
 """Entry-point script that wires together the trading agent, data feeds, and API."""
 
+# websocket-client ignores SSL_CERT_FILE and uses load_default_certs() which
+# requires macOS system keychain — unavailable in launcher subprocesses.
+# Patch run_forever() to always pass certifi's CA bundle.
+import certifi as _certifi
+from hyperliquid import websocket_manager as _wm
+_orig_ws_run = _wm.WebsocketManager.run
+def _ws_run(self):
+    self.ping_sender.start()
+    self.ws.run_forever(sslopt={"ca_certs": _certifi.where()})
+_wm.WebsocketManager.run = _ws_run
+
 import sys
 import argparse
 import pathlib
