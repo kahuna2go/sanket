@@ -98,7 +98,8 @@ async def _start(name: str, extra_env: dict | None = None, args: list[str] | Non
     s = _strategies[name]
     await _kill_port(s["port"])
     import certifi
-    env = {**os.environ, "API_PORT": str(s["port"]), "SSL_CERT_FILE": certifi.where()}
+    ca = certifi.where()
+    env = {**os.environ, "API_PORT": str(s["port"]), "SSL_CERT_FILE": ca, "WEBSOCKET_CLIENT_CA_BUNDLE": ca}
     if extra_env:
         env.update(extra_env)
 

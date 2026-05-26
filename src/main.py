@@ -1,12 +1,5 @@
 """Entry-point script that wires together the trading agent, data feeds, and API."""
 
-import ssl, certifi
-_orig_ssl_ctx = ssl.create_default_context
-def _ssl_ctx(*args, **kwargs):
-    kwargs.setdefault('cafile', certifi.where())
-    return _orig_ssl_ctx(*args, **kwargs)
-ssl.create_default_context = _ssl_ctx
-
 import sys
 import argparse
 import pathlib
