@@ -269,11 +269,23 @@ def main():
                 initial_account_value = account_value
             total_return_pct = ((account_value - initial_account_value) / initial_account_value * 100.0) if initial_account_value else 0.0
 
+            # Fetch current prices once for all managed assets; reused throughout the cycle
+            asset_prices = {}
+            for asset in args.assets:
+                try:
+                    current_price = await hyperliquid.get_current_price(asset)
+                    asset_prices[asset] = current_price
+                    if asset not in price_history:
+                        price_history[asset] = deque(maxlen=60)
+                    price_history[asset].append({"t": datetime.now(timezone.utc).isoformat(), "mid": round_or_none(current_price, 2)})
+                except Exception as e:
+                    add_event(f"Price fetch error {asset}: {e}")
+
             positions = []
             for pos_wrap in state['positions']:
                 pos = pos_wrap
                 coin = _resolve_coin(pos.get('coin') or '')
-                current_px = await hyperliquid.get_current_price(coin) if coin else None
+                current_px = asset_prices.get(coin) if coin else None
                 positions.append({
                     "symbol": coin,
                     "quantity": round_or_none(pos.get('szi'), 6),
@@ -729,18 +741,6 @@ def main():
                 "recent_diary": recent_diary,
                 "recent_fills": recent_fills_struct,
             }
-
-            # Fast: fetch current prices only (needed for trigger checks)
-            asset_prices = {}
-            for asset in args.assets:
-                try:
-                    current_price = await hyperliquid.get_current_price(asset)
-                    asset_prices[asset] = current_price
-                    if asset not in price_history:
-                        price_history[asset] = deque(maxlen=60)
-                    price_history[asset].append({"t": datetime.now(timezone.utc).isoformat(), "mid": round_or_none(current_price, 2)})
-                except Exception as e:
-                    add_event(f"Price fetch error {asset}: {e}")
 
             # Compact position summary table
             _pos_rows = []
