@@ -78,7 +78,7 @@ class HyperliquidAPI:
     def _build_clients(self):
         """Instantiate exchange and info client instances for the active base URL."""
         dexs = ([""] + self._perp_dexs) if self._perp_dexs else None
-        self.info = Info(self.base_url, perp_dexs=dexs)
+        self.info = Info(self.base_url, skip_ws=True, perp_dexs=dexs)
         self.exchange = Exchange(self.wallet, self.base_url, account_address=self.account_address, perp_dexs=dexs)
 
     def register_perp_dexs(self, dexes: list):

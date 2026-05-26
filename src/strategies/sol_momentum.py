@@ -234,21 +234,28 @@ class SolMomentum:
         if any(v is None for v in [e9_prev, e9_cur, e21_prev, e21_cur, rsi_cur, atr_cur]):
             return
 
+        in_session  = _in_session(candles[-1]["t"])
         long_cross  = e9_prev < e21_prev and e9_cur >= e21_cur
         short_cross = e9_prev > e21_prev and e9_cur <= e21_cur
+        trend       = "▲" if e9_cur > e21_cur else "▼"
+
+        logging.info(
+            "[SolMomentum] EMA9=%.2f EMA21=%.2f RSI=%.1f ATR=%.2f %s session=%s",
+            e9_cur, e21_cur, rsi_cur, atr_cur, trend, "ON" if in_session else "off",
+        )
 
         if not long_cross and not short_cross:
             return
 
-        if not _in_session(candles[-1]["t"]):
-            logging.debug("[SolMomentum] crossover outside session — skipped")
+        if not in_session:
+            logging.info("[SolMomentum] crossover outside session — skipped")
             return
 
         if long_cross and rsi_cur <= 55:
-            logging.debug("[SolMomentum] long cross RSI=%.1f ≤ 55 — skipped", rsi_cur)
+            logging.info("[SolMomentum] long cross RSI=%.1f ≤ 55 — skipped", rsi_cur)
             return
         if short_cross and rsi_cur >= 45:
-            logging.debug("[SolMomentum] short cross RSI=%.1f ≥ 45 — skipped", rsi_cur)
+            logging.info("[SolMomentum] short cross RSI=%.1f ≥ 45 — skipped", rsi_cur)
             return
 
         direction = "long" if long_cross else "short"
