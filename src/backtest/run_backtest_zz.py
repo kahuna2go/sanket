@@ -76,6 +76,59 @@ ALL_ZZ_CONFIGS = [
     ZZConfig(deviation_pct=3.0, rvol_min=1.2, session_filter=True,  label="dev=3% + RVOL≥1.2 + Session"),
 ]
 
+# Preset: VA-SL vs tight-SL comparison (SOL, dev=2%)
+_ZZ_TIGHTSL_CONFIGS = [
+    ZZConfig(deviation_pct=2.0, rvol_min=0.0, tp1_frac=0.5, tight_sl=False, label="VA-SL  50/50  no filters"),
+    ZZConfig(deviation_pct=2.0, rvol_min=0.0, tp1_frac=0.5, tight_sl=True,  label="TightSL 50/50  no filters"),
+    ZZConfig(deviation_pct=2.0, rvol_min=0.0, tp1_frac=0.0, tight_sl=True,  label="TightSL TP2only no filters"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, tp1_frac=0.5, tight_sl=False, label="VA-SL  50/50  + RVOL≥1.2"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, tp1_frac=0.5, tight_sl=True,  label="TightSL 50/50  + RVOL≥1.2"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, tp1_frac=0.0, tight_sl=True,  label="TightSL TP2only + RVOL≥1.2"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.5, tight_sl=False, label="VA-SL  50/50  + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.5, tight_sl=True,  label="TightSL 50/50  + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.0, tight_sl=False, label="VA-SL  TP2only + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.0, tight_sl=True,  label="TightSL TP2only + RVOL≥1.2 + Session"),
+]
+
+# Preset: VA-SL vs tight-SL comparison (ETH, dev=2% + dev=3%)
+_ZZ_TIGHTSL_ETH_CONFIGS = [
+    ZZConfig(deviation_pct=2.0, rvol_min=0.0, tp1_frac=0.5, tight_sl=False, label="dev=2% VA-SL  50/50  no filters"),
+    ZZConfig(deviation_pct=2.0, rvol_min=0.0, tp1_frac=0.5, tight_sl=True,  label="dev=2% TightSL 50/50  no filters"),
+    ZZConfig(deviation_pct=2.0, rvol_min=0.0, tp1_frac=0.0, tight_sl=True,  label="dev=2% TightSL TP2only no filters"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, tp1_frac=0.5, tight_sl=False, label="dev=2% VA-SL  50/50  + RVOL≥1.2"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, tp1_frac=0.5, tight_sl=True,  label="dev=2% TightSL 50/50  + RVOL≥1.2"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, tp1_frac=0.0, tight_sl=True,  label="dev=2% TightSL TP2only + RVOL≥1.2"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.5, tight_sl=False, label="dev=2% VA-SL  50/50  + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.5, tight_sl=True,  label="dev=2% TightSL 50/50  + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.0, tight_sl=False, label="dev=2% VA-SL  TP2only + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.0, tight_sl=True,  label="dev=2% TightSL TP2only + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=3.0, rvol_min=0.0, tp1_frac=0.5, tight_sl=False, label="dev=3% VA-SL  50/50  no filters"),
+    ZZConfig(deviation_pct=3.0, rvol_min=0.0, tp1_frac=0.5, tight_sl=True,  label="dev=3% TightSL 50/50  no filters"),
+    ZZConfig(deviation_pct=3.0, rvol_min=1.2, tp1_frac=0.5, tight_sl=True,  label="dev=3% TightSL 50/50  + RVOL≥1.2"),
+    ZZConfig(deviation_pct=3.0, rvol_min=1.2, session_filter=True, tp1_frac=0.5, tight_sl=True,  label="dev=3% TightSL 50/50  + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=3.0, rvol_min=1.2, session_filter=True, tp1_frac=0.0, tight_sl=True,  label="dev=3% TightSL TP2only + RVOL≥1.2 + Session"),
+]
+
+# Preset: TP split comparison (SOL, dev=2%)
+_ZZ_TP_TEST_CONFIGS = [
+    ZZConfig(deviation_pct=2.0, rvol_min=0.0, tp1_frac=0.5, label="50/50  no filters"),
+    ZZConfig(deviation_pct=2.0, rvol_min=0.0, tp1_frac=0.7, label="70/30  no filters"),
+    ZZConfig(deviation_pct=2.0, rvol_min=0.0, tp1_frac=0.0, label="TP2only no filters"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, tp1_frac=0.5, label="50/50  + RVOL≥1.2"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, tp1_frac=0.7, label="70/30  + RVOL≥1.2"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, tp1_frac=0.0, label="TP2only + RVOL≥1.2"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.5, label="50/50  + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.7, label="70/30  + RVOL≥1.2 + Session"),
+    ZZConfig(deviation_pct=2.0, rvol_min=1.2, session_filter=True, tp1_frac=0.0, label="TP2only + RVOL≥1.2 + Session"),
+]
+
+ZZ_PRESETS: dict[str, list[ZZConfig]] = {
+    "default":     ALL_ZZ_CONFIGS,
+    "tightsl":     _ZZ_TIGHTSL_CONFIGS,
+    "tightsl-eth": _ZZ_TIGHTSL_ETH_CONFIGS,
+    "tp-test":     _ZZ_TP_TEST_CONFIGS,
+}
+
 
 # ---------------------------------------------------------------------------
 # 1h bias pre-computation
@@ -419,7 +472,8 @@ def _append_results_md(asset: str, candles: list, all_stats: list, entry_tf: str
 # Entry points
 # ---------------------------------------------------------------------------
 
-async def run_zz_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m"):
+async def run_zz_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m",
+                       preset: str = "default"):
     from src.trading.hyperliquid_api import HyperliquidAPI
     hl = None
 
@@ -440,9 +494,11 @@ async def run_zz_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m"
         print(f"{asset}: missing 1h candle data — run with --fetch first")
         return
 
+    configs = ZZ_PRESETS[preset]
+
     # Group configs by deviation_pct to avoid redundant bias computation
     dev_groups: dict[float, list[ZZConfig]] = {}
-    for cfg in ALL_ZZ_CONFIGS:
+    for cfg in configs:
         dev_groups.setdefault(cfg.deviation_pct, []).append(cfg)
 
     all_stats: list[tuple] = []
@@ -470,9 +526,10 @@ async def run_zz_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m"
     _append_results_md(asset, entry_candles, all_stats, entry_tf=entry_tf)
 
 
-async def main_async(assets: list[str], years: int, fetch: bool, entry_tf: str):
+async def main_async(assets: list[str], years: int, fetch: bool, entry_tf: str,
+                     preset: str):
     for asset in assets:
-        await run_zz_asset(asset, years, fetch, entry_tf=entry_tf)
+        await run_zz_asset(asset, years, fetch, entry_tf=entry_tf, preset=preset)
 
 
 def main():
@@ -482,8 +539,12 @@ def main():
     parser.add_argument("--fetch",    action="store_true")
     parser.add_argument("--entry-tf", default="5m", choices=["5m", "1h"],
                         help="Candle timeframe for entry signals (default: 5m)")
+    parser.add_argument("--preset",   default="default",
+                        choices=list(ZZ_PRESETS),
+                        help="Config preset (default: default)")
     args = parser.parse_args()
-    asyncio.run(main_async(args.assets, args.years, args.fetch, entry_tf=args.entry_tf))
+    asyncio.run(main_async(args.assets, args.years, args.fetch,
+                           entry_tf=args.entry_tf, preset=args.preset))
 
 
 if __name__ == "__main__":

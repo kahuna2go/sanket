@@ -85,6 +85,24 @@ ALL_MS_CONFIGS = [
     MSConfig(rvol_min=1.5, session_filter=True,  label="+ RVOL ≥ 1.5 + Session"),
 ]
 
+# Preset: TP split comparison (SOL)
+_MS_TP_TEST_CONFIGS = [
+    MSConfig(rvol_min=0.0, tp1_frac=0.5, label="50/50  no filters"),
+    MSConfig(rvol_min=0.0, tp1_frac=0.7, label="70/30  no filters"),
+    MSConfig(rvol_min=0.0, tp1_frac=0.0, label="TP2only no filters"),
+    MSConfig(rvol_min=1.2, tp1_frac=0.5, label="50/50  + RVOL≥1.2"),
+    MSConfig(rvol_min=1.2, tp1_frac=0.7, label="70/30  + RVOL≥1.2"),
+    MSConfig(rvol_min=1.2, tp1_frac=0.0, label="TP2only + RVOL≥1.2"),
+    MSConfig(rvol_min=1.2, session_filter=True, tp1_frac=0.5, label="50/50  + RVOL≥1.2 + Session"),
+    MSConfig(rvol_min=1.2, session_filter=True, tp1_frac=0.7, label="70/30  + RVOL≥1.2 + Session"),
+    MSConfig(rvol_min=1.2, session_filter=True, tp1_frac=0.0, label="TP2only + RVOL≥1.2 + Session"),
+]
+
+MS_PRESETS: dict[str, list[MSConfig]] = {
+    "default": ALL_MS_CONFIGS,
+    "tp-test": _MS_TP_TEST_CONFIGS,
+}
+
 
 # ---------------------------------------------------------------------------
 # 1h bias pre-computation
@@ -440,7 +458,8 @@ def _append_results_md(asset: str, candles: list, all_stats: list, entry_tf: str
 # Entry points
 # ---------------------------------------------------------------------------
 
-async def run_ms_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m"):
+async def run_ms_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m",
+                       preset: str = "default"):
     from src.trading.hyperliquid_api import HyperliquidAPI
     hl = None
 
@@ -464,7 +483,6 @@ async def run_ms_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m"
     bias_list = _compute_bias(candles_1h)
 
     if entry_tf == "1h":
-        # Shift bias timestamps forward by 1 bar so entry bar i reads bias from bar i-1
         _1h_ms = 3_600_000
         bias_shifted = [
             {**b, "t": b["t"] + _1h_ms} for b in bias_list
@@ -479,17 +497,19 @@ async def run_ms_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m"
         entry_candles = candles_5m
         sim_bias      = bias_list
 
+    configs = MS_PRESETS[preset]
     all_stats = [
         (cfg, _run_simulation_ms(entry_candles, sim_bias, cfg, debug=(i == 0)))
-        for i, cfg in enumerate(ALL_MS_CONFIGS)
+        for i, cfg in enumerate(configs)
     ]
     _print_ms_table(asset, entry_candles, all_stats, entry_tf=entry_tf)
     _append_results_md(asset, entry_candles, all_stats, entry_tf=entry_tf)
 
 
-async def main_async(assets: list[str], years: int, fetch: bool, entry_tf: str):
+async def main_async(assets: list[str], years: int, fetch: bool, entry_tf: str,
+                     preset: str):
     for asset in assets:
-        await run_ms_asset(asset, years, fetch, entry_tf=entry_tf)
+        await run_ms_asset(asset, years, fetch, entry_tf=entry_tf, preset=preset)
 
 
 def main():
@@ -499,9 +519,12 @@ def main():
     parser.add_argument("--fetch",    action="store_true")
     parser.add_argument("--entry-tf", default="5m", choices=["5m", "1h"],
                         help="Candle timeframe for entry signals (default: 5m)")
+    parser.add_argument("--preset",   default="default",
+                        choices=list(MS_PRESETS),
+                        help="Config preset (default: default)")
     args = parser.parse_args()
     asyncio.run(main_async(args.assets, args.years, args.fetch,
-                           entry_tf=args.entry_tf))
+                           entry_tf=args.entry_tf, preset=args.preset))
 
 
 if __name__ == "__main__":

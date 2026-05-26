@@ -122,6 +122,27 @@ ALL_FIB_CONFIGS = [
     FibConfig(deviation_pct=2.0, fib_zone=0.08, min_rr=2.0, session_filter=True, tp1_frac=0.0, label="dev=2% + minRR=2.0 + Session TP2only"),
 ]
 
+# Preset: ETH targeted sweep — session-only filter and looser RVOL thresholds
+_FIB_ETH_TARGETED_CONFIGS = [
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=0.0, session_filter=False, tp1_frac=0.5, label="dev=2% no filters (ref)"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.2, session_filter=False, tp1_frac=0.5, label="dev=2% RVOL≥1.2 (ref, NO-GO)"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=0.0, session_filter=True,  tp1_frac=0.5, label="dev=2% + Session only"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=0.0, session_filter=True,  tp1_frac=0.0, label="dev=2% + Session only TP2only"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.12, rvol_min=0.0, session_filter=True,  tp1_frac=0.5, label="dev=2% zone=0.12 + Session only"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.12, rvol_min=0.0, session_filter=True,  tp1_frac=0.0, label="dev=2% zone=0.12 + Session TP2only"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.0, session_filter=False, tp1_frac=0.5, label="dev=2% RVOL≥1.0"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.1, session_filter=False, tp1_frac=0.5, label="dev=2% RVOL≥1.1"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.0, session_filter=True,  tp1_frac=0.5, label="dev=2% RVOL≥1.0 + Session"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.0, session_filter=True,  tp1_frac=0.0, label="dev=2% RVOL≥1.0 + Session TP2only"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.1, session_filter=True,  tp1_frac=0.5, label="dev=2% RVOL≥1.1 + Session"),
+    FibConfig(deviation_pct=2.0, fib_zone=0.08, rvol_min=1.1, session_filter=True,  tp1_frac=0.0, label="dev=2% RVOL≥1.1 + Session TP2only"),
+]
+
+FIB_PRESETS: dict[str, list[FibConfig]] = {
+    "default":      ALL_FIB_CONFIGS,
+    "eth-targeted": _FIB_ETH_TARGETED_CONFIGS,
+}
+
 
 # ---------------------------------------------------------------------------
 # 1h bias pre-computation  (no VP needed)
@@ -397,7 +418,8 @@ def _print_fib_table(asset: str, candles: list, all_stats: list, entry_tf: str =
 # Entry points
 # ---------------------------------------------------------------------------
 
-async def run_fib_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m"):
+async def run_fib_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m",
+                        preset: str = "default"):
     from src.trading.hyperliquid_api import HyperliquidAPI
     hl = None
 
@@ -418,8 +440,9 @@ async def run_fib_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m
         print(f"{asset}: missing 1h candle data — run with --fetch first")
         return
 
+    configs = FIB_PRESETS[preset]
     dev_groups: dict[float, list[FibConfig]] = {}
-    for cfg in ALL_FIB_CONFIGS:
+    for cfg in configs:
         dev_groups.setdefault(cfg.deviation_pct, []).append(cfg)
 
     all_stats: list[tuple] = []
@@ -446,9 +469,10 @@ async def run_fib_asset(asset: str, years: int, fetch: bool, entry_tf: str = "5m
     _print_fib_table(asset, entry_candles, all_stats, entry_tf=entry_tf)
 
 
-async def main_async(assets: list[str], years: int, fetch: bool, entry_tf: str):
+async def main_async(assets: list[str], years: int, fetch: bool, entry_tf: str,
+                     preset: str):
     for asset in assets:
-        await run_fib_asset(asset, years, fetch, entry_tf=entry_tf)
+        await run_fib_asset(asset, years, fetch, entry_tf=entry_tf, preset=preset)
 
 
 def main():
@@ -457,8 +481,12 @@ def main():
     parser.add_argument("--years",    type=int,  default=2)
     parser.add_argument("--fetch",    action="store_true")
     parser.add_argument("--entry-tf", default="5m", choices=["5m", "1h"])
+    parser.add_argument("--preset",   default="default",
+                        choices=list(FIB_PRESETS),
+                        help="Config preset (default: default)")
     args = parser.parse_args()
-    asyncio.run(main_async(args.assets, args.years, args.fetch, entry_tf=args.entry_tf))
+    asyncio.run(main_async(args.assets, args.years, args.fetch,
+                           entry_tf=args.entry_tf, preset=args.preset))
 
 
 if __name__ == "__main__":
