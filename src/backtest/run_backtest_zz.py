@@ -427,7 +427,7 @@ def _print_zz_table(asset: str, candles: list, all_stats: list, entry_tf: str = 
 # Markdown file output
 # ---------------------------------------------------------------------------
 
-_RESULTS_FILE    = pathlib.Path(__file__).parent.parent.parent / "backtest_results_zz.md"
+_RESULTS_FILE    = pathlib.Path(__file__).parent.parent.parent / "docs" / "results" / "backtest_results_zz.md"
 _STRATEGY_LABEL  = "1h ZigZag MS (swing_count≥2) + VA Bounce + Confirmation bar + Partial exit"
 
 

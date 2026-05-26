@@ -344,7 +344,7 @@ def _print_mom_table(asset: str, candles: list, all_stats: list):
 # Markdown output
 # ---------------------------------------------------------------------------
 
-_RESULTS_FILE = pathlib.Path(__file__).parent.parent.parent / "backtest_results_momentum.md"
+_RESULTS_FILE = pathlib.Path(__file__).parent.parent.parent / "docs" / "results" / "backtest_results_momentum.md"
 
 _STRATEGY_LABEL = "EMA9/21 crossover + RSI(14) + RVOL  [15m, TP=2×ATR, SL=1×ATR]"
 

@@ -9,7 +9,7 @@ funding_scalper:
   post_funding_window: 10      # minutes after funding time to check for fade
   entry_discount: 0.003        # wait for 0.3% dip/pump before market entry
   post_funding_threshold: 0.005  # 0.5% move from funding price triggers fade trade
-  position_size_usd: 500       # USD notional per trade
+  position_size_usd: 100       # USD notional per trade; at 3-5x leverage ~$20-33 margin
   position_size_multiplier: 1.0
 
 stat_arb:
@@ -22,25 +22,30 @@ stat_arb:
   exit_z_score: 0.5            # exit when |z-score| drops below this
   stop_loss_z_score: 3.0       # stop-loss when |z-score| exceeds this
   check_interval: 60           # seconds between signal checks
-  position_size: 1000          # USD notional on the SOL leg; ETH/SPX legs are beta-scaled
+  position_size: 150           # USD notional on the SOL leg; ETH/SPX legs are beta-scaled
+                               # at 5x leverage: ~$30 margin on SOL leg
 
 micro_grid:
   enabled: true
   peak_hours_start: 13         # UTC hour (inclusive)
   peak_hours_end: 17           # UTC hour (exclusive)
   assets:
+    # Sizing rationale ($5k account, all assets 3x leverage):
+    # target ~$150 notional/level → ~$50 margin/level at 3x
+    # 10 levels × $50 margin × 3 assets = $1,500 total grid margin (~30% of $5k account)
+    # one grid fill profit ≈ notional × spacing_pct, e.g. $150 × 0.10% = $0.15 (above fees)
     "xyz:SP500":
       spacing_pct: 0.10        # grid spacing as % of price
       grid_levels: 10          # total levels (5 above + 5 below current price)
-      position_size: 100       # contracts per level (review against account size)
+      position_size: 0.03      # ~$156 notional at SP500=5200; ~$52 margin at 3x
     "ETH":
       spacing_pct: 0.15
       grid_levels: 10
-      position_size: 0.5       # ETH contracts per level (~$1250 at $2500/ETH)
+      position_size: 0.06      # ~$150 notional at ETH=2500; ~$50 margin at 3x
     "SOL":
       spacing_pct: 0.20
       grid_levels: 10
-      position_size: 5         # SOL contracts per level (~$750 at $150/SOL)
+      position_size: 1.0       # ~$150 notional at SOL=150; ~$50 margin at 3x
 
 risk:
   daily_loss_kill_switch_pct: 3.0  # halt all new hybrid trades if daily drawdown > 3%
