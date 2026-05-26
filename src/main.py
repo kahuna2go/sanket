@@ -434,25 +434,25 @@ def main():
                     except (TypeError, ZeroDivisionError):
                         return False
 
+                orders_by_coin: dict = {}
+                for _o in (open_orders or []):
+                    orders_by_coin.setdefault(_o.get('coin', ''), []).append(_o)
+
+                def _orders_for(a: str) -> list:
+                    return orders_by_coin.get(a.split(":", 1)[1] if ":" in a else a, [])
+
                 trigger_oids = {o.get('oid') for o in (open_orders or []) if _is_trigger(o)}
                 for tr in active_trades:
                     asset = tr.get('asset')
                     if asset not in assets_with_positions:
                         continue
                     # Cancel resting entry limits (non-trigger) for assets with an open position
-                    orphaned = [
-                        o for o in (open_orders or [])
-                        if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                        and not _is_trigger(o)
-                    ]
+                    orphaned = [o for o in _orders_for(asset) if not _is_trigger(o)]
                     if orphaned:
                         await hyperliquid.cancel_limit_orders(asset)
                         add_event(f"Cancelled {len(orphaned)} orphaned entry limit(s) for {asset}")
                     # Collect all trigger orders for this asset
-                    asset_triggers = [
-                        o for o in (open_orders or [])
-                        if hyperliquid._coin_matches(o.get('coin', ''), asset) and _is_trigger(o)
-                    ]
+                    asset_triggers = [o for o in _orders_for(asset) if _is_trigger(o)]
                     # Learn tp_price/sl_price from existing orders when not stored in tr.
                     # Uses orderType string ("Take Profit Market" vs "Stop Market") to classify.
                     # This handles restarts where the diary was written without these fields.
@@ -502,10 +502,8 @@ def main():
                     tp_on_book = (
                         (tr.get('tp_oid') and tr['tp_oid'] in trigger_oids)
                         or (tr.get('tp_price') and any(
-                            o for o in (open_orders or [])
-                            if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                            and _is_trigger(o)
-                            and _trigger_price_matches(o, tr['tp_price'])
+                            o for o in _orders_for(asset)
+                            if _is_trigger(o) and _trigger_price_matches(o, tr['tp_price'])
                         ))
                     )
                     if not tp_on_book:
@@ -558,10 +556,8 @@ def main():
                     sl_on_book = (
                         (tr.get('sl_oid') and tr['sl_oid'] in trigger_oids)
                         or (tr.get('sl_price') and any(
-                            o for o in (open_orders or [])
-                            if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                            and _is_trigger(o)
-                            and _trigger_price_matches(o, tr['sl_price'])
+                            o for o in _orders_for(asset)
+                            if _is_trigger(o) and _trigger_price_matches(o, tr['sl_price'])
                         ))
                     )
                     if not sl_on_book:
@@ -615,11 +611,7 @@ def main():
                 # session, and write a diary entry so it survives the next restart.
                 tracked_assets = {tr.get('asset') for tr in active_trades}
                 for asset in (assets_with_positions - tracked_assets) & set(args.assets):
-                    untracked_limits = [
-                        o for o in (open_orders or [])
-                        if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                        and not o.get('isTrigger')
-                    ]
+                    untracked_limits = [o for o in _orders_for(asset) if not o.get('isTrigger')]
                     if untracked_limits:
                         await hyperliquid.cancel_limit_orders(asset)
                         add_event(f"Cancelled {len(untracked_limits)} entry limit(s) for untracked position {asset}")
@@ -639,10 +631,8 @@ def main():
                     amount = abs(size)
 
                     existing_triggers = [
-                        o for o in (open_orders or [])
-                        if hyperliquid._coin_matches(o.get('coin', ''), asset)
-                        and isinstance(o.get('orderType'), dict)
-                        and 'trigger' in o.get('orderType', {})
+                        o for o in _orders_for(asset)
+                        if isinstance(o.get('orderType'), dict) and 'trigger' in o.get('orderType', {})
                     ]
                     existing_tpsl = {
                         o.get('orderType', {}).get('trigger', {}).get('tpsl')
@@ -1649,19 +1639,13 @@ def main():
                             f.write(json.dumps(diary_entry) + "\n")
                     else:  # hold
                         print_decision(asset, "hold", rationale, thesis_strength)
-                        # ORB cooldown: suppress repeated LLM calls after declined breakout
+                        # ORB: after LLM holds at a retest, clear breakout_pending so the
+                        # state machine requires a fresh breakout+retest before firing again.
                         if asset in _SP500_ASSETS and asset in orb_state:
                             _orb_s = orb_state[asset]
-                            _orh_h = _orb_s.get("orh")
-                            _orl_h = _orb_s.get("orl")
-                            _cp_h = asset_prices.get(asset)
-                            if (_orh_h and _orl_h and _cp_h
-                                    and not _orb_s.get("trade_taken")
-                                    and 15.75 <= _hf_orb < 17.5):
-                                _outside_or = _cp_h > _orh_h or _cp_h < _orl_h
-                                if _outside_or:
-                                    _orb_s["declined_px"] = _cp_h
-                                    add_event(f"ORB {asset}: LLM held at {_cp_h} — cooldown set")
+                            if _orb_s.get("breakout_pending") and not _orb_s.get("trade_taken"):
+                                _orb_s["breakout_pending"] = None
+                                add_event(f"ORB {asset}: LLM held at retest — breakout_pending cleared")
                         # Write hold to diary
                         with open(diary_path, "a") as f:
                             diary_entry = {
