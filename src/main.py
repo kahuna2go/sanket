@@ -1895,12 +1895,20 @@ def main():
         await runner.setup()
         site = web.TCPSite(runner, CFG.get("api_host"), int(CFG.get("api_port")))
         await site.start()
-        if (CFG.get("strategy") or "llm").lower() == "hybrid":
-        from src.strategies.hybrid.hybrid_manager import HybridManager
-        mgr = HybridManager(hyperliquid, risk_mgr)
-        await mgr.run()
-    else:
-        await run_loop()
+        strategy = (CFG.get("strategy") or "llm").lower()
+        if strategy == "hybrid":
+            from src.strategies.hybrid.hybrid_manager import HybridManager
+            mgr = HybridManager(hyperliquid, risk_mgr)
+            await mgr.run()
+        elif strategy == "sol_momentum":
+            from src.strategies.sol_momentum import SolMomentum
+            from src.config_loader import CONFIG as _CFG
+            risk_pct = float(_CFG.get("sol_momentum_risk_pct") or 0.015)
+            dry_run  = _CFG.get("dry_run", False)
+            strat = SolMomentum(hyperliquid, risk_pct=risk_pct, dry_run=dry_run)
+            await strat.run()
+        else:
+            await run_loop()
 
     def calculate_total_return(state, trade_log):
         """Compute percent return relative to an assumed initial balance."""

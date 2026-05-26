@@ -116,9 +116,10 @@ CONFIG = {
     # Macro filters
     "finnhub_api_key": _get_env("FINNHUB_API_KEY"),
 
-    # Hybrid strategy
-    "strategy": _get_env("STRATEGY", "llm"),   # "llm" (default) or "hybrid"
+    # Strategy selection
+    "strategy": _get_env("STRATEGY", "llm"),   # "llm", "hybrid", or "sol_momentum"
     "dry_run": _get_bool("DRY_RUN", False),
+    "sol_momentum_risk_pct": _get_env("SOL_MOMENTUM_RISK_PCT", "0.015"),  # fraction of account per trade
 
     # Legacy / optional
     "taapi_api_key": _get_env("TAAPI_API_KEY"),
