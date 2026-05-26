@@ -895,11 +895,10 @@ def main():
                         break
                     # else: still below ORL, waiting
 
-            # During breakout_watch with pending trade, poll every 60s regardless of session interval.
+            # During or_formation + breakout_watch, poll every 60s to catch phase transitions promptly.
             _orb_watching = any(
                 _sp_asset in args.assets
-                and 15.75 <= _hf_orb < 17.5
-                and orb_state.get(_sp_asset, {}).get("orh") is not None
+                and 15.5 <= _hf_orb < 17.5
                 and not orb_state.get(_sp_asset, {}).get("trade_taken")
                 for _sp_asset in _SP500_ASSETS
             )

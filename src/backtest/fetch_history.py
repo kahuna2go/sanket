@@ -10,6 +10,11 @@ For intervals with insufficient Hyperliquid history, falls back to Binance
 spot (USDT pair) which has full history back to 2019. Price tracks closely
 enough for signal validation.
 
+For HIP-3 assets (xyz:SP500, xyz:GOLD, etc.) with even less Hyperliquid
+history, falls back to yfinance (SPY, GC=F, etc.). yfinance returns up to
+~60 days of 5m data per request; the fetcher chunks into 50-day windows to
+maximise coverage. 4h data is fetched as 1h and resampled.
+
 Run directly:  python -m src.backtest.fetch_history --assets BTC ETH SOL --years 2
 """
 
@@ -21,6 +26,7 @@ import ssl
 import sys
 import time
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent))
 
@@ -56,6 +62,14 @@ BINANCE_INTERVAL = {
     "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m",
     "1h": "1h", "2h": "2h", "4h": "4h", "8h": "8h", "12h": "12h",
     "1d": "1d",
+}
+
+# yfinance tickers for HIP-3 assets that have no Binance equivalent
+YFINANCE_SYMBOLS = {
+    "xyz:SP500":  "SPY",   # SPDR S&P 500 ETF — liquid intraday proxy
+    "xyz:GOLD":   "GC=F",  # Gold futures
+    "xyz:OIL":    "CL=F",  # WTI crude futures
+    "xyz:SILVER": "SI=F",  # Silver futures
 }
 
 HL_BATCH = 5000
@@ -217,16 +231,117 @@ def fetch_binance(asset: str, interval: str, years: int) -> list:
     return all_candles
 
 
-async def fetch_all(hl: HyperliquidAPI, asset: str, interval: str, years: int) -> tuple[list, str]:
-    """Fetch candle history, using Binance fallback when HL history is too short.
+def fetch_yfinance(asset: str, interval: str, years: int) -> list:
+    """Fetch candles from yfinance.
 
-    Returns (candles, source) where source is 'hyperliquid' or 'binance'.
+    5m: yfinance hard-limits to the last 60 days regardless of the requested
+    range. The fetcher chunks requests into 50-day windows to maximise coverage
+    within that window; older chunks silently return no data.
+
+    4h: fetched as 1h (yfinance max 730 days) and resampled.
     """
+    try:
+        import yfinance as yf
+        import pandas as pd
+        import io, contextlib
+    except ImportError:
+        print("\n  yfinance/pandas not installed — skipping", end="")
+        return []
+
+    symbol = YFINANCE_SYMBOLS.get(asset)
+    if not symbol:
+        return []
+
+    end_dt = datetime.now(timezone.utc)
+
+    def _to_candles(df, ts_col=None) -> list:
+        rows = []
+        for ts, row in df.iterrows():
+            rows.append({
+                "t":      int(ts.timestamp() * 1000),
+                "open":   float(row["Open"]),
+                "high":   float(row["High"]),
+                "low":    float(row["Low"]),
+                "close":  float(row["Close"]),
+                "volume": float(row["Volume"]),
+            })
+        return rows
+
+    # 4h: yfinance 1h max is 730 days; resample to 4h
+    if interval == "4h":
+        start_dt = end_dt - timedelta(days=min(int(365 * years), 729))
+        try:
+            ticker = yf.Ticker(symbol)
+            with contextlib.redirect_stderr(io.StringIO()):
+                df = ticker.history(start=start_dt.date(), end=end_dt.date(), interval="1h", auto_adjust=True)
+            if df.empty:
+                return []
+            df.index = pd.to_datetime(df.index, utc=True)
+            df4 = df[["Open", "High", "Low", "Close", "Volume"]].resample("4h", closed="left", label="left").agg({
+                "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum",
+            }).dropna(subset=["Open"])
+            candles = _to_candles(df4)
+            candles.sort(key=lambda c: c["t"])
+            return candles
+        except Exception as e:
+            print(f"\n  yfinance 4h fetch error: {e}", end="")
+            return []
+
+    if interval not in ("1m", "2m", "5m", "15m", "30m", "1h"):
+        return []
+
+    # 5m / other intraday: chunk into 50-day windows
+    # Only the last 60 days will actually return data; older chunks come back empty.
+    start_dt = end_dt - timedelta(days=int(365 * years))
+    all_candles: list = []
+    seen: set = set()
+    chunk_days = 50
+    cur_start = start_dt
+
+    while cur_start < end_dt:
+        cur_end = min(cur_start + timedelta(days=chunk_days), end_dt)
+        try:
+            ticker = yf.Ticker(symbol)
+            with contextlib.redirect_stderr(io.StringIO()):
+                df = ticker.history(
+                    start=cur_start.date(),
+                    end=cur_end.date(),
+                    interval=interval,
+                    auto_adjust=True,
+                )
+            if not df.empty:
+                df.index = pd.to_datetime(df.index, utc=True)
+                for row in _to_candles(df):
+                    if row["t"] not in seen:
+                        seen.add(row["t"])
+                        all_candles.append(row)
+        except Exception:
+            pass
+        cur_start = cur_end
+        time.sleep(0.2)
+
+    all_candles.sort(key=lambda c: c["t"])
+    return all_candles
+
+
+async def fetch_all(hl: HyperliquidAPI, asset: str, interval: str, years: int) -> tuple[list, str]:
+    """Fetch candle history, preferring yfinance for HIP-3 assets and Binance for crypto.
+
+    Returns (candles, source) where source is 'hyperliquid', 'binance', or 'yfinance'.
+    """
+    # HIP-3 assets (xyz:*): yfinance has far more history than Hyperliquid
+    if ":" in asset and asset in YFINANCE_SYMBOLS:
+        candles = fetch_yfinance(asset, interval, years)
+        if candles:
+            return candles, "yfinance"
+        # yfinance failed — fall through to HL
+        print(f"\n  yfinance returned no data for {asset} {interval}, falling back to Hyperliquid", end="")
+
     if _hl_has_enough(asset, interval, years):
         candles = await fetch_hl(hl, asset, interval, years)
         return candles, "hyperliquid"
 
-    # Check if we need the fallback
+    # Crypto assets with long history on Binance
     if asset in BINANCE_SYMBOLS and interval in BINANCE_INTERVAL and ":" not in asset:
         candles = fetch_binance(asset, interval, years)
         if candles:

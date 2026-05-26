@@ -20,6 +20,7 @@ from eth_account import Account as _Account
 from eth_account.signers.local import LocalAccount
 from websocket._exceptions import WebSocketConnectionClosedException
 import socket
+import requests.exceptions
 
 if TYPE_CHECKING:
     # Type stubs for linter - eth_account's type stubs are incorrect
@@ -127,7 +128,7 @@ class HyperliquidAPI:
                 if to_thread:
                     return await asyncio.to_thread(fn, *args, **kwargs)
                 return await fn(*args, **kwargs)
-            except (WebSocketConnectionClosedException, aiohttp.ClientError, ConnectionError, TimeoutError, socket.timeout, ServerError) as e:
+            except (WebSocketConnectionClosedException, aiohttp.ClientError, ConnectionError, TimeoutError, socket.timeout, ServerError, requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ChunkedEncodingError) as e:
                 last_err = e
                 logging.warning("HL call failed (attempt %s/%s): %s", attempt + 1, max_attempts, e)
                 if reset_on_fail:
