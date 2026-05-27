@@ -1,7 +1,7 @@
 """Check live positions against configured risk limits."""
 
 import asyncio, sys, pathlib
-sys.path.append(str(pathlib.Path(__file__).parent))
+sys.path.append(str(pathlib.Path(__file__).parent.parent))
 from src.config_loader import CONFIG
 from src.trading.hyperliquid_api import HyperliquidAPI
 

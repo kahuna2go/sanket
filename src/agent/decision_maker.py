@@ -6,7 +6,10 @@ Uses the Anthropic Claude API directly for trade decisions.
 import asyncio
 import json
 import logging
+import pathlib
 from datetime import datetime
+
+_LOG_PATH = pathlib.Path(__file__).parent.parent.parent / "logs" / "llm_requests.log"
 
 import anthropic
 
@@ -261,7 +264,7 @@ class TradingAgent:
                 kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
                 kwargs["max_tokens"] = max(self.max_tokens, 16000)
 
-            with open("llm_requests.log", "a", encoding="utf-8") as f:
+            with open(_LOG_PATH, "a", encoding="utf-8") as f:
                 f.write(f"\n\n=== {datetime.now()} ===\n")
                 f.write(f"Model: {effective_model}\n")
                 f.write(f"Messages count: {len(msgs)}\n")
@@ -423,7 +426,7 @@ class TradingAgent:
                 response = await _call_claude(messages)
             except anthropic.APIError as e:
                 logging.error("Claude API error: %s", e)
-                with open("llm_requests.log", "a", encoding="utf-8") as f:
+                with open(_LOG_PATH, "a", encoding="utf-8") as f:
                     f.write(f"API Error: {e}\n")
                 break
 

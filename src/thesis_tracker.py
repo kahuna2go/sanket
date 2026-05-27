@@ -6,8 +6,9 @@ Must be called after every Claude decision cycle, before trade execution.
 
 import json
 import os
+import pathlib
 
-HISTORY_PATH = "thesis_history.json"
+HISTORY_PATH = str(pathlib.Path(__file__).parent.parent / "data" / "thesis_history.json")
 MAX_HISTORY = 5
 
 

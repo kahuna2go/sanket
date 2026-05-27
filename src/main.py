@@ -15,6 +15,7 @@ import sys
 import argparse
 import pathlib
 sys.path.append(str(pathlib.Path(__file__).parent.parent))
+_ROOT = pathlib.Path(__file__).parent.parent
 from src.agent.decision_maker import TradingAgent
 from src.thesis_tracker import update_and_check
 from src.macro_filter import get_macro_context
@@ -142,7 +143,7 @@ def main():
     orb_state: dict = {}  # Per-asset ORB day state for SP500 session
     orb_phase_tracker: dict = {}  # asset → last phase seen (lightweight, runs every loop)
     recent_events = deque(maxlen=200)
-    diary_path = "diary.jsonl"
+    diary_path = str(_ROOT / "data" / "diary.jsonl")
     initial_account_value = None
     prev_positions_count = None
     prev_account_value = None
@@ -254,7 +255,7 @@ def main():
             if not _session["active"] and not macro_ctx.get("block_new_opens"):
                 macro_ctx["block_new_opens"] = True
             macro_ctx["session"] = _session["name"]
-            with open("llm_requests.log", "a", encoding="utf-8") as _mf:
+            with open(_ROOT / "logs" / "llm_requests.log", "a", encoding="utf-8") as _mf:
                 _mf.write(f"\n=== Macro context {datetime.now(timezone.utc).isoformat()} ===\n{json.dumps(macro_ctx)}\n")
             if macro_ctx["block_new_opens"]:
                 logging.info("Session filter: block_new_opens=True (session=%s)", _session["name"])
@@ -1219,7 +1220,7 @@ def main():
             ])
             context = json.dumps(context_payload, default=json_default)
             add_event(f"Combined prompt length: {len(context)} chars for {len(assets_to_evaluate)} assets")
-            with open("prompts.log", "a") as f:
+            with open(_ROOT / "logs" / "prompts.log", "a") as f:
                 f.write(f"\n\n--- {datetime.now()} - ALL ASSETS ---\n{json.dumps(context_payload, indent=2, default=json_default)}\n")
 
             def _is_failed_outputs(outs):
@@ -1296,7 +1297,7 @@ def main():
                 "positions_count": len([p for p in state['positions'] if abs(float(p.get('szi') or 0)) > 0]),
             }
             try:
-                with open("decisions.jsonl", "a") as f:
+                with open(_ROOT / "data" / "decisions.jsonl", "a") as f:
                     f.write(json.dumps(cycle_log) + "\n")
             except Exception:
                 pass
@@ -1700,7 +1701,7 @@ def main():
     async def handle_logs(request):
         """Stream log files with optional download or tailing behaviour."""
         try:
-            path = request.query.get('path', 'llm_requests.log')
+            path = request.query.get('path', str(_ROOT / "logs" / "llm_requests.log"))
             download = request.query.get('download')
             limit_param = request.query.get('limit')
             if not os.path.exists(path):
@@ -1722,7 +1723,7 @@ def main():
         try:
             recent_decisions = []
             try:
-                with open("decisions.jsonl", "r") as f:
+                with open(_ROOT / "data" / "decisions.jsonl", "r") as f:
                     lines = f.readlines()
                 for line in lines[-20:]:
                     try:

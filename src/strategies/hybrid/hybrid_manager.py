@@ -34,7 +34,7 @@ class HybridManager:
     def __init__(self, hyperliquid, risk_mgr):
         self.hl = hyperliquid
         self.risk_mgr = risk_mgr
-        self.diary_path = "diary.jsonl"
+        self.diary_path = str(pathlib.Path(__file__).parent.parent.parent.parent / "data" / "diary.jsonl")
         self.dry_run: bool = CONFIG.get("dry_run", False)
 
         cfg = self._load_config()
