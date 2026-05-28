@@ -97,7 +97,7 @@ class HyperliquidAPI:
         try:
             self._build_clients()
             logging.warning("Hyperliquid clients re-instantiated after connection issue")
-        except (ValueError, AttributeError, RuntimeError) as e:
+        except Exception as e:
             logging.error("Failed to reset Hyperliquid clients: %s", e)
 
     async def _retry(self, fn, *args, max_attempts: int = 3, backoff_base: float = 0.5, reset_on_fail: bool = True, to_thread: bool = True, **kwargs):
