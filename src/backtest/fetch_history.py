@@ -72,6 +72,11 @@ YFINANCE_SYMBOLS = {
     "xyz:SILVER": "SI=F",  # Silver futures
 }
 
+# TradingView (tvdatafeed) symbols for HIP-3 assets — deeper 5m history than yfinance
+TVDATAFEED_SYMBOLS = {
+    "xyz:SP500": ("SPY", "AMEX"),
+}
+
 HL_BATCH = 5000
 BINANCE_BATCH = 1000  # Binance max per request
 
@@ -324,12 +329,102 @@ def fetch_yfinance(asset: str, interval: str, years: int) -> list:
     return all_candles
 
 
+def fetch_tvdatafeed(asset: str, interval: str) -> list:
+    """Fetch candles via tvdatafeed (TradingView WebSocket scraper).
+
+    Returns up to 5000 bars of 5m data (~3 months) without login.
+    4h is fetched as 1h and resampled, same as yfinance path.
+    SSL is patched to use certifi so it works on macOS.
+    """
+    sym = TVDATAFEED_SYMBOLS.get(asset)
+    if not sym:
+        return []
+
+    try:
+        import ssl, certifi, websocket, pandas as pd
+        from tvDatafeed import TvDatafeed, Interval as TvInterval
+
+        # Patch websocket SSL to use certifi CA bundle (required on macOS)
+        _orig = websocket.create_connection
+        def _patched(*args, **kwargs):
+            kwargs.setdefault("sslopt", {})["ca_certs"] = certifi.where()
+            return _orig(*args, **kwargs)
+        websocket.create_connection = _patched
+        import tvDatafeed.main as _tvm; _tvm.create_connection = _patched
+
+    except ImportError:
+        print("\n  tvdatafeed/pandas not installed — skipping", end="")
+        return []
+
+    ticker, exchange = sym
+    tv_interval_map = {
+        "5m":  TvInterval.in_5_minute,
+        "1h":  TvInterval.in_1_hour,
+        "4h":  TvInterval.in_4_hour,
+    }
+
+    import os
+    username = os.environ.get("TV_USERNAME")
+    password = os.environ.get("TV_PASSWORD")
+
+    try:
+        import io, contextlib, logging
+        with contextlib.redirect_stderr(io.StringIO()):
+            logging.disable(logging.WARNING)
+            if username and password:
+                tv = TvDatafeed(username=username, password=password)
+            else:
+                tv = TvDatafeed()
+            logging.disable(logging.NOTSET)
+
+        if interval == "4h":
+            df = tv.get_hist(ticker, exchange, interval=TvInterval.in_1_hour, n_bars=5000)
+            if df is None or df.empty:
+                return []
+            df4 = df[["open", "high", "low", "close", "volume"]].rename(
+                columns={"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"}
+            ).resample("4h", closed="left", label="left").agg({
+                "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum",
+            }).dropna(subset=["Open"])
+            rows = []
+            for ts, row in df4.iterrows():
+                rows.append({"t": int(ts.timestamp() * 1000), "open": float(row["Open"]),
+                             "high": float(row["High"]), "low": float(row["Low"]),
+                             "close": float(row["Close"]), "volume": float(row["Volume"])})
+            rows.sort(key=lambda c: c["t"])
+            return rows
+
+        tv_iv = tv_interval_map.get(interval)
+        if tv_iv is None:
+            return []
+        df = tv.get_hist(ticker, exchange, interval=tv_iv, n_bars=5000)
+        if df is None or df.empty:
+            return []
+        rows = []
+        for ts, row in df.iterrows():
+            rows.append({"t": int(ts.timestamp() * 1000), "open": float(row["open"]),
+                         "high": float(row["high"]), "low": float(row["low"]),
+                         "close": float(row["close"]), "volume": float(row["volume"])})
+        rows.sort(key=lambda c: c["t"])
+        return rows
+
+    except Exception as e:
+        print(f"\n  tvdatafeed fetch error: {e}", end="")
+        return []
+
+
 async def fetch_all(hl: HyperliquidAPI, asset: str, interval: str, years: int) -> tuple[list, str]:
     """Fetch candle history, preferring yfinance for HIP-3 assets and Binance for crypto.
 
     Returns (candles, source) where source is 'hyperliquid', 'binance', or 'yfinance'.
     """
-    # HIP-3 assets (xyz:*): yfinance has far more history than Hyperliquid
+    # HIP-3 assets (xyz:*): try tvdatafeed first (deeper 5m history), then yfinance
+    if ":" in asset and asset in TVDATAFEED_SYMBOLS:
+        candles = fetch_tvdatafeed(asset, interval)
+        if candles:
+            return candles, "tvdatafeed"
+        print(f"\n  tvdatafeed returned no data for {asset} {interval}, falling back to yfinance", end="")
+
     if ":" in asset and asset in YFINANCE_SYMBOLS:
         candles = fetch_yfinance(asset, interval, years)
         if candles:
