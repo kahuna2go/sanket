@@ -42,14 +42,15 @@ TP_R = 2.0   # TP at 2× risk
 SL_R = 1.0   # SL at 1× risk
 
 _VIENNA_TZ = ZoneInfo("Europe/Vienna")
-_LONDON_START, _LONDON_END = 8 + 30 / 60, 11.5
-_NY_START,     _NY_END     = 16.0, 20.0
+
+# Default windows: London open + NY open (Vienna time)
+_DEFAULT_WINDOWS: list[tuple[float, float]] = [(8 + 30 / 60, 11.5), (16.0, 20.0)]
 
 
-def _in_session(ts_ms: int) -> bool:
+def _in_session(ts_ms: int, windows: list[tuple[float, float]] = _DEFAULT_WINDOWS) -> bool:
     hf = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).astimezone(_VIENNA_TZ)
     hf = hf.hour + hf.minute / 60
-    return (_LONDON_START <= hf < _LONDON_END) or (_NY_START <= hf < _NY_END)
+    return any(start <= hf < end for start, end in windows)
 
 
 # ---------------------------------------------------------------------------
@@ -151,18 +152,36 @@ def _resample_15m(candles_5m: list[dict]) -> list[dict]:
 
 @dataclass
 class MomConfig:
-    rvol_min:       float = 0.0
-    session_filter: bool  = False
-    label:          str   = "Baseline"
+    rvol_min:        float = 0.0
+    session_filter:  bool  = False
+    session_windows: list[tuple[float, float]] | None = None  # None = default windows
+    label:           str   = "Baseline"
 
 
 ALL_MOM_CONFIGS = [
+    # --- Original configs ---
     MomConfig(rvol_min=0.0, session_filter=False, label="No filters"),
     MomConfig(rvol_min=1.5, session_filter=False, label="+ RVOL ≥ 1.5"),
     MomConfig(rvol_min=2.0, session_filter=False, label="+ RVOL ≥ 2.0"),
-    MomConfig(rvol_min=0.0, session_filter=True,  label="+ Session"),
+    MomConfig(rvol_min=0.0, session_filter=True,  label="+ Session (London+NY)"),
     MomConfig(rvol_min=1.5, session_filter=True,  label="+ RVOL ≥ 1.5 + Session"),
     MomConfig(rvol_min=2.0, session_filter=True,  label="+ RVOL ≥ 2.0 + Session"),
+    # --- Extended session experiments ---
+    MomConfig(rvol_min=0.0, session_filter=True,
+              session_windows=[(7.0, 17.0)],
+              label="+ Session EU day (07–17)"),
+    MomConfig(rvol_min=0.0, session_filter=True,
+              session_windows=[(7.0, 12.0), (14.0, 22.0)],
+              label="+ Session EU+NY ext (07–12, 14–22)"),
+    MomConfig(rvol_min=0.0, session_filter=True,
+              session_windows=[(7.0, 22.0)],
+              label="+ Session broad (07–22)"),
+    MomConfig(rvol_min=0.0, session_filter=True,
+              session_windows=[(1.0, 7.0)],
+              label="+ Session Asia (01–07)"),
+    MomConfig(rvol_min=0.0, session_filter=True,
+              session_windows=[(1.0, 7.0), (8 + 30 / 60, 11.5), (16.0, 20.0)],
+              label="+ Session Asia+London+NY"),
 ]
 
 
@@ -233,8 +252,10 @@ def _run_simulation_mom(candles_15m: list[dict], cfg: MomConfig,
         d_signals += 1
 
         # Session filter
-        if cfg.session_filter and not _in_session(bar["t"]):
-            continue
+        if cfg.session_filter:
+            windows = cfg.session_windows if cfg.session_windows is not None else _DEFAULT_WINDOWS
+            if not _in_session(bar["t"], windows):
+                continue
 
         entry = bar["close"]
 

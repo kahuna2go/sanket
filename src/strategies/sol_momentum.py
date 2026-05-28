@@ -3,7 +3,7 @@
 Entry: EMA9/21 crossover on 15m candles + RSI(14) confirmation + session filter.
   Long:  EMA9 crosses above EMA21  AND  RSI > 55
   Short: EMA9 crosses below EMA21  AND  RSI < 45
-  Session filter: London (08:30–11:30 Vienna) + NY open (16:00–20:00 Vienna)
+  Session filter: Asia (01:00–07:00 Vienna) + London (08:30–11:30) + NY open (16:00–20:00)
 
 Exit: TP = entry ± 2×ATR14, SL = entry ∓ 1×ATR14  (2:1 R:R)
   Both placed on exchange as reduce-only trigger orders immediately after entry,
@@ -23,17 +23,16 @@ from zoneinfo import ZoneInfo
 
 from src.trading.hyperliquid_api import HyperliquidAPI
 
-_VIENNA_TZ     = ZoneInfo("Europe/Vienna")
-_LONDON_START  = 8 + 30 / 60   # 08:30
-_LONDON_END    = 11.5           # 11:30
-_NY_START      = 16.0           # 16:00
-_NY_END        = 20.0           # 20:00
+_VIENNA_TZ = ZoneInfo("Europe/Vienna")
+
+# Asia open + London open + NY open (Vienna time) — backtested GO ✓ on SOL 2024–2026
+_SESSION_WINDOWS = [(1.0, 7.0), (8 + 30 / 60, 11.5), (16.0, 20.0)]
 
 
 def _in_session(ts_ms: int) -> bool:
     dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).astimezone(_VIENNA_TZ)
     hf = dt.hour + dt.minute / 60
-    return (_LONDON_START <= hf < _LONDON_END) or (_NY_START <= hf < _NY_END)
+    return any(start <= hf < end for start, end in _SESSION_WINDOWS)
 
 
 # ---------------------------------------------------------------------------
