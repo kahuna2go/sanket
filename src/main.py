@@ -1792,6 +1792,8 @@ def main():
                 ts = _fl_ts(fl)
                 if ts < SANKET_START_TS:
                     continue
+                if (fl.get("coin") or fl.get("asset") or "") == "BTC":
+                    continue
                 if "Open" in (fl.get("dir") or ""):
                     coin = fl.get("coin") or fl.get("asset") or ""
                     open_stacks[coin].append(fl)
@@ -1815,6 +1817,8 @@ def main():
             for fl in sorted_fills:
                 ts = _fl_ts(fl)
                 if ts < SANKET_START_TS:
+                    continue
+                if (fl.get("coin") or fl.get("asset") or "") == "BTC":
                     continue
                 fee = float(fl.get("fee") or 0)
                 total_fees += fee
