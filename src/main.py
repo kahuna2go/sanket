@@ -1111,6 +1111,7 @@ def main():
                             breakout_short=_breakout_short,
                             trade_taken=_orb["trade_taken"],
                             rr=_rr_display,
+                            breakout_pending=_orb.get("breakout_pending"),
                         )
 
                     else:

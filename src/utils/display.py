@@ -256,12 +256,23 @@ def print_orb_status(
     breakout_short: bool,
     trade_taken: bool,
     rr: Optional[float] = None,
+    breakout_pending: Optional[str] = None,
 ) -> None:
     hit = breakout_long or breakout_short
-    direction = "▲ LONG" if breakout_long else ("▼ SHORT" if breakout_short else "—")
+    if hit:
+        direction = "▲ LONG retest" if breakout_long else "▼ SHORT retest"
+        style = "orb.hit"
+    elif breakout_pending == "long":
+        direction = "▲ broke out — retest pending"
+        style = "orb.miss"
+    elif breakout_pending == "short":
+        direction = "▼ broke out — retest pending"
+        style = "orb.miss"
+    else:
+        direction = "—"
+        style = "orb.miss"
     rr_str = f"  R:R {rr:.2f}" if rr is not None else ""
     taken_str = "  [warn]trade taken[/warn]" if trade_taken else ""
-    style = "orb.hit" if hit else "orb.miss"
 
     range_str = ""
     if orh is not None and orl is not None:
