@@ -321,6 +321,48 @@
     @keyframes rise { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
     .flash { animation: flash .35s ease; }
     @keyframes flash { 0%{opacity:.4} 100%{opacity:1} }
+
+    /* ─── TABS ──────────────────────────────── */
+    .tab-bar {
+      display: flex; gap: 4px; margin-bottom: 14px;
+      background: var(--surface); border-radius: var(--r);
+      box-shadow: var(--shadow); padding: 6px;
+    }
+    .tab-btn {
+      flex: 1; padding: 8px 16px; border: none; border-radius: var(--r-sm);
+      background: none; cursor: pointer;
+      font-family: var(--font-label); font-size: 11px; font-weight: 700;
+      letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+      transition: background .15s, color .15s; position: relative;
+    }
+    .tab-btn:hover { background: var(--surface-alt); color: var(--text); }
+    .tab-btn.active { background: var(--accent-bg); color: var(--accent); }
+    .tab-btn .tab-dot {
+      position: absolute; top: 7px; right: 10px;
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--profit); display: none;
+      animation: blink 2.2s ease-in-out infinite;
+    }
+    .tab-btn .tab-dot.on { display: inline-block; }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ─── LOG PANELS (Logs tab) ──────────────── */
+    .log-panel { background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 10px; }
+    .log-panel:last-child { margin-bottom: 0; }
+    .log-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 18px; border-bottom: 1px solid var(--border); cursor: pointer;
+    }
+    .log-title { font-family: var(--font-label); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+    .log-actions { display: flex; align-items: center; gap: 10px; }
+    .log-clear-btn { font-family: var(--font-label); font-size: 10px; background: none; border: none; color: var(--muted); cursor: pointer; letter-spacing: .06em; }
+    .log-body {
+      font-family: var(--font-data); font-size: 11px; line-height: 1.7;
+      padding: 12px 18px; overflow-y: auto; color: var(--muted);
+      white-space: pre-wrap; word-break: break-all;
+      height: calc(50vh - 80px); min-height: 200px;
+    }
   </style>
 </head>
 <body>
@@ -349,6 +391,15 @@
       </div>
     </div>
   </header>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" id="tab-btn-overview" onclick="switchTab('overview')">Overview</button>
+    <button class="tab-btn" id="tab-btn-logs" onclick="switchTab('logs')">Logs<span class="tab-dot" id="logs-tab-dot"></span></button>
+  </div>
+
+  <!-- ═══ OVERVIEW TAB ═══════════════════════════════════════════════════ -->
+  <div class="tab-pane active" id="tab-overview">
 
   <!-- ─── STRATEGY CONTROLS ──────────────────────────────────────────── -->
   <div id="launcher-bar" style="display:none;margin-bottom:14px;background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);padding:14px 20px;display:flex;gap:24px;align-items:center;flex-wrap:wrap;">
@@ -388,29 +439,6 @@
     <div class="cb-dot"></div>
     CIRCUIT BREAKER ACTIVE — no new entries permitted
     <span id="cb-detail" style="margin-left:auto;font-weight:400;letter-spacing:.05em;text-transform:none;font-family:var(--font-data);font-size:10px"></span>
-  </div>
-
-  <!-- Strategy log panels (only shown when launcher is active) -->
-  <div id="strat-logs" style="display:none;margin-bottom:14px;">
-
-    <!-- LLM log -->
-    <div style="background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;margin-bottom:10px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="lcToggleLog('llm')">
-        <span id="log-hdr-llm" style="font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);">▾ LLM Strategy — Live Output</span>
-        <button onclick="event.stopPropagation();document.getElementById('log-body-llm').innerHTML=''" style="font-family:var(--font-label);font-size:10px;background:none;border:none;color:var(--muted);cursor:pointer;letter-spacing:.06em;">CLEAR</button>
-      </div>
-      <div id="log-body-llm" style="font-family:var(--font-data);font-size:11px;line-height:1.7;padding:12px 18px;height:220px;overflow-y:auto;color:var(--muted);white-space:pre-wrap;word-break:break-all;"></div>
-    </div>
-
-    <!-- SOL Momentum log -->
-    <div style="background:var(--surface);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid var(--border);cursor:pointer;" onclick="lcToggleLog('sol_momentum')">
-        <span id="log-hdr-sol_momentum" style="font-family:var(--font-label);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);">▾ SOL Momentum — Live Output</span>
-        <button onclick="event.stopPropagation();document.getElementById('log-body-sol_momentum').innerHTML=''" style="font-family:var(--font-label);font-size:10px;background:none;border:none;color:var(--muted);cursor:pointer;letter-spacing:.06em;">CLEAR</button>
-      </div>
-      <div id="log-body-sol_momentum" style="font-family:var(--font-data);font-size:11px;line-height:1.7;padding:12px 18px;height:220px;overflow-y:auto;color:var(--muted);white-space:pre-wrap;word-break:break-all;"></div>
-    </div>
-
   </div>
 
   <!-- Metrics strip -->
@@ -567,6 +595,34 @@
     </div>
 
   </div><!-- /grid -->
+
+  </div><!-- /tab-overview -->
+
+  <!-- ═══ LOGS TAB ════════════════════════════════════════════════════ -->
+  <div class="tab-pane" id="tab-logs">
+
+    <div class="log-panel">
+      <div class="log-head" onclick="lcToggleLog('llm')">
+        <span class="log-title" id="log-hdr-llm">▾ LLM Strategy — Live Output</span>
+        <div class="log-actions">
+          <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-llm').innerHTML=''">CLEAR</button>
+        </div>
+      </div>
+      <div class="log-body" id="log-body-llm"></div>
+    </div>
+
+    <div class="log-panel">
+      <div class="log-head" onclick="lcToggleLog('sol_momentum')">
+        <span class="log-title" id="log-hdr-sol_momentum">▾ SOL Momentum — Live Output</span>
+        <div class="log-actions">
+          <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-sol_momentum').innerHTML=''">CLEAR</button>
+        </div>
+      </div>
+      <div class="log-body" id="log-body-sol_momentum"></div>
+    </div>
+
+  </div><!-- /tab-logs -->
+
 </div><!-- /app -->
 
 <script>
@@ -1087,6 +1143,22 @@
     lcRefresh();
   }
   // Log streaming
+  // ── Tab switching ─────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.getElementById('tab-btn-' + name).classList.add('active');
+    if (name === 'logs') {
+      document.getElementById('logs-tab-dot').classList.remove('on');
+      // scroll log bodies to bottom when switching in
+      ['llm', 'sol_momentum'].forEach(n => {
+        const el = document.getElementById('log-body-' + n);
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    }
+  }
+
   const _logEs = {};
   const _logCollapsed = { llm: false, sol_momentum: false };
   const _logLabels    = { llm: 'LLM Strategy', sol_momentum: 'SOL Momentum' };
@@ -1116,6 +1188,10 @@
       el.appendChild(div);
       while (el.children.length > 500) el.removeChild(el.firstChild);
       el.scrollTop = el.scrollHeight;
+      // pulse the Logs tab dot when user is on Overview
+      if (!document.getElementById('tab-logs').classList.contains('active')) {
+        document.getElementById('logs-tab-dot').classList.add('on');
+      }
     };
     es.onerror = () => { es.close(); delete _logEs[name]; setTimeout(() => connectLog(name), 5000); };
   }
@@ -1132,7 +1208,6 @@
     try {
       const d = await fetch('/api/status').then(r => r.json());
       document.getElementById('launcher-bar').style.display = 'flex';
-      document.getElementById('strat-logs').style.display   = 'block';
       connectLog('llm');
       connectLog('sol_momentum');
 
