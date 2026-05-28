@@ -933,13 +933,24 @@ def main():
             # Asset triage: on health-check or first-run, evaluate everything.
             # Otherwise only evaluate assets that moved or have an open position.
             assets_with_position = {tr['asset'] for tr in active_trades}
+            _sp500_window_active = _SP500_PRESESSION <= _hf_orb < _SP500_END
+
+            def _sp500_needed(asset):
+                """SP500 only needs an LLM call inside its 15:00–20:00 window or when a position is open."""
+                if asset not in _SP500_ASSETS:
+                    return True
+                return _sp500_window_active or asset in assets_with_position
+
             if first_run or health_check_due:
-                assets_to_evaluate = list(args.assets)
-                assets_auto_hold = []
+                assets_to_evaluate = [a for a in args.assets if _sp500_needed(a)]
+                assets_auto_hold = [a for a in args.assets if a not in assets_to_evaluate]
             else:
                 assets_to_evaluate = []
                 assets_auto_hold = []
                 for _a in args.assets:
+                    if not _sp500_needed(_a):
+                        assets_auto_hold.append(_a)
+                        continue
                     _cur = asset_prices.get(_a)
                     _last = _prev_sonnet_prices.get(_a)
                     _moved = (
