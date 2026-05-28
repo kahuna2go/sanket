@@ -261,7 +261,12 @@ def main():
                 logging.info("Session filter: block_new_opens=True (session=%s)", _session["name"])
 
             # Global account state
-            state = await hyperliquid.get_user_state()
+            try:
+                state = await hyperliquid.get_user_state()
+            except Exception as _state_err:
+                logging.error("[LLM] get_user_state failed, retrying next cycle: %s", _state_err)
+                await asyncio.sleep(60)
+                continue
             total_value = state.get('total_value') or state['balance'] + sum(p.get('pnl', 0) for p in state['positions'])
             sharpe = calculate_sharpe(trade_log)
 
