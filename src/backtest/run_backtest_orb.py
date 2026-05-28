@@ -396,6 +396,74 @@ def _print_results(cfg: ORBConfig, trades: list[Trade]):
     )
 
 
+def _print_breakout_funnel(candles_5m: list, candles_4h: list) -> None:
+    """Print a day-by-day funnel: OR days → raw breakouts → bias-aligned setups."""
+    days: dict[date, list] = {}
+    for c in candles_5m:
+        if _weekday(c["t"]) in _SKIP_WEEKDAYS:
+            continue
+        days.setdefault(_vdate(c["t"]), []).append(c)
+
+    total = valid_or = 0
+    bias_counts = {"bull": 0, "bear": 0, "neutral": 0}
+    raw_long = raw_short = 0
+    aligned_long = aligned_short = 0
+    filtered_long = filtered_short = 0  # had raw breakout but wrong/neutral bias
+
+    for day in sorted(days):
+        total += 1
+        day_5m = days[day]
+        or_bars = [c for c in day_5m if _OR_START <= _vhour(c["t"]) < _OR_END]
+        if len(or_bars) < 2:
+            continue
+        orh = max(c["high"] for c in or_bars)
+        orl = min(c["low"]  for c in or_bars)
+        if orh <= orl:
+            continue
+        valid_or += 1
+
+        bias = _compute_4h_bias(candles_4h, day, 21, 0.0002)
+        bias_counts[bias] = bias_counts.get(bias, 0) + 1
+
+        watch_bars = [c for c in day_5m if _OR_END <= _vhour(c["t"]) < _WATCH_END]
+        broke_long = broke_short = False
+        for bar in watch_bars:
+            if not broke_long and bar["close"] > orh:
+                broke_long = True
+            if not broke_short and bar["close"] < orl:
+                broke_short = True
+
+        if broke_long:
+            raw_long += 1
+            if bias == "bull":
+                aligned_long += 1
+            else:
+                filtered_long += 1
+        if broke_short:
+            raw_short += 1
+            if bias == "bear":
+                aligned_short += 1
+            else:
+                filtered_short += 1
+
+    raw_total     = raw_long + raw_short
+    aligned_total = aligned_long + aligned_short
+    pct = lambda n, d: f"{100*n/d:.1f}%" if d else "n/a"
+
+    print(f"\n  BREAKOUT FUNNEL DIAGNOSTIC")
+    print(f"  {'─'*60}")
+    print(f"  Trading days total          : {total}")
+    print(f"  Days with valid OR (≥2 bars): {valid_or}  ({pct(valid_or, total)} of days)")
+    print(f"  Bias — bull={bias_counts['bull']}  bear={bias_counts['bear']}  neutral={bias_counts['neutral']}"
+          f"  ({pct(bias_counts['bull'], valid_or)} / {pct(bias_counts['bear'], valid_or)} / {pct(bias_counts['neutral'], valid_or)})")
+    print(f"  Raw breakouts (5m close)    : {raw_total}  ({pct(raw_total, valid_or)} of OR days)"
+          f"  — long={raw_long}  short={raw_short}")
+    print(f"  Bias-aligned (taken)        : {aligned_total}  ({pct(aligned_total, raw_total)} of raw breakouts)"
+          f"  — long={aligned_long}  short={aligned_short}")
+    print(f"  Filtered out by bias        : {filtered_long + filtered_short}"
+          f"  — long filtered={filtered_long} (bias≠bull)  short filtered={filtered_short} (bias≠bear)")
+
+
 async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConfig | None, no_bias: bool = False, tp_mode_filter: str | None = None, entry_mode_filter: str | None = None, sl_mode_filter: str | None = None):
     from src.trading.hyperliquid_api import HyperliquidAPI
 
@@ -429,6 +497,9 @@ async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConf
     print(f"\n{'='*110}")
     print(f"ORB Backtest — {asset} | {len(candles_5m)} × 5m bars | {len(candles_4h)} × 4h bars")
     print(f"{'='*110}")
+
+    _print_breakout_funnel(candles_5m, candles_4h)
+    print()
 
     if single_config:
         configs = [single_config]
