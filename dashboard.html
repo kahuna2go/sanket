@@ -1147,9 +1147,11 @@
     } catch { /* launcher not running */ }
   }
 
-  // Pre-select ETH on load
+  // Pre-select ETH and SP500 on load
   const _ethChip = document.querySelector('.lc-chip[data-v="ETH"]');
   if (_ethChip) lcToggleAsset(_ethChip);
+  const _sp500Chip = document.querySelector('.lc-chip[data-v="xyz:SP500"]');
+  if (_sp500Chip) lcToggleAsset(_sp500Chip);
   lcRefresh();
   setInterval(lcRefresh, 5000);
 </script>
