@@ -30,4 +30,4 @@ COPY dashboard.html ./
 # Runtime data dirs (mounted as volumes in production)
 RUN mkdir -p data logs
 
-ENTRYPOINT ["python", "-m", "src.main"]
+ENTRYPOINT ["python", "-m", "src.launcher"]

@@ -285,7 +285,29 @@ async def handle_logs_sse(request):
 # ---------------------------------------------------------------------------
 
 def build_app() -> web.Application:
-    app = web.Application()
+    import base64
+
+    _dash_user = os.getenv("DASHBOARD_USER")
+    _dash_pass = os.getenv("DASHBOARD_PASSWORD")
+
+    @web.middleware
+    async def auth(request, handler):
+        if _dash_user and _dash_pass:
+            header = request.headers.get("Authorization", "")
+            if header.startswith("Basic "):
+                try:
+                    decoded = base64.b64decode(header[6:]).decode()
+                    u, p = decoded.split(":", 1)
+                    if u == _dash_user and p == _dash_pass:
+                        return await handler(request)
+                except Exception:
+                    pass
+            return web.Response(
+                status=401,
+                headers={"WWW-Authenticate": 'Basic realm="Sanket"'},
+                text="Unauthorized",
+            )
+        return await handler(request)
 
     @web.middleware
     async def cors(request, handler):
@@ -293,7 +315,7 @@ def build_app() -> web.Application:
         resp.headers["Access-Control-Allow-Origin"] = "*"
         return resp
 
-    app = web.Application(middlewares=[cors])
+    app = web.Application(middlewares=[auth, cors])
     app.router.add_get("/",                     handle_index)
     app.router.add_get("/api/status",           handle_status)
     app.router.add_post("/api/start",           handle_start)

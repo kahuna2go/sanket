@@ -1924,10 +1924,13 @@ def main():
 
         _dash_user = os.getenv("DASHBOARD_USER")
         _dash_pass = os.getenv("DASHBOARD_PASSWORD")
+        # Skip auth when running as a launcher subprocess (port 3001/3002 = internal only)
+        _api_port = int(os.getenv("API_PORT") or os.getenv("APP_PORT") or "3000")
+        _apply_auth = bool(_dash_user and _dash_pass and _api_port == 3000)
 
         @web.middleware
         async def auth(request, handler):
-            if _dash_user and _dash_pass:
+            if _apply_auth:
                 header = request.headers.get("Authorization", "")
                 if header.startswith("Basic "):
                     try:
