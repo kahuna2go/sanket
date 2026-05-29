@@ -22,9 +22,10 @@ RUN pip install --no-cache-dir \
     "numpy>=1.24" \
     "certifi"
 
-# Copy source and config
+# Copy source, config, and dashboard
 COPY src ./src
 COPY config ./config
+COPY dashboard.html ./
 
 # Runtime data dirs (mounted as volumes in production)
 RUN mkdir -p data logs

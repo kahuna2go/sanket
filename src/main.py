@@ -433,6 +433,16 @@ def main():
             except Exception:
                 pass
 
+            # Sync entry_price from live exchange position — corrects limit orders once filled.
+            try:
+                live_entry = {p["symbol"]: p["entry_price"] for p in positions if p.get("entry_price")}
+                for tr in active_trades:
+                    ep = live_entry.get(tr.get("asset"))
+                    if ep and ep != tr.get("entry_price"):
+                        tr["entry_price"] = ep
+            except Exception:
+                pass
+
             # For each active trade with a live position: cancel orphaned entry limits
             # and ensure TP/SL orders are always on the book.
             try:
@@ -1896,8 +1906,13 @@ def main():
             logging.error("handle_history error: %s\n%s", e, traceback.format_exc())
             return web.json_response({"error": str(e)}, status=500)
 
+    async def handle_dashboard(request):
+        dashboard = pathlib.Path(__file__).parent.parent / "dashboard.html"
+        return web.FileResponse(dashboard)
+
     async def start_api(app):
         """Register HTTP endpoints for observing diary entries and logs."""
+        app.router.add_get('/', handle_dashboard)
         app.router.add_get('/diary', handle_diary)
         app.router.add_get('/logs', handle_logs)
         app.router.add_get('/state', handle_state)
@@ -1905,12 +1920,36 @@ def main():
 
     async def main_async():
         """Start the aiohttp server and kick off the trading loop."""
+        import base64
+
+        _dash_user = os.getenv("DASHBOARD_USER")
+        _dash_pass = os.getenv("DASHBOARD_PASSWORD")
+
+        @web.middleware
+        async def auth(request, handler):
+            if _dash_user and _dash_pass:
+                header = request.headers.get("Authorization", "")
+                if header.startswith("Basic "):
+                    try:
+                        decoded = base64.b64decode(header[6:]).decode()
+                        u, p = decoded.split(":", 1)
+                        if u == _dash_user and p == _dash_pass:
+                            return await handler(request)
+                    except Exception:
+                        pass
+                return web.Response(
+                    status=401,
+                    headers={"WWW-Authenticate": 'Basic realm="Sanket"'},
+                    text="Unauthorized",
+                )
+            return await handler(request)
+
         @web.middleware
         async def cors(request, handler):
             resp = await handler(request)
             resp.headers['Access-Control-Allow-Origin'] = '*'
             return resp
-        app = web.Application(middlewares=[cors])
+        app = web.Application(middlewares=[auth, cors])
         await start_api(app)
         from src.config_loader import CONFIG as CFG
         runner = web.AppRunner(app)

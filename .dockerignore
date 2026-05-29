@@ -14,5 +14,4 @@ docs/
 tests/
 *.md
 *.sh
-*.html
-dashboard.html
+docs/swing_highs_lows_explainer.html
