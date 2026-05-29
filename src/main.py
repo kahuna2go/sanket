@@ -1541,8 +1541,12 @@ def main():
                                 )
                                 oids = hyperliquid.extract_oids(order)
                                 # statuses: [0]=entry, [1]=tp, [2]=sl
+                                entry_oid = oids[0] if oids else None
                                 tp_oid = oids[1] if len(oids) > 1 else None
                                 sl_oid = oids[2] if len(oids) > 2 else None
+                                if not entry_oid:
+                                    add_event(f"ORDER REJECTED by exchange for {asset} — not tracking. Raw response: {order}")
+                                    continue
                                 add_event(f"LIMIT {action.upper()} {asset} {amount:.4f} @ ${limit_price} with bracket TP={tp_price_val} SL={sl_price_val}")
                             else:
                                 # No TP/SL prices — plain limit
@@ -1550,6 +1554,11 @@ def main():
                                     order = await hyperliquid.place_limit_buy(asset, amount, limit_price)
                                 else:
                                     order = await hyperliquid.place_limit_sell(asset, amount, limit_price)
+                                plain_oids = hyperliquid.extract_oids(order)
+                                entry_oid = plain_oids[0] if plain_oids else None
+                                if not entry_oid:
+                                    add_event(f"ORDER REJECTED by exchange for {asset} — not tracking. Raw response: {order}")
+                                    continue
                                 add_event(f"LIMIT {action.upper()} {asset} amount {amount:.4f} at limit ${limit_price}")
                         else:
                             if existing_tr and close_fraction >= 1.0:
