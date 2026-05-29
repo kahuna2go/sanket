@@ -107,6 +107,7 @@ class SolMomentum:
         self._tp_price     = 0.0
         self._sl_price     = 0.0
         self._size         = 0.0
+        self._entry_oid    = None
         self._tp_oid       = None
         self._sl_oid       = None
 
@@ -167,12 +168,15 @@ class SolMomentum:
         szi   = float(pos.get("szi", 0)) if pos else 0.0
 
         if abs(szi) > 0.001:
-            return  # still open
+            return  # position still open
 
-        # Position gone — check which bracket order is still resting to infer outcome
+        # No position — check open orders to distinguish "entry pending" from "trade resolved"
         open_orders = await self.hl.get_open_orders()
         open_oids   = {o.get("oid") for o in open_orders
                        if self.hl._coin_matches(o.get("coin", ""), self.ASSET)}
+
+        if self._entry_oid is not None and self._entry_oid in open_oids:
+            return  # limit entry not yet filled — waiting
 
         tp_resting = self._tp_oid is not None and self._tp_oid in open_oids
         sl_resting = self._sl_oid is not None and self._sl_oid in open_oids
@@ -210,6 +214,7 @@ class SolMomentum:
 
         self._in_trade    = False
         self._direction   = None
+        self._entry_oid   = None
         self._tp_oid      = None
         self._sl_oid      = None
 
@@ -299,19 +304,21 @@ class SolMomentum:
             self._size        = size_sol
             return
 
-        # Market entry
-        if direction == "long":
-            await self.hl.place_buy_order(self.ASSET, size_sol)
-        else:
-            await self.hl.place_sell_order(self.ASSET, size_sol)
+        # Atomic entry + bracket: TP/SL only activate once the entry limit fills
+        is_long = direction == "long"
+        resp    = await self.hl.place_limit_with_tpsl(
+            self.ASSET, is_long, size_sol,
+            self.hl.round_price(entry), tp, sl,
+        )
+        oids = self.hl.extract_oids(resp)
+        # normalTpsl statuses: [0]=entry, [1]=tp, [2]=sl
+        entry_oid = oids[0] if oids else None
+        tp_oid    = oids[1] if len(oids) > 1 else None
+        sl_oid    = oids[2] if len(oids) > 2 else None
 
-        # Bracket orders placed on exchange — protect position if bot restarts
-        is_long  = direction == "long"
-        tp_resp  = await self.hl.place_take_profit(self.ASSET, is_long, size_sol, tp)
-        sl_resp  = await self.hl.place_stop_loss(self.ASSET, is_long, size_sol, sl)
-
-        tp_oids  = self.hl.extract_oids(tp_resp)
-        sl_oids  = self.hl.extract_oids(sl_resp)
+        if not entry_oid:
+            logging.error("[SolMomentum] entry rejected by exchange — raw resp: %s", resp)
+            return
 
         self._in_trade    = True
         self._direction   = direction
@@ -319,12 +326,13 @@ class SolMomentum:
         self._tp_price    = tp
         self._sl_price    = sl
         self._size        = size_sol
-        self._tp_oid      = tp_oids[0] if tp_oids else None
-        self._sl_oid      = sl_oids[0] if sl_oids else None
+        self._entry_oid   = entry_oid
+        self._tp_oid      = tp_oid
+        self._sl_oid      = sl_oid
 
         logging.info(
-            "[SolMomentum] entry placed | tp_oid=%s sl_oid=%s",
-            self._tp_oid, self._sl_oid,
+            "[SolMomentum] entry placed | entry_oid=%s tp_oid=%s sl_oid=%s",
+            self._entry_oid, self._tp_oid, self._sl_oid,
         )
 
 

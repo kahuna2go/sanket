@@ -546,10 +546,12 @@ class HyperliquidAPI:
             for st in statuses:
                 if "resting" in st and "oid" in st["resting"]:
                     oids.append(st["resting"]["oid"])
-                if "filled" in st and "oid" in st["filled"]:
+                elif "filled" in st and "oid" in st["filled"]:
                     oids.append(st["filled"]["oid"])
+                elif "error" in st:
+                    logging.error("Order rejected by exchange: %s", st["error"])
         except (KeyError, TypeError, ValueError):
-            pass
+            logging.error("Unexpected order response format: %s", order_result)
         return oids
 
     async def _enrich_position(self, pos_wrap, coin_prefix=""):
