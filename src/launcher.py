@@ -78,17 +78,15 @@ async def _read_logs(name: str, proc: asyncio.subprocess.Process):
 
 async def _kill_port(port: int):
     """Kill any process occupying the given port so the strategy can bind to it."""
-    proc = await asyncio.create_subprocess_exec(
-        "lsof", "-ti", f":{port}",
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-    )
-    out, _ = await proc.communicate()
-    for pid in out.decode().split():
-        try:
-            os.kill(int(pid), signal.SIGTERM)
-        except (ProcessLookupError, ValueError):
-            pass
-    await asyncio.sleep(0.5)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "fuser", "-k", f"{port}/tcp",
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.communicate()
+        await asyncio.sleep(0.5)
+    except FileNotFoundError:
+        pass  # fuser not available; port assumed free
 
 
 async def _start(name: str, extra_env: dict | None = None, args: list[str] | None = None):
