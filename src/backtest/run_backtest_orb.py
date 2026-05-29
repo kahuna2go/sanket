@@ -238,8 +238,9 @@ def _simulate_day(
 
     # --- Forward simulate bar-by-bar after entry bar ---
     post_entry = [c for c in day_5m if c["t"] > entry_bar_t]
-    tp1_hit = False
-    be_sl   = False   # SL moved to breakeven after TP1
+    tp1_hit   = False
+    be_sl     = False   # SL moved to breakeven after TP1
+    trail_max = None    # highest (long) / lowest (short) price seen since TP1; trail mode only
 
     for bar in post_entry:
         vh = _vhour(bar["t"])
@@ -257,8 +258,15 @@ def _simulate_day(
         active_sl = entry_px if be_sl else sl_px  # breakeven SL after TP1
 
         if direction == "long":
-            # SL check (low touches)
-            if bar["low"] <= active_sl:
+            # SL / trail check (low touches) — use trail_max from previous bar
+            if tp_mode == "trail" and tp1_hit:
+                trail_sl = trail_max - 0.5 * or_range
+                if bar["low"] <= trail_sl:
+                    exit_px = trail_sl
+                    r = (1.0 + (trail_sl - entry_px) / sl_dist) / 2
+                    return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
+                                 or_range, exit_px, "trail", r)
+            elif bar["low"] <= active_sl:
                 exit_px = active_sl
                 r_leg = (exit_px - entry_px) / sl_dist
                 r = (r_leg + 1.0) / 2 if tp1_hit else r_leg
@@ -268,14 +276,27 @@ def _simulate_day(
             if not tp1_hit and bar["high"] >= tp1_px:
                 tp1_hit = True
                 be_sl   = True
-            # TP2
-            if tp1_hit and bar["high"] >= tp2_px:
+                if tp_mode == "trail":
+                    trail_max = tp1_px  # trail starts at TP1 level
+            # TP2 (fixed target, non-trail only)
+            if tp_mode != "trail" and tp1_hit and bar["high"] >= tp2_px:
                 exit_px = tp2_px
                 r = (1.0 + (tp2_px - entry_px) / sl_dist) / 2
                 return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
                              or_range, exit_px, "tp2", r)
+            # Advance trail high at end of bar
+            if tp_mode == "trail" and tp1_hit:
+                trail_max = max(trail_max, bar["high"])
+
         else:  # short
-            if bar["high"] >= active_sl:
+            if tp_mode == "trail" and tp1_hit:
+                trail_sl = trail_max + 0.5 * or_range
+                if bar["high"] >= trail_sl:
+                    exit_px = trail_sl
+                    r = (1.0 + (entry_px - trail_sl) / sl_dist) / 2
+                    return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
+                                 or_range, exit_px, "trail", r)
+            elif bar["high"] >= active_sl:
                 exit_px = active_sl
                 r_leg = (entry_px - exit_px) / sl_dist
                 r = (r_leg + 1.0) / 2 if tp1_hit else r_leg
@@ -284,11 +305,15 @@ def _simulate_day(
             if not tp1_hit and bar["low"] <= tp1_px:
                 tp1_hit = True
                 be_sl   = True
-            if tp1_hit and bar["low"] <= tp2_px:
+                if tp_mode == "trail":
+                    trail_max = tp1_px
+            if tp_mode != "trail" and tp1_hit and bar["low"] <= tp2_px:
                 exit_px = tp2_px
                 r = (1.0 + (entry_px - tp2_px) / sl_dist) / 2
                 return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
                              or_range, exit_px, "tp2", r)
+            if tp_mode == "trail" and tp1_hit:
+                trail_max = min(trail_max, bar["low"])
 
     # End of day data — close whatever is open
     if post_entry:
@@ -331,6 +356,9 @@ ALL_ORB_CONFIGS = (
     [ORBConfig(**{**p, "label": p["label"] + " [range/breakout/or_extreme]"},    tp_mode="range",    entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [range/retest/or_extreme]"},      tp_mode="range",    entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [range/retest/retest_low]"},      tp_mode="range",    entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [trail/breakout/or_extreme]"},    tp_mode="trail",    entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [trail/retest/or_extreme]"},      tp_mode="trail",    entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [trail/retest/retest_low]"},      tp_mode="trail",    entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/breakout/or_extreme]"}, tp_mode="fixed_rr", entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/retest/or_extreme]"},   tp_mode="fixed_rr", entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/retest/retest_low]"},   tp_mode="fixed_rr", entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS]
@@ -465,23 +493,21 @@ def _print_breakout_funnel(candles_5m: list, candles_4h: list) -> None:
 
 
 async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConfig | None, no_bias: bool = False, tp_mode_filter: str | None = None, entry_mode_filter: str | None = None, sl_mode_filter: str | None = None):
-    from src.trading.hyperliquid_api import HyperliquidAPI
-
-    hl = HyperliquidAPI()
-    await hl.get_meta_and_ctxs()
-
-    # HIP-3 dex registration (required for dex:asset tickers like xyz:S&P500)
-    if ":" in asset:
-        dex = asset.split(":")[0]
-        await hl.get_meta_and_ctxs(dex=dex)
-        hl.register_perp_dexs([dex])
-        print(f"Registered HIP-3 dex: {dex}")
-
+    hl = None
     for interval in ("5m", "4h"):
         cached = load_cache(asset, interval)
         if cached and not fetch:
             print(f"{asset} {interval}: {len(cached)} bars (cached)")
         else:
+            if hl is None:
+                from src.trading.hyperliquid_api import HyperliquidAPI
+                hl = HyperliquidAPI()
+                await hl.get_meta_and_ctxs()
+                if ":" in asset:
+                    dex = asset.split(":")[0]
+                    await hl.get_meta_and_ctxs(dex=dex)
+                    hl.register_perp_dexs([dex])
+                    print(f"Registered HIP-3 dex: {dex}")
             print(f"Fetching {asset} {interval} ({years}y)…", end=" ", flush=True)
             candles, source = await fetch_all(hl, asset, interval, years)
             save_cache(asset, interval, candles)
@@ -518,7 +544,9 @@ async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConf
             current_group = group
             entry_lbl = "BREAKOUT entry" if cfg.entry_mode == "breakout" else "RETEST entry  "
             sl_lbl    = "SL=OR extreme+buf" if cfg.sl_mode == "or_extreme" else "SL=retest low+buf"
-            tp_lbl    = "TP=range (0.5R/1.0R)" if cfg.tp_mode == "range" else "TP=fixed R:R (2×/3×SL)"
+            tp_lbl    = ("TP=range (0.5R/1.0R)" if cfg.tp_mode == "range"
+                         else "TP=trail (50%@TP1, trail 0.5×range)" if cfg.tp_mode == "trail"
+                         else "TP=fixed R:R (2×/3×SL)")
             print(f"\n  {entry_lbl}  |  {sl_lbl}  |  {tp_lbl}")
             print(f"  {'-'*105}")
         trades = _run_config(cfg, candles_5m, candles_4h, no_bias)
@@ -538,8 +566,8 @@ def main():
                         help="EMA slope threshold for single-config run (e.g. 0.0005)")
     parser.add_argument("--no-bias",   action="store_true",
                         help="Ignore 4H EMA bias filter; enter any ORB breakout regardless of direction")
-    parser.add_argument("--tp-mode",    default=None, choices=["range", "fixed_rr"],
-                        help="TP mode: 'range' (default) or 'fixed_rr' (2:1 / 3:1 off SL)")
+    parser.add_argument("--tp-mode",    default=None, choices=["range", "fixed_rr", "trail"],
+                        help="TP mode: 'range' (default), 'fixed_rr' (2:1/3:1 off SL), or 'trail' (50%@TP1 then trail 0.5×range)")
     parser.add_argument("--entry-mode", default=None, choices=["breakout", "retest"],
                         help="Entry mode: 'breakout' (default) or 'retest' (wait for ORH/ORL touch)")
     parser.add_argument("--sl-mode",    default=None, choices=["or_extreme", "retest_low"],
