@@ -357,6 +357,8 @@
     .log-title { font-family: var(--font-label); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
     .log-actions { display: flex; align-items: center; gap: 10px; }
     .log-clear-btn { font-family: var(--font-label); font-size: 10px; background: none; border: none; color: var(--muted); cursor: pointer; letter-spacing: .06em; }
+    .log-copy-btn { font-family: var(--font-label); font-size: 10px; background: none; border: none; color: var(--muted); cursor: pointer; letter-spacing: .06em; transition: color .15s; }
+    .log-copy-btn.copied { color: var(--accent); }
     .log-body {
       font-family: var(--font-data); font-size: 11px; line-height: 1.7;
       padding: 12px 18px; overflow-y: auto; color: var(--muted);
@@ -605,6 +607,7 @@
       <div class="log-head" onclick="lcToggleLog('llm')">
         <span class="log-title" id="log-hdr-llm">▾ LLM Strategy — Live Output</span>
         <div class="log-actions">
+          <button class="log-copy-btn" id="log-copy-llm" onclick="event.stopPropagation();lcCopyLog('llm')">COPY</button>
           <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-llm').innerHTML=''">CLEAR</button>
         </div>
       </div>
@@ -615,6 +618,7 @@
       <div class="log-head" onclick="lcToggleLog('sol_momentum')">
         <span class="log-title" id="log-hdr-sol_momentum">▾ SOL Momentum — Live Output</span>
         <div class="log-actions">
+          <button class="log-copy-btn" id="log-copy-sol_momentum" onclick="event.stopPropagation();lcCopyLog('sol_momentum')">COPY</button>
           <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-sol_momentum').innerHTML=''">CLEAR</button>
         </div>
       </div>
@@ -1194,6 +1198,17 @@
       }
     };
     es.onerror = () => { es.close(); delete _logEs[name]; setTimeout(() => connectLog(name), 5000); };
+  }
+
+  function lcCopyLog(name) {
+    const el = document.getElementById('log-body-' + name);
+    const text = el.innerText || el.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('log-copy-' + name);
+      btn.textContent = 'COPIED';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'COPY'; btn.classList.remove('copied'); }, 1500);
+    });
   }
 
   function lcToggleLog(name) {
