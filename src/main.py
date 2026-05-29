@@ -1624,8 +1624,9 @@ def main():
                                 orb_state[asset]["trade_taken"] = True
                         tp_str = f"TP {output.get('tp_price')}  " if output.get("tp_price") else ""
                         sl_str = f"SL {output.get('sl_price')}" if output.get("sl_price") else ""
+                        _display_entry = limit_price if order_type == "limit" and limit_price else current_price
                         print_decision(asset, action, rationale, thesis_strength,
-                                       extra=f"{amount:.4f} @ {current_price}  {tp_str}{sl_str}")
+                                       extra=f"{amount:.4f} @ {_display_entry}  {tp_str}{sl_str}")
                         # Write to diary after confirming fills status
                         with open(diary_path, "a") as f:
                             if existing_tr:
@@ -1646,7 +1647,7 @@ def main():
                                     "limit_price": limit_price,
                                     "allocation_usd": alloc_usd,
                                     "amount": amount,
-                                    "entry_price": current_price,
+                                    "entry_price": limit_price if order_type == "limit" and limit_price else current_price,
                                     "tp_price": output.get("tp_price"),
                                     "tp_oid": tp_oid,
                                     "sl_price": output.get("sl_price"),
