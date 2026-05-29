@@ -301,6 +301,73 @@
     .asset-pnl { min-width: 64px; text-align: right; font-family: var(--font-data); font-size: 11px; }
     .asset-ct { min-width: 28px; text-align: right; font-family: var(--font-data); font-size: 10px; color: var(--muted); }
 
+    /* ─── MOBILE ────────────────────────────── */
+    @media (max-width: 768px) {
+      .app { padding: 10px 10px 32px; }
+
+      /* Header */
+      header {
+        flex-direction: column; align-items: flex-start; gap: 8px;
+        padding: 12px 14px;
+      }
+      .header-right { flex-wrap: wrap; gap: 10px; width: 100%; }
+      .header-meta { font-size: 10px; gap: 10px; flex-wrap: wrap; }
+      .refresh-wrap { margin-left: auto; }
+
+      /* Tab bar */
+      .tab-btn { font-size: 10px; padding: 7px 10px; }
+
+      /* Launcher bar */
+      #launcher-bar { flex-direction: column; align-items: flex-start; gap: 12px; }
+      #launcher-bar > div:nth-child(2) { display: none; } /* divider */
+      #lc-assets { flex-wrap: wrap; }
+
+      /* Metrics: 2×3 */
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .mv { font-size: 16px; }
+
+      /* Stats strip: 2×3 */
+      .stats-strip { grid-template-columns: repeat(2, 1fr); }
+
+      /* Main grid: single column, sidebar after positions */
+      .grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto;
+      }
+      .g-pos     { grid-column: 1; grid-row: 1; }
+      .g-side    { grid-column: 1; grid-row: 2; flex-direction: column; }
+      .g-history { grid-column: 1; grid-row: 3; }
+      .g-dec     { grid-column: 1; grid-row: 4; }
+
+      /* Tables: horizontal scroll, reduce padding */
+      .tbl th, .tbl td { padding: 8px 10px; font-size: 11px; }
+      .card-head { padding: 10px 14px; }
+      .dec-row { padding: 12px 14px; }
+
+      /* Wrap tables */
+      #pos-body, #hist-body { overflow-x: auto; }
+      #pos-body .tbl, #hist-body .tbl { min-width: 520px; }
+
+      /* Hide low-priority position columns on very small screens */
+      @media (max-width: 480px) {
+        #pos-body .tbl th:nth-child(4), #pos-body .tbl td:nth-child(4),
+        #pos-body .tbl th:nth-child(9), #pos-body .tbl td:nth-child(9) { display: none; }
+        #hist-body .tbl th:nth-child(4), #hist-body .tbl td:nth-child(4) { display: none; }
+        .mv { font-size: 15px; }
+      }
+
+      /* Log bodies: taller on mobile */
+      .log-body { height: 40vh; font-size: 10px; }
+
+      /* Decisions */
+      .dec-chips { flex-wrap: wrap; }
+      .dec-header { flex-wrap: wrap; gap: 6px; }
+      .dec-acval { width: 100%; margin-left: 0; }
+
+      /* Model usage */
+      .model-item-val { font-size: 15px; }
+    }
+
     /* ─── CONNECTING OVERLAY ─────────────────── */
     #overlay {
       position: fixed; inset: 0; background: var(--bg); z-index: 99;
