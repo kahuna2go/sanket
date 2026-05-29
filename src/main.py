@@ -1612,7 +1612,7 @@ def main():
                                 "asset": asset,
                                 "is_long": is_buy,
                                 "amount": amount,
-                                "entry_price": current_price,
+                                "entry_price": limit_price if order_type == "limit" and limit_price else current_price,
                                 "tp_oid": tp_oid,
                                 "sl_oid": sl_oid,
                                 "tp_price": output.get("tp_price"),
