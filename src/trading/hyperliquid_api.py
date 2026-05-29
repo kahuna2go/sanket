@@ -421,7 +421,7 @@ class HyperliquidAPI:
             bool(o.get('isTrigger'))
             or (isinstance(ot, dict) and 'trigger' in ot)
             or (isinstance(ot, str) and 'trigger' in ot.lower())
-            or o.get('triggerPx') is not None
+            or bool(o.get('triggerPx'))
             or o.get('triggerCondition') is not None
         )
 
