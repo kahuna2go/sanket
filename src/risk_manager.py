@@ -328,15 +328,10 @@ class RiskManager:
     def get_risk_summary(self) -> dict:
         """Return current risk parameters for inclusion in LLM context."""
         return {
-            "max_position_pct": self.max_position_pct,
-            "max_loss_per_position_pct": self.max_loss_per_position_pct,
             "max_leverage": self.max_leverage,
-            "max_total_exposure_pct": self.max_total_exposure_pct,
-            "daily_loss_circuit_breaker_pct": self.daily_loss_circuit_breaker_pct,
             "mandatory_sl_pct": self.mandatory_sl_pct,
             "mandatory_tp_pct": self.mandatory_tp_pct,
             "max_concurrent_positions": self.max_concurrent_positions,
-            "min_balance_reserve_pct": self.min_balance_reserve_pct,
             "circuit_breaker_active": self.circuit_breaker_active,
             "target_risk_usd": self.target_risk_usd,
         }

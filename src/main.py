@@ -338,7 +338,7 @@ def main():
             try:
                 with open(diary_path, "r") as f:
                     lines = f.readlines()
-                    for line in lines[-10:]:
+                    for line in lines[-5:]:
                         entry = json.loads(line)
                         recent_diary.append(entry)
             except Exception:
@@ -350,8 +350,6 @@ def main():
                 for o in open_orders[:50]:
                     raw_coin = o.get('coin') or ''
                     coin = _resolve_coin(raw_coin)
-                    ts = o.get('timestamp')
-                    placed_at = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat() if ts else None
                     open_orders_struct.append({
                         "coin": coin,
                         "oid": o.get('oid'),
@@ -361,7 +359,6 @@ def main():
                         "trigger_price": round_or_none(o.get('triggerPx'), 2),
                         "is_trigger": o.get('isTrigger', False),
                         "order_type": o.get('orderType'),
-                        "placed_at": placed_at
                     })
             except Exception:
                 open_orders = []
@@ -369,8 +366,8 @@ def main():
             recent_fills_struct = []
             fills = []
             try:
-                fills = await hyperliquid.get_recent_fills(limit=50)
-                for f_entry in fills[-20:]:
+                fills = await hyperliquid.get_recent_fills(limit=10)
+                for f_entry in fills[-5:]:
                     try:
                         t_raw = f_entry.get('time') or f_entry.get('timestamp')
                         timestamp = None
@@ -727,7 +724,6 @@ def main():
                 "total_return_pct": round(total_return_pct, 2),
                 "balance": round_or_none(state['balance'], 2),
                 "account_value": round_or_none(account_value, 2),
-                "sharpe_ratio": round_or_none(sharpe, 3),
                 "positions": positions,
                 "active_trades": [
                     {
@@ -1184,7 +1180,7 @@ def main():
                                 "tp_speculative_short":   round_or_none(struct_1h.get("tp_speculative_short") if struct_1h else None, 4),
                             }
 
-                    recent_mids = [entry["mid"] for entry in list(price_history.get(asset, []))[-10:]]
+                    recent_mids = [entry["mid"] for entry in list(price_history.get(asset, []))[-3:]]
                     funding_annualized = round(funding * 24 * 365 * 100, 2) if funding else None
 
                     # OBV direction: True when OBV rose over the last 3 bars
@@ -1213,10 +1209,8 @@ def main():
             _now = datetime.now(timezone.utc)
             _is_weekend = _now.weekday() >= 5
             _invocation = {
-                "minutes_since_start": round(minutes_since_start, 2),
                 "current_time": _now.isoformat(),
                 "day_of_week": _now.strftime("%A"),
-                "invocation_count": invocation_count,
             }
             if _is_weekend:
                 _invocation["weekend_liquidity_note"] = (
