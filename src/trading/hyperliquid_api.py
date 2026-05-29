@@ -425,10 +425,10 @@ class HyperliquidAPI:
             or o.get('triggerCondition') is not None
         )
 
-    async def cancel_limit_orders(self, asset):
+    async def cancel_limit_orders(self, asset, cached_orders: list | None = None):
         """Cancel only resting limit orders for asset — preserves TP/SL trigger orders."""
         try:
-            open_orders = await self.get_open_orders()
+            open_orders = cached_orders if cached_orders is not None else await self.get_open_orders()
             cancelled = 0
             for order in open_orders:
                 if not self._coin_matches(order.get("coin", ""), asset):

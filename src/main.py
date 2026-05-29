@@ -474,7 +474,7 @@ def main():
                     # Cancel resting entry limits (non-trigger) for assets with an open position
                     orphaned = [o for o in _orders_for(asset) if not _is_trigger(o)]
                     if orphaned:
-                        await hyperliquid.cancel_limit_orders(asset)
+                        await hyperliquid.cancel_limit_orders(asset, cached_orders=open_orders)
                         add_event(f"Cancelled {len(orphaned)} orphaned entry limit(s) for {asset}")
                     # Collect all trigger orders for this asset
                     asset_triggers = [o for o in _orders_for(asset) if _is_trigger(o)]
@@ -638,7 +638,7 @@ def main():
                 for asset in (assets_with_positions - tracked_assets) & set(args.assets):
                     untracked_limits = [o for o in _orders_for(asset) if not o.get('isTrigger')]
                     if untracked_limits:
-                        await hyperliquid.cancel_limit_orders(asset)
+                        await hyperliquid.cancel_limit_orders(asset, cached_orders=open_orders)
                         add_event(f"Cancelled {len(untracked_limits)} entry limit(s) for untracked position {asset}")
 
                     pos_data = next(
@@ -1336,7 +1336,7 @@ def main():
                     thesis_strength = output.get("thesis_strength")
                     if action == "cancel_limits":
                         try:
-                            result = await hyperliquid.cancel_limit_orders(asset)
+                            result = await hyperliquid.cancel_limit_orders(asset, cached_orders=open_orders)
                             n = result.get("cancelled_count", 0)
                             print_decision(asset, "cancel_limits", rationale, thesis_strength, extra=f"{n} order(s) cancelled")
                             add_event(f"CANCEL_LIMITS {asset}: {n} order(s) cancelled")
@@ -1511,7 +1511,7 @@ def main():
                         # Cancel resting entry limit orders before opening a new one.
                         # If cancel fails, skip the order — don't stack on uncancelled limits.
                         try:
-                            cancelled = await hyperliquid.cancel_limit_orders(asset)
+                            cancelled = await hyperliquid.cancel_limit_orders(asset, cached_orders=open_orders)
                             if cancelled.get("status") == "error":
                                 add_event(f"Pre-trade cancel failed for {asset}: {cancelled.get('message')} — skipping order")
                                 continue
