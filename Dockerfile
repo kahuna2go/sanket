@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
-    "hyperliquid-python-sdk>=0.20.0,<0.21.0" \
+    "hyperliquid-python-sdk>=0.23.0,<0.24.0" \
     "python-dotenv>=1.1.1,<2.0.0" \
     "web3>=7.14.0,<8.0.0" \
     "aiohttp>=3.13.1,<4.0.0" \
