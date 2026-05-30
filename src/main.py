@@ -237,6 +237,7 @@ def main():
                             "exit_plan": _entry.get("exit_plan", ""),
                             "opened_at": _entry.get("opened_at"),
                             "orb_tp1": _entry.get("orb_tp1"),
+                            "orb_tp2": _entry.get("orb_tp2"),
                             "orb_or_range": _entry.get("orb_or_range"),
                             "orb_trail_active": _entry.get("orb_trail_active", False),
                             "orb_trail_max": _entry.get("orb_trail_max"),
@@ -734,49 +735,44 @@ def main():
             except Exception as _rec_err:
                 add_event(f"TP/SL reconcile error (non-fatal): {_rec_err}")
 
-            # ORB trailing stop: autonomous tick-level management, no LLM involvement.
-            # After TP1 is reached: partial close 50%, move SL to breakeven, cancel TP2.
-            # Each subsequent tick: trail SL at max_price - 0.5×OR-range.
+            # ORB tp2_swing: autonomous tick-level management, no LLM involvement.
+            # Strategy: hold full position until TP2 (+1×range) is reached.
+            # At TP2: cancel TP order, move SL to TP1 level, activate swing trail.
+            # Swing trail: each tick fetch recent 5m candles, trail SL to the most
+            # recent confirmed 5m swing low (long) or swing high (short).
             try:
                 for tr in active_trades:
                     _tr_asset = tr.get('asset')
                     if _tr_asset not in _SP500_ASSETS:
                         continue
-                    if not tr.get('orb_tp1') or not tr.get('orb_or_range'):
+                    if not tr.get('orb_tp2') or not tr.get('orb_or_range'):
                         continue
                     _tr_px = asset_prices.get(_tr_asset)
                     if not _tr_px:
                         continue
                     _tr_long = tr['is_long']
-                    _tr_tp1 = tr['orb_tp1']
+                    _tr_tp2  = tr['orb_tp2']
+                    _tr_tp1  = tr.get('orb_tp1') or _tr_tp2  # SL floor when trail activates
                     _tr_range = tr['orb_or_range']
 
                     if not tr.get('orb_trail_active'):
-                        _tp1_hit = (_tr_long and _tr_px >= _tr_tp1) or (not _tr_long and _tr_px <= _tr_tp1)
-                        if not _tp1_hit:
+                        # Wait for TP2 hit before activating trail
+                        _tp2_hit = (_tr_long and _tr_px >= _tr_tp2) or (not _tr_long and _tr_px <= _tr_tp2)
+                        if not _tp2_hit:
                             continue
-                        # Partial close 50% with reduceOnly
-                        _half = hyperliquid.round_size(_tr_asset, tr['amount'] * 0.5)
-                        try:
-                            await hyperliquid.place_close_order(_tr_asset, sz=_half)
-                            tr['amount'] = round(tr['amount'] - _half, 6)
-                            add_event(f"ORB trail: TP1 hit {_tr_asset} @ {_tr_px} — closed {_half:.4f}, remaining {tr['amount']:.4f}")
-                        except Exception as _pe:
-                            add_event(f"ORB trail: partial close failed {_tr_asset}: {_pe}")
-                            continue
-                        # Move SL to entry (breakeven)
-                        _be = _sig_round(tr.get('entry_price') or _tr_px)
+                        # Move SL to TP1 level (locks in +0.5×range profit floor)
+                        _floor_sl = _sig_round(_tr_tp1)
                         try:
                             if tr.get('sl_oid'):
                                 await hyperliquid.cancel_order(_tr_asset, tr['sl_oid'])
-                            _sl_order = await hyperliquid.place_stop_loss(_tr_asset, _tr_long, tr['amount'], _be)
+                            _sl_order = await hyperliquid.place_stop_loss(_tr_asset, _tr_long, tr['amount'], _floor_sl)
                             _sl_oids = hyperliquid.extract_oids(_sl_order)
                             tr['sl_oid'] = _sl_oids[0] if _sl_oids else None
-                            tr['sl_price'] = _be
-                            add_event(f"ORB trail: SL → breakeven {_tr_asset} @ {_be}")
-                        except Exception as _be_e:
-                            add_event(f"ORB trail: breakeven SL failed {_tr_asset}: {_be_e}")
-                        # Cancel fixed TP2 — trail takes over
+                            tr['sl_price'] = _floor_sl
+                            add_event(f"ORB trail: TP2 hit {_tr_asset} @ {_tr_px} — SL → {_floor_sl} (TP1 floor), swing trail active")
+                        except Exception as _fe:
+                            add_event(f"ORB trail: SL to TP1 floor failed {_tr_asset}: {_fe}")
+                        # Cancel fixed TP2 order — swing trail takes over
                         if tr.get('tp_oid'):
                             try:
                                 await hyperliquid.cancel_order(_tr_asset, tr['tp_oid'])
@@ -791,7 +787,7 @@ def main():
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                                 "asset": _tr_asset,
                                 "action": "tpsl_update",
-                                "sl_price": _be,
+                                "sl_price": _floor_sl,
                                 "sl_oid": tr.get('sl_oid'),
                                 "tp_price": None,
                                 "tp_oid": None,
@@ -799,18 +795,29 @@ def main():
                                 "orb_trail_max": _tr_px,
                             }) + "\n")
                     else:
-                        # Update trailing SL as price moves in our favour
-                        if _tr_long:
-                            tr['orb_trail_max'] = max(tr['orb_trail_max'], _tr_px)
-                            _new_sl = _sig_round(tr['orb_trail_max'] - 0.5 * _tr_range)
-                            _cur_sl = tr.get('sl_price') or 0
-                            _should_move = _new_sl > _cur_sl + 0.1 * _tr_range
-                        else:
-                            tr['orb_trail_max'] = min(tr['orb_trail_max'], _tr_px)
-                            _new_sl = _sig_round(tr['orb_trail_max'] + 0.5 * _tr_range)
-                            _cur_sl = tr.get('sl_price') or float('inf')
-                            _should_move = _new_sl < _cur_sl - 0.1 * _tr_range
-                        if not _should_move:
+                        # Swing trail: find the highest confirmed swing low (long) in recent 5m bars
+                        try:
+                            _candles = await hyperliquid.get_candles(_tr_asset, "5m", 20)
+                        except Exception:
+                            _candles = []
+                        _new_sl = tr.get('sl_price') or (_tr_tp1 if _tr_long else _tr_tp2)
+                        if _candles and len(_candles) >= 4:
+                            # Exclude last bar (potentially still forming)
+                            _closed = _candles[:-1]
+                            for _i in range(1, len(_closed) - 1):
+                                _b0, _b1, _b2 = _closed[_i - 1], _closed[_i], _closed[_i + 1]
+                                if _tr_long:
+                                    if _b1["low"] < _b0["low"] and _b1["low"] < _b2["low"]:
+                                        if _b1["low"] > _new_sl:
+                                            _new_sl = _b1["low"]
+                                else:
+                                    if _b1["high"] > _b0["high"] and _b1["high"] > _b2["high"]:
+                                        if _b1["high"] < _new_sl:
+                                            _new_sl = _b1["high"]
+                        _new_sl = _sig_round(_new_sl)
+                        _cur_sl = tr.get('sl_price') or 0
+                        _moved = (_tr_long and _new_sl > _cur_sl) or (not _tr_long and _new_sl < _cur_sl)
+                        if not _moved:
                             continue
                         try:
                             if tr.get('sl_oid'):
@@ -819,7 +826,7 @@ def main():
                             _sl_oids = hyperliquid.extract_oids(_sl_order)
                             tr['sl_oid'] = _sl_oids[0] if _sl_oids else None
                             tr['sl_price'] = _new_sl
-                            add_event(f"ORB trail: SL → {_new_sl} (max={tr['orb_trail_max']:.2f}) {_tr_asset}")
+                            add_event(f"ORB trail: swing SL → {_new_sl} {_tr_asset}")
                             with open(diary_path, 'a') as _df:
                                 _df.write(json.dumps({
                                     "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -827,7 +834,6 @@ def main():
                                     "action": "tpsl_update",
                                     "sl_price": _new_sl,
                                     "sl_oid": tr.get('sl_oid'),
-                                    "orb_trail_max": tr['orb_trail_max'],
                                 }) + "\n")
                         except Exception as _te:
                             add_event(f"ORB trail: SL update failed {_tr_asset}: {_te}")
@@ -1723,10 +1729,12 @@ def main():
                                     sl_oid = sl_oids[0] if sl_oids else None
                                     add_event(f"SL placed {asset} at {output['sl_price']}")
                             _orb_tp1 = None
+                            _orb_tp2 = None
                             _orb_or_range = None
                             if asset in _SP500_ASSETS and asset in orb_state:
                                 _orb_s = orb_state[asset]
                                 _orb_tp1 = _orb_s.get("tp1_long" if is_buy else "tp1_short")
+                                _orb_tp2 = _orb_s.get("tp2_long" if is_buy else "tp2_short")
                                 _orb_or_range = _orb_s.get("or_range")
                             active_trades.append({
                                 "asset": asset,
@@ -1740,6 +1748,7 @@ def main():
                                 "exit_plan": output["exit_plan"],
                                 "opened_at": datetime.now().isoformat(),
                                 "orb_tp1": _orb_tp1,
+                                "orb_tp2": _orb_tp2,
                                 "orb_or_range": _orb_or_range,
                                 "orb_trail_active": False,
                                 "orb_trail_max": None,
@@ -1782,6 +1791,7 @@ def main():
                                     "opened_at": datetime.now(timezone.utc).isoformat(),
                                     "filled": filled,
                                     "orb_tp1": _orb_tp1,
+                                    "orb_tp2": _orb_tp2,
                                     "orb_or_range": _orb_or_range,
                                 }
                             f.write(json.dumps(diary_entry) + "\n")

@@ -155,7 +155,7 @@ class TradingAgent:
             "  TP/SL: use pre-computed levels from bias_1h (based on Opening Range size).\n"
             "    Long:  tp_price = bias_1h.tp2_long,  sl_price = bias_1h.sl_long\n"
             "    Short: tp_price = bias_1h.tp2_short, sl_price = bias_1h.sl_short\n"
-            "    TP1/trail: handled automatically by the system — do NOT manage TP1 partial exits or SL moves yourself for SP500.\n"
+            "    Exit management: fully system-managed after entry — do NOT issue partial closes, update_tpsl, or SL moves for SP500 positions. The system trails the SL automatically after TP2 is reached.\n"
             "  R:R: ORB R:R is ~0.9 by construction (TP2=+1×range, SL=−1.1×range from entry). Do NOT apply the 1.5 R:R gate here — enter whenever all prerequisites are met.\n\n"
             "  Time stop (time_stop phase): if open SP500 position exists → close immediately (action=sell or buy, close_fraction=1.0).\n"
             "  Do NOT apply any crypto-style (ZZ/Fib/VA) rules to xyz:SP500.\n"
