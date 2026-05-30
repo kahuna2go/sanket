@@ -378,7 +378,7 @@ def fetch_tvdatafeed(asset: str, interval: str) -> list:
             logging.disable(logging.NOTSET)
 
         if interval == "4h":
-            df = tv.get_hist(ticker, exchange, interval=TvInterval.in_1_hour, n_bars=5000)
+            df = tv.get_hist(ticker, exchange, interval=TvInterval.in_1_hour, n_bars=20000)
             if df is None or df.empty:
                 return []
             df4 = df[["open", "high", "low", "close", "volume"]].rename(
@@ -397,7 +397,7 @@ def fetch_tvdatafeed(asset: str, interval: str) -> list:
         tv_iv = tv_interval_map.get(interval)
         if tv_iv is None:
             return []
-        df = tv.get_hist(ticker, exchange, interval=tv_iv, n_bars=5000)
+        df = tv.get_hist(ticker, exchange, interval=tv_iv, n_bars=20000)
         if df is None or df.empty:
             return []
         rows = []
@@ -411,6 +411,93 @@ def fetch_tvdatafeed(asset: str, interval: str) -> list:
     except Exception as e:
         print(f"\n  tvdatafeed fetch error: {e}", end="")
         return []
+
+
+def import_tv_csv(csv_path: str, interval: str) -> list:
+    """Parse a TradingView 'Export chart data' CSV into the standard candle format.
+
+    TradingView exports either Unix timestamps or datetime strings in the first
+    column.  Datetime strings are parsed with timezone info when present; bare
+    datetimes (no offset) are assumed UTC.  The 4h interval is accepted directly
+    or resampled from 1h rows if needed.
+
+    Expected columns (case-insensitive):
+      time | open | high | low | close | volume  (Volume optional)
+    """
+    try:
+        import csv as _csv
+        from datetime import timezone as _tz
+        from zoneinfo import ZoneInfo as _ZI
+    except ImportError:
+        print("csv module not available"); return []
+
+    path = pathlib.Path(csv_path)
+    if not path.exists():
+        raise FileNotFoundError(f"CSV not found: {csv_path}")
+
+    rows = []
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = _csv.DictReader(f)
+        headers = [h.strip().lower() for h in (reader.fieldnames or [])]
+        # Normalise header names
+        col_map = {}
+        for h in (reader.fieldnames or []):
+            hn = h.strip().lower()
+            if hn in ("time", "date", "datetime", "timestamp"):
+                col_map["time"] = h
+            elif hn == "open":
+                col_map["open"] = h
+            elif hn == "high":
+                col_map["high"] = h
+            elif hn == "low":
+                col_map["low"] = h
+            elif hn in ("close", "price"):
+                col_map["close"] = h
+            elif hn in ("volume", "vol"):
+                col_map["volume"] = h
+
+        if not all(k in col_map for k in ("time", "open", "high", "low", "close")):
+            raise ValueError(f"Missing required columns. Found: {reader.fieldnames}")
+
+        for row in reader:
+            raw_t = row[col_map["time"]].strip()
+            # Parse timestamp
+            if raw_t.lstrip("-").isdigit():
+                t_sec = int(raw_t)
+                # TV sometimes exports in seconds, sometimes milliseconds
+                t_ms = t_sec * 1000 if t_sec < 1e12 else t_sec
+            else:
+                # Try ISO / common date formats; use UTC if no tz info
+                from dateutil import parser as _dp
+                try:
+                    dt = _dp.parse(raw_t)
+                except Exception:
+                    continue
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=_tz.utc)
+                t_ms = int(dt.timestamp() * 1000)
+
+            try:
+                rows.append({
+                    "t":      t_ms,
+                    "open":   float(row[col_map["open"]]),
+                    "high":   float(row[col_map["high"]]),
+                    "low":    float(row[col_map["low"]]),
+                    "close":  float(row[col_map["close"]]),
+                    "volume": float(row[col_map["volume"]]) if "volume" in col_map else 0.0,
+                })
+            except (ValueError, KeyError):
+                continue
+
+    rows.sort(key=lambda c: c["t"])
+    # Deduplicate by timestamp
+    seen: set = set()
+    deduped = []
+    for r in rows:
+        if r["t"] not in seen:
+            seen.add(r["t"])
+            deduped.append(r)
+    return deduped
 
 
 async def fetch_all(hl: HyperliquidAPI, asset: str, interval: str, years: int) -> tuple[list, str]:
@@ -471,7 +558,33 @@ def main():
     parser.add_argument("--intervals", nargs="+", default=["5m", "4h"])
     parser.add_argument("--years", type=int, default=2)
     parser.add_argument("--force", action="store_true", help="Re-fetch even if cache exists")
+    parser.add_argument(
+        "--import-csv", metavar="FILE",
+        help=(
+            "Import a TradingView 'Export chart data' CSV into the cache. "
+            "Requires --assets (single asset) and --intervals (single interval). "
+            "Example: --import-csv ~/Downloads/SPX_5m.csv --assets xyz:SP500 --intervals 5m"
+        ),
+    )
     args = parser.parse_args()
+
+    if args.import_csv:
+        if len(args.assets) != 1 or len(args.intervals) != 1:
+            print("--import-csv requires exactly one --assets and one --intervals value")
+            return
+        asset, interval = args.assets[0], args.intervals[0]
+        print(f"Importing {args.import_csv} → {asset} {interval}…", end=" ", flush=True)
+        candles = import_tv_csv(args.import_csv, interval)
+        if not candles:
+            print("ERROR: no candles parsed — check CSV format")
+            return
+        save_cache(asset, interval, candles)
+        from datetime import datetime, timezone
+        oldest = datetime.fromtimestamp(candles[0]["t"] / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+        newest = datetime.fromtimestamp(candles[-1]["t"] / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+        print(f"{len(candles)} bars | {oldest} → {newest} → {cache_path(asset, interval)}")
+        return
+
     asyncio.run(main_async(args.assets, args.intervals, args.years, args.force))
 
 
