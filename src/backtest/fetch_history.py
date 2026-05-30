@@ -402,6 +402,11 @@ def fetch_tvdatafeed(asset: str, interval: str) -> list:
             return []
         rows = []
         for ts, row in df.iterrows():
+            # tvdatafeed returns timezone-naive timestamps in the TradingView chart
+            # timezone (Vienna). pandas.Timestamp.timestamp() treats naive as UTC,
+            # so we must localise first or the result is off by 1–2 hours.
+            if ts.tzinfo is None:
+                ts = ts.tz_localize("Europe/Vienna")
             rows.append({"t": int(ts.timestamp() * 1000), "open": float(row["open"]),
                          "high": float(row["high"]), "low": float(row["low"]),
                          "close": float(row["close"]), "volume": float(row["volume"])})

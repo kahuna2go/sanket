@@ -49,20 +49,29 @@ load_dotenv()
 from src.backtest.fetch_history import load_cache, fetch_all, save_cache
 
 _VIENNA = ZoneInfo("Europe/Vienna")
+_ET     = ZoneInfo("America/New_York")
 
-# CET session boundaries (decimal hours, Vienna local time)
-_OR_START   = 15.5          # 15:30
-_OR_END     = 15.75         # 15:45
-_WATCH_END  = 17.5          # 17:30
-_TIME_STOP  = 20.0          # 20:00
-_PRESESSION = 15.0          # 15:00 — bias evaluation point
+# Session boundaries in US Eastern time (ET).
+# Using ET avoids DST drift: the 3-week window each year where US and EU
+# clocks are on different offsets would shift the Vienna-relative open by 1h.
+_OR_START   = 9.5           # 09:30 ET — NYSE open / OR begins
+_OR_END     = 9.75          # 09:45 ET — OR ends
+_WATCH_END  = 11.5          # 11:30 ET — breakout watch closes
+_TIME_STOP  = 14.0          # 14:00 ET — force-close (≈20:00 CET)
+_PRESESSION = 9.0           # 09:00 ET — 4H bias evaluation cutoff
 
 # Weekends: S&P futures don't trade meaningfully Sat/Sun; skip.
 _SKIP_WEEKDAYS = {5, 6}     # Saturday=5, Sunday=6
 
 
+def _ethour(ts_ms: int) -> float:
+    """Return US Eastern local time as decimal hours."""
+    dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).astimezone(_ET)
+    return dt.hour + dt.minute / 60 + dt.second / 3600
+
+
 def _vhour(ts_ms: int) -> float:
-    """Return Vienna local time as decimal hours."""
+    """Return Vienna local time as decimal hours (used only for DST diagnostics)."""
     dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).astimezone(_VIENNA)
     return dt.hour + dt.minute / 60 + dt.second / 3600
 
@@ -90,10 +99,10 @@ def _ema(values: list[float], period: int) -> list[float]:
 
 
 def _compute_4h_bias(candles_4h: list, day: date, ema_period: int, slope_threshold: float) -> str:
-    """Return 'bull', 'bear', or 'neutral' using all 4H candles up to 15:00 CET on `day`."""
-    # Cutoff: 15:00 CET on the given day
-    cutoff_ts = datetime(day.year, day.month, day.day, 15, 0, 0,
-                         tzinfo=_VIENNA).timestamp() * 1000
+    """Return 'bull', 'bear', or 'neutral' using all 4H candles up to 09:00 ET on `day`."""
+    # Cutoff: 09:00 ET on the given day (pre-market, before OR forms)
+    cutoff_ts = datetime(day.year, day.month, day.day, 9, 0, 0,
+                         tzinfo=_ET).timestamp() * 1000
 
     eligible = [c for c in candles_4h if c["t"] < cutoff_ts]
     if len(eligible) < ema_period + 2:
@@ -151,7 +160,7 @@ def _simulate_day(
 
     # --- Build Opening Range ---
     or_bars = [c for c in day_5m
-               if _OR_START <= _vhour(c["t"]) < _OR_END]
+               if _OR_START <= _ethour(c["t"]) < _OR_END]
     if len(or_bars) < 2:
         return None  # incomplete OR window
 
@@ -164,7 +173,7 @@ def _simulate_day(
 
     # --- Breakout watch: find initial breakout ---
     watch_bars = [c for c in day_5m
-                  if _OR_END <= _vhour(c["t"]) < _WATCH_END]
+                  if _OR_END <= _ethour(c["t"]) < _WATCH_END]
 
     breakout_bar_t = None
     direction      = None
@@ -243,7 +252,7 @@ def _simulate_day(
     trail_max = None    # highest (long) / lowest (short) price seen since TP1; trail mode only
 
     for bar in post_entry:
-        vh = _vhour(bar["t"])
+        vh = _ethour(bar["t"])
 
         # Time stop
         if vh >= _TIME_STOP:
@@ -441,7 +450,7 @@ def _print_breakout_funnel(candles_5m: list, candles_4h: list) -> None:
     for day in sorted(days):
         total += 1
         day_5m = days[day]
-        or_bars = [c for c in day_5m if _OR_START <= _vhour(c["t"]) < _OR_END]
+        or_bars = [c for c in day_5m if _OR_START <= _ethour(c["t"]) < _OR_END]
         if len(or_bars) < 2:
             continue
         orh = max(c["high"] for c in or_bars)
@@ -453,7 +462,7 @@ def _print_breakout_funnel(candles_5m: list, candles_4h: list) -> None:
         bias = _compute_4h_bias(candles_4h, day, 21, 0.0002)
         bias_counts[bias] = bias_counts.get(bias, 0) + 1
 
-        watch_bars = [c for c in day_5m if _OR_END <= _vhour(c["t"]) < _WATCH_END]
+        watch_bars = [c for c in day_5m if _OR_END <= _ethour(c["t"]) < _WATCH_END]
         broke_long = broke_short = False
         for bar in watch_bars:
             if not broke_long and bar["close"] > orh:
