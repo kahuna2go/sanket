@@ -247,9 +247,11 @@ def _simulate_day(
 
     # --- Forward simulate bar-by-bar after entry bar ---
     post_entry = [c for c in day_5m if c["t"] > entry_bar_t]
-    tp1_hit   = False
-    be_sl     = False   # SL moved to breakeven after TP1
-    trail_max = None    # highest (long) / lowest (short) price seen since TP1; trail mode only
+    tp1_hit    = False
+    be_sl      = False   # SL moved to breakeven after TP1
+    trail_max  = None    # highest (long) / lowest (short) price seen since TP1; trail mode only
+    swing_sl   = None    # current swing-based trailing SL; swing_trail mode only
+    swing_buf  = []      # rolling 3-bar window for swing detection
 
     for bar in post_entry:
         vh = _ethour(bar["t"])
@@ -267,62 +269,91 @@ def _simulate_day(
         active_sl = entry_px if be_sl else sl_px  # breakeven SL after TP1
 
         if direction == "long":
-            # SL / trail check (low touches) — use trail_max from previous bar
+            # Determine the effective SL for this bar
             if tp_mode == "trail" and tp1_hit:
-                trail_sl = trail_max - 0.5 * or_range
-                if bar["low"] <= trail_sl:
-                    exit_px = trail_sl
-                    r = (1.0 + (trail_sl - entry_px) / sl_dist) / 2
-                    return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
-                                 or_range, exit_px, "trail", r)
-            elif bar["low"] <= active_sl:
-                exit_px = active_sl
+                cur_sl = trail_max - 0.5 * or_range
+            elif tp_mode == "swing_trail" and tp1_hit:
+                cur_sl = swing_sl
+            else:
+                cur_sl = active_sl
+
+            # SL hit check
+            if bar["low"] <= cur_sl:
+                exit_px = cur_sl
                 r_leg = (exit_px - entry_px) / sl_dist
                 r = (r_leg + 1.0) / 2 if tp1_hit else r_leg
+                reason = "trail" if tp_mode in ("trail", "swing_trail") and tp1_hit else "sl"
                 return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
-                             or_range, exit_px, "sl", r)
+                             or_range, exit_px, reason, r)
+
             # TP1
             if not tp1_hit and bar["high"] >= tp1_px:
                 tp1_hit = True
                 be_sl   = True
                 if tp_mode == "trail":
-                    trail_max = tp1_px  # trail starts at TP1 level
-            # TP2 (fixed target, non-trail only)
-            if tp_mode != "trail" and tp1_hit and bar["high"] >= tp2_px:
-                exit_px = tp2_px
-                r = (1.0 + (tp2_px - entry_px) / sl_dist) / 2
-                return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
-                             or_range, exit_px, "tp2", r)
-            # Advance trail high at end of bar
-            if tp_mode == "trail" and tp1_hit:
-                trail_max = max(trail_max, bar["high"])
+                    trail_max = tp1_px
+                elif tp_mode == "swing_trail":
+                    swing_sl  = entry_px  # start at breakeven
+                    swing_buf = []
+
+            # TP2 / trail advances
+            if tp1_hit:
+                if tp_mode == "trail":
+                    trail_max = max(trail_max, bar["high"])
+                elif tp_mode == "swing_trail":
+                    swing_buf.append(bar)
+                    if len(swing_buf) >= 3:
+                        b0, b1, b2 = swing_buf[-3], swing_buf[-2], swing_buf[-1]
+                        if b1["low"] < b0["low"] and b1["low"] < b2["low"]:
+                            # b1 confirmed as swing low — move SL to its low
+                            if b1["low"] > swing_sl:
+                                swing_sl = b1["low"]
+                elif bar["high"] >= tp2_px:
+                    exit_px = tp2_px
+                    r = (1.0 + (tp2_px - entry_px) / sl_dist) / 2
+                    return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
+                                 or_range, exit_px, "tp2", r)
 
         else:  # short
             if tp_mode == "trail" and tp1_hit:
-                trail_sl = trail_max + 0.5 * or_range
-                if bar["high"] >= trail_sl:
-                    exit_px = trail_sl
-                    r = (1.0 + (entry_px - trail_sl) / sl_dist) / 2
-                    return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
-                                 or_range, exit_px, "trail", r)
-            elif bar["high"] >= active_sl:
-                exit_px = active_sl
+                cur_sl = trail_max + 0.5 * or_range
+            elif tp_mode == "swing_trail" and tp1_hit:
+                cur_sl = swing_sl
+            else:
+                cur_sl = active_sl
+
+            if bar["high"] >= cur_sl:
+                exit_px = cur_sl
                 r_leg = (entry_px - exit_px) / sl_dist
                 r = (r_leg + 1.0) / 2 if tp1_hit else r_leg
+                reason = "trail" if tp_mode in ("trail", "swing_trail") and tp1_hit else "sl"
                 return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
-                             or_range, exit_px, "sl", r)
+                             or_range, exit_px, reason, r)
+
             if not tp1_hit and bar["low"] <= tp1_px:
                 tp1_hit = True
                 be_sl   = True
                 if tp_mode == "trail":
                     trail_max = tp1_px
-            if tp_mode != "trail" and tp1_hit and bar["low"] <= tp2_px:
-                exit_px = tp2_px
-                r = (1.0 + (entry_px - tp2_px) / sl_dist) / 2
-                return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
-                             or_range, exit_px, "tp2", r)
-            if tp_mode == "trail" and tp1_hit:
-                trail_max = min(trail_max, bar["low"])
+                elif tp_mode == "swing_trail":
+                    swing_sl  = entry_px
+                    swing_buf = []
+
+            if tp1_hit:
+                if tp_mode == "trail":
+                    trail_max = min(trail_max, bar["low"])
+                elif tp_mode == "swing_trail":
+                    swing_buf.append(bar)
+                    if len(swing_buf) >= 3:
+                        b0, b1, b2 = swing_buf[-3], swing_buf[-2], swing_buf[-1]
+                        if b1["high"] > b0["high"] and b1["high"] > b2["high"]:
+                            if b1["high"] < swing_sl:
+                                swing_sl = b1["high"]
+                elif bar["low"] <= tp2_px:
+                    exit_px = tp2_px
+                    r = (1.0 + (entry_px - tp2_px) / sl_dist) / 2
+                    return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
+                                 or_range, exit_px, "tp2", r)
 
     # End of day data — close whatever is open
     if post_entry:
@@ -365,9 +396,12 @@ ALL_ORB_CONFIGS = (
     [ORBConfig(**{**p, "label": p["label"] + " [range/breakout/or_extreme]"},    tp_mode="range",    entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [range/retest/or_extreme]"},      tp_mode="range",    entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [range/retest/retest_low]"},      tp_mode="range",    entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS] +
-    [ORBConfig(**{**p, "label": p["label"] + " [trail/breakout/or_extreme]"},    tp_mode="trail",    entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
-    [ORBConfig(**{**p, "label": p["label"] + " [trail/retest/or_extreme]"},      tp_mode="trail",    entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
-    [ORBConfig(**{**p, "label": p["label"] + " [trail/retest/retest_low]"},      tp_mode="trail",    entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [trail/breakout/or_extreme]"},       tp_mode="trail",       entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [trail/retest/or_extreme]"},        tp_mode="trail",       entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [trail/retest/retest_low]"},        tp_mode="trail",       entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [swing_trail/breakout/or_extreme]"},tp_mode="swing_trail", entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [swing_trail/retest/or_extreme]"},  tp_mode="swing_trail", entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
+    [ORBConfig(**{**p, "label": p["label"] + " [swing_trail/retest/retest_low]"},  tp_mode="swing_trail", entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/breakout/or_extreme]"}, tp_mode="fixed_rr", entry_mode="breakout", sl_mode="or_extreme") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/retest/or_extreme]"},   tp_mode="fixed_rr", entry_mode="retest",   sl_mode="or_extreme") for p in _BASE_PARAMS] +
     [ORBConfig(**{**p, "label": p["label"] + " [fixed_rr/retest/retest_low]"},   tp_mode="fixed_rr", entry_mode="retest",   sl_mode="retest_low") for p in _BASE_PARAMS]
@@ -553,8 +587,9 @@ async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConf
             current_group = group
             entry_lbl = "BREAKOUT entry" if cfg.entry_mode == "breakout" else "RETEST entry  "
             sl_lbl    = "SL=OR extreme+buf" if cfg.sl_mode == "or_extreme" else "SL=retest low+buf"
-            tp_lbl    = ("TP=range (0.5R/1.0R)" if cfg.tp_mode == "range"
-                         else "TP=trail (50%@TP1, trail 0.5×range)" if cfg.tp_mode == "trail"
+            tp_lbl    = ("TP=range (0.5R/1.0R)"              if cfg.tp_mode == "range"
+                         else "TP=trail (0.5×range trail)"      if cfg.tp_mode == "trail"
+                         else "TP=swing_trail (5m swing lows)"  if cfg.tp_mode == "swing_trail"
                          else "TP=fixed R:R (2×/3×SL)")
             print(f"\n  {entry_lbl}  |  {sl_lbl}  |  {tp_lbl}")
             print(f"  {'-'*105}")
@@ -575,7 +610,7 @@ def main():
                         help="EMA slope threshold for single-config run (e.g. 0.0005)")
     parser.add_argument("--no-bias",   action="store_true",
                         help="Ignore 4H EMA bias filter; enter any ORB breakout regardless of direction")
-    parser.add_argument("--tp-mode",    default=None, choices=["range", "fixed_rr", "trail"],
+    parser.add_argument("--tp-mode",    default=None, choices=["range", "fixed_rr", "trail", "swing_trail"],
                         help="TP mode: 'range' (default), 'fixed_rr' (2:1/3:1 off SL), or 'trail' (50%@TP1 then trail 0.5×range)")
     parser.add_argument("--entry-mode", default=None, choices=["breakout", "retest"],
                         help="Entry mode: 'breakout' (default) or 'retest' (wait for ORH/ORL touch)")
