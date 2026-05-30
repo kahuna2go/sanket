@@ -735,6 +735,25 @@ def main():
             except Exception as _rec_err:
                 add_event(f"TP/SL reconcile error (non-fatal): {_rec_err}")
 
+            # ORB time stop: force-close any open SP500 position at 20:00 CET (14:00 ET).
+            # Mechanical — does not rely on LLM.
+            if _hf_orb >= _SP500_END:
+                for tr in active_trades[:]:
+                    if tr.get('asset') not in _SP500_ASSETS:
+                        continue
+                    try:
+                        await hyperliquid.place_close_order(tr['asset'])
+                        add_event(f"ORB time stop: closed {tr['asset']} @ {asset_prices.get(tr['asset'])}")
+                        with open(diary_path, 'a') as _df:
+                            _df.write(json.dumps({
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "asset": tr['asset'], "action": "reconcile_close",
+                                "reason": "orb_time_stop",
+                            }) + "\n")
+                        active_trades.remove(tr)
+                    except Exception as _tse:
+                        add_event(f"ORB time stop failed {tr.get('asset')}: {_tse}")
+
             # ORB tp2_swing: autonomous tick-level management, no LLM involvement.
             # Strategy: hold full position until TP2 (+1×range) is reached.
             # At TP2: cancel TP order, move SL to TP1 level, activate swing trail.
@@ -971,6 +990,8 @@ def main():
             orb_breakout = False
             for _sp_asset in _SP500_ASSETS:
                 if _sp_asset not in args.assets:
+                    continue
+                if _today_orb.weekday() >= 5:  # Saturday=5, Sunday=6 — no ORB on weekends
                     continue
                 _orb_cached = orb_state.get(_sp_asset)
                 if not _orb_cached or _orb_cached.get("trade_taken"):
@@ -1249,9 +1270,11 @@ def main():
                                 _last_e = next((v for v in reversed(_ema21) if v is not None), None)
                                 _prev_e = next((v for v in reversed(_ema21[:-1]) if v is not None), None)
                                 if _last_e and _prev_e:
-                                    if _last_c4 > _last_e and _last_e > _prev_e:
+                                    _slope = (_last_e - _prev_e) / _prev_e
+                                    _SLOPE_THRESH = 0.0002  # matches backtest default
+                                    if _last_c4 > _last_e and _slope > _SLOPE_THRESH:
                                         _orb["bias"] = "bull"
-                                    elif _last_c4 < _last_e and _last_e < _prev_e:
+                                    elif _last_c4 < _last_e and _slope < -_SLOPE_THRESH:
                                         _orb["bias"] = "bear"
                                     else:
                                         _orb["bias"] = "neutral"
