@@ -148,33 +148,41 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 
 ## 10. Project context
 
-**Fill this in per project. Keep it specific. Delete sections that don't apply.**
-
 ### Stack
-- Language and version: HTML5, CSS3, vanilla JavaScript (ES2020+)
-- Framework(s): none — no build framework, no JS framework
-- Package manager: none
-- Runtime / deployment target: browser (static files, open directly — no server required)
-- External CDN dependency: SheetJS 0.20.3 (`trading-journal.html` only, loaded from cdn.sheetjs.com)
+- Language: Python 3.12
+- Package manager: Poetry (`pyproject.toml`)
+- Exchange: Hyperliquid (perps) via `hyperliquid-python-sdk`
+- LLM: Anthropic Claude via `anthropic` SDK (decision-making agent)
+- Key deps: `aiohttp`, `rich`, `yfinance`, `numpy`, `pyyaml`, `python-dotenv`
+- Deployment: Docker Compose on Hetzner CPX11 (see memory for SSH/deploy commands)
 
 ### Commands
 - Python interpreter: `/Users/peermagnus/Library/Caches/pypoetry/virtualenvs/trading-agent-iHVPNt-P-py3.12/bin/python3.12`
-- Run backtest: `/Users/peermagnus/Library/Caches/pypoetry/virtualenvs/trading-agent-iHVPNt-P-py3.12/bin/python3.12 -m src.backtest.run_backtest_ms --assets SOL`
-- Run agent: `/Users/peermagnus/Library/Caches/pypoetry/virtualenvs/trading-agent-iHVPNt-P-py3.12/bin/python3.12 -m src.main --assets SOL ETH --interval 5m`
+- Run live agent: `python3.12 -m src.main --assets SOL ETH --interval 5m`
+- Run ORB backtest: `python3.12 -m src.backtest.run_backtest_orb --assets SOL`
+- Run momentum backtest: `python3.12 -m src.backtest.run_backtest_momentum --assets SOL`
+- Run ms backtest: `python3.12 -m src.backtest.run_backtest_ms --assets SOL`
+- Deploy to server: `git pull && docker compose up -d --build` (run on server)
 
 ### Layout
-- Source lives in: project root (`/`) — each app is a single self-contained `.html` file
-- Tests live in: n/a
-- Do not modify: n/a (no generated or vendored files on disk)
+- `src/main.py` — entry point for live trading
+- `src/agent/decision_maker.py` — LLM-based trade decisions
+- `src/trading/hyperliquid_api.py` — exchange API wrapper (price rounding lives here)
+- `src/backtest/` — one file per strategy (orb, momentum, fib, fvg, ms, zz, blend)
+- `src/strategies/` — live strategy implementations (sol_momentum, hybrid/)
+- `src/indicators/` — taapi client + local indicator calculations
+- `config/` — YAML config files
+- `docs/results/` — backtest result markdown files
+- `decisions.jsonl`, `diary.jsonl` — live trade log files (do not delete)
 
-### Conventions specific to this repo
-- Naming: kebab-case for filenames (e.g. `trading-journal.html`)
-- Import style: no JS modules — all code is inline `<script>` within each HTML file; external libs via CDN `<script src>`
-- Error handling pattern: browser console; no structured error handling layer
-- Testing pattern and framework: none — verify by opening in browser
+### Conventions
+- All prices submitted to Hyperliquid must go through `HyperliquidAPI.round_price()` — exchange enforces 5 significant figures
+- Backtest results saved to `docs/results/` as markdown
+- Config loaded via `src/config_loader.py`; secrets in `.env`
 
 ### Forbidden
-- `TODO`: Do not introduce a build pipeline, bundler, or npm unless explicitly asked — this project is intentionally zero-dependency.
+- Do not introduce new dependencies without asking — Poetry is the gatekeeper
+- Do not modify `decisions.jsonl` or `diary.jsonl` directly
 
 ---
 
@@ -185,6 +193,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
 - Always call `HyperliquidAPI.round_price()` on every price before submitting to Hyperliquid — the exchange enforces 5 significant figures (e.g. ETH at ~$2300 accepts 1 decimal place max; raw Fib/LLM prices like 2209.2288 are rejected with "Order has invalid price").
+- tvdatafeed (used for HIP-3 assets: xyz:SP500, xyz:GOLD, xyz:OIL) returns timezone-naive timestamps in the TradingView chart timezone (Vienna/CEST). `pandas.Timestamp.timestamp()` treats naive as UTC, producing +1h (winter) or +2h (summer) offset. Fix: `ts.tz_localize('Europe/Vienna')` before `.timestamp()`.
 
 ---
 
