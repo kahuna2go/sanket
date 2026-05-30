@@ -11,7 +11,7 @@ Strategy (Smart Money Concepts):
 
 Swing detection: lookback = 5 bars on each side (confirmed with 5-bar delay, no lookahead).
 Sweep lookback: only sweep swings confirmed within the last 20 bars.
-CHoCH timeout:  12 bars after the sweep.
+CHoCH timeout:  12 / 24 / 48 bars (tested across configs).
 
 Config variations:
   Baseline / + Session (London 08-10 + NY 13:30-15:30 UTC) / + 1H Bias / + Both
@@ -40,7 +40,6 @@ MIN_TRADES    = 20
 TP_R          = 3.0
 SL_R          = 1.0
 SWING_LOOKBACK = 5    # bars on each side for swing confirmation
-CHOCH_TIMEOUT  = 12   # bars after sweep to find CHoCH
 SWEEP_LOOKBACK = 20   # max bars back for a swing to still be "recent"
 BIAS_WINDOW    = 50   # 1H bars used for rolling bias computation
 
@@ -173,15 +172,28 @@ def _find_bearish_fvg(bars: list[dict]) -> tuple[float, float] | None:
 class SmcConfig:
     session_filter: bool = False
     bias_filter:    bool = False
+    choch_timeout:  int  = 12
     label:          str  = "Baseline"
 
 
-ALL_SMC_CONFIGS = [
-    SmcConfig(session_filter=False, bias_filter=False, label="Baseline"),
-    SmcConfig(session_filter=True,  bias_filter=False, label="+ Session (London+NY UTC)"),
-    SmcConfig(session_filter=False, bias_filter=True,  label="+ 1H Bias"),
-    SmcConfig(session_filter=True,  bias_filter=True,  label="+ Session + 1H Bias"),
-]
+def _make_configs() -> list["SmcConfig"]:
+    configs = []
+    for timeout in [12, 24, 48]:
+        suffix = f"CHoCH {timeout}b"
+        configs += [
+            SmcConfig(session_filter=False, bias_filter=False, choch_timeout=timeout,
+                      label=f"Baseline / {suffix}"),
+            SmcConfig(session_filter=True,  bias_filter=False, choch_timeout=timeout,
+                      label=f"+ Session / {suffix}"),
+            SmcConfig(session_filter=False, bias_filter=True,  choch_timeout=timeout,
+                      label=f"+ 1H Bias / {suffix}"),
+            SmcConfig(session_filter=True,  bias_filter=True,  choch_timeout=timeout,
+                      label=f"+ Session + Bias / {suffix}"),
+        ]
+    return configs
+
+
+ALL_SMC_CONFIGS = _make_configs()
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +333,7 @@ def _run_simulation(
                         sweep_type     = "bull"
                         sweep_price    = bar["low"]
                         sweep_bar_idx  = i
-                        choch_deadline = i + CHOCH_TIMEOUT
+                        choch_deadline = i + cfg.choch_timeout
                         choch_target   = highs_before[-1][1]
                         d_sweeps      += 1
                         continue
@@ -337,7 +349,7 @@ def _run_simulation(
                         sweep_type     = "bear"
                         sweep_price    = bar["high"]
                         sweep_bar_idx  = i
-                        choch_deadline = i + CHOCH_TIMEOUT
+                        choch_deadline = i + cfg.choch_timeout
                         choch_target   = lows_before[-1][1]
                         d_sweeps      += 1
 
