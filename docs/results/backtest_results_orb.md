@@ -100,3 +100,20 @@ ORB Backtest — xyz:SP500 | 5304 × 5m bars | 584 × 4h bars
   SL=5%  / no slope filter [fixed_rr/retest/or_extreme] |   44 trades | win= 61.4% | avgWinR=1.00 | totalR=+10.5 | avgR=+0.238 | maxDD=-4.0R | GO ✓ | sl=16 time_stop=26 tp2=2
 ==============================================================================================================
 
+
+## TP1 partial-exit % sweep — trail mode, retest entry, SL=10% or_extreme
+### Note: R formula corrected — TP1 actual R = 0.455 (was hardcoded 1.0 previously)
+
+| exit% | trades | win% | avgWinR | totalR | avgR   | maxDD   | exits                      |
+|-------|--------|------|---------|--------|--------|---------|----------------------------|
+|   0%  |   40   | 77.5%|  0.689  | +12.8  | +0.320 | -13.8R  | sl=8 time_stop=4 trail=28  |
+|  10%  |   40   | 77.5%|  0.665  | +12.1  | +0.302 | -13.1R  | sl=8 time_stop=4 trail=28  |
+|  20%  |   40   | 77.5%|  0.641  | +11.3  | +0.283 | -12.3R  | sl=8 time_stop=4 trail=28  |
+|  30%  |   40   | 77.5%|  0.617  | +10.6  | +0.265 | -11.6R  | sl=8 time_stop=4 trail=28  |
+|  40%  |   40   | 77.5%|  0.593  |  +9.8  | +0.246 | -10.8R  | sl=8 time_stop=4 trail=28  |
+|  50%  |   40   | 77.5%|  0.569  |  +9.1  | +0.228 | -10.1R  | sl=8 time_stop=4 trail=28  |
+|  60%  |   40   | 77.5%|  0.545  |  +8.4  | +0.209 |  -9.4R  | sl=8 time_stop=4 trail=28  |
+|  70%  |   40   | 77.5%|  0.521  |  +7.6  | +0.190 |  -8.6R  | sl=8 time_stop=4 trail=28  |
+|  80%  |   40   | 77.5%|  0.497  |  +6.9  | +0.172 |  -7.9R  | sl=8 time_stop=4 trail=28  |
+|  90%  |   40   | 77.5%|  0.473  |  +6.1  | +0.153 |  -7.1R  | sl=8 time_stop=4 trail=28  |
+| 100%  |   40   | 77.5%|  0.449  |  +5.4  | +0.135 |  -6.7R  | sl=8 time_stop=4 trail=28  |
