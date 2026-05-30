@@ -991,13 +991,22 @@ def main():
                 _bp = _orb_cached.get("breakout_pending")
 
                 if _bp is None:
-                    # Phase 1: watch for initial breakout
-                    if _sp_price > _orh_c and _bias_c == "bull" and _fund_long_c:
+                    # Phase 1: watch for initial breakout.
+                    # Use the last COMPLETED candle close, not live mid-price, to avoid
+                    # setting breakout_pending on wick spikes that never close above ORH.
+                    _last_close = _sp_price  # fallback to live price if fetch fails
+                    try:
+                        _bo_candles = await hyperliquid.get_candles(_sp_asset, "5m", 3)
+                        if len(_bo_candles) >= 2:
+                            _last_close = _bo_candles[-2]["close"]  # -1 is still forming
+                    except Exception:
+                        pass
+                    if _last_close > _orh_c and _bias_c == "bull" and _fund_long_c:
                         _orb_cached["breakout_pending"] = "long"
-                        add_event(f"ORB {_sp_asset}: long breakout at {_sp_price:.2f} — waiting for retest of ORH {_orh_c:.2f}")
-                    elif _sp_price < _orl_c and _bias_c == "bear" and _fund_short_c:
+                        add_event(f"ORB {_sp_asset}: long breakout (close {_last_close:.2f} > ORH {_orh_c:.2f}) — waiting for retest")
+                    elif _last_close < _orl_c and _bias_c == "bear" and _fund_short_c:
                         _orb_cached["breakout_pending"] = "short"
-                        add_event(f"ORB {_sp_asset}: short breakout at {_sp_price:.2f} — waiting for retest of ORL {_orl_c:.2f}")
+                        add_event(f"ORB {_sp_asset}: short breakout (close {_last_close:.2f} < ORL {_orl_c:.2f}) — waiting for retest")
                 elif _bp == "long":
                     if _sp_price < _orl_c:
                         _orb_cached["breakout_pending"] = None
