@@ -156,14 +156,17 @@ def _simulate_day(
     swing_lookback: int = 1,
     be_at_tp1: bool = False,
     tp1_exit_pct: float = 0.5,
+    max_range_pts: float = 0.0,
+    or_minutes: int = 15,
 ) -> Trade | None:
     """Return a Trade if an entry was taken, else None."""
     if not no_bias and bias == "neutral":
         return None
 
     # --- Build Opening Range ---
+    _or_end_dyn = _OR_START + or_minutes / 60.0  # dynamic OR end in ET decimal hours
     or_bars = [c for c in day_5m
-               if _OR_START <= _ethour(c["t"]) < _OR_END]
+               if _OR_START <= _ethour(c["t"]) < _or_end_dyn]
     if len(or_bars) < 2:
         return None  # incomplete OR window
 
@@ -173,10 +176,12 @@ def _simulate_day(
 
     if or_range < min_range_pts:
         return None  # range too tight — skip
+    if max_range_pts > 0 and or_range > max_range_pts:
+        return None  # range too wide — skip (Merrill: prefer compression)
 
     # --- Breakout watch: find initial breakout ---
     watch_bars = [c for c in day_5m
-                  if _OR_END <= _ethour(c["t"]) < _WATCH_END]
+                  if _or_end_dyn <= _ethour(c["t"]) < _WATCH_END]
 
     breakout_bar_t = None
     direction      = None
@@ -459,6 +464,8 @@ class ORBConfig:
     swing_lookback:    int   = 1            # bars each side for swing detection (1=3-bar, 2=5-bar, 3=7-bar)
     be_at_tp1:         bool  = False        # move SL to breakeven when TP1 is touched
     tp1_exit_pct:      float = 0.5         # fraction of position exited at TP1 (trail/swing_trail modes)
+    max_range_pts:     float = 0.0         # skip days where OR > this (0 = no cap; Merrill: prefer compression)
+    or_minutes:        int   = 15          # OR window length in minutes (15 = 9:30-9:45, 30 = 9:30-10:00)
     label:             str   = "Baseline"
 
 
@@ -515,7 +522,7 @@ def _run_config(cfg: ORBConfig, candles_5m: list, candles_4h: list, no_bias: boo
     trades = []
     for day in sorted(days):
         bias = _compute_4h_bias(candles_4h, day, cfg.ema_period, cfg.slope_threshold)
-        trade = _simulate_day(day, days[day], bias, cfg.sl_buffer, cfg.min_range_pts, no_bias, cfg.tp_mode, cfg.entry_mode, cfg.sl_mode, cfg.swing_lookback, cfg.be_at_tp1, cfg.tp1_exit_pct)
+        trade = _simulate_day(day, days[day], bias, cfg.sl_buffer, cfg.min_range_pts, no_bias, cfg.tp_mode, cfg.entry_mode, cfg.sl_mode, cfg.swing_lookback, cfg.be_at_tp1, cfg.tp1_exit_pct, cfg.max_range_pts, cfg.or_minutes)
         if trade:
             trades.append(trade)
     return trades
