@@ -1,85 +1,63 @@
-# ORB Backtest Results Log
+xyz:SP500 5m: 5304 bars (cached)
+xyz:SP500 4h: 584 bars (cached)
+
+==============================================================================================================
+ORB Backtest — xyz:SP500 | 5304 × 5m bars | 584 × 4h bars
+==============================================================================================================
+
+  BREAKOUT FUNNEL DIAGNOSTIC
+  ────────────────────────────────────────────────────────────
+  Trading days total          : 68
+  Days with valid OR (≥2 bars): 68  (100.0% of days)
+  Bias — bull=39  bear=22  neutral=7  (57.4% / 32.4% / 10.3%)
+  Raw breakouts (5m close)    : 84  (123.5% of OR days)  — long=49  short=35
+  Bias-aligned (taken)        : 44  (52.4% of raw breakouts)  — long=31  short=13
+  Filtered out by bias        : 40  — long filtered=18 (bias≠bull)  short filtered=22 (bias≠bear)
 
 
----
+  RETEST entry    |  SL=OR extreme+buf  |  TP=range (0.5R/1.0R)
+  ---------------------------------------------------------------------------------------------------------
+  SL=10% / slope≥0.02% [range/retest/or_extreme] |   40 trades | win= 77.5% | avgWinR=0.79 | totalR=+15.9 | avgR=+0.397 | maxDD=-2.0R | GO ✓ | sl=17 time_stop=4 tp2=19
+  SL=5%  / slope≥0.02% [range/retest/or_extreme] |   40 trades | win= 75.0% | avgWinR=0.80 | totalR=+14.3 | avgR=+0.358 | maxDD=-2.0R | GO ✓ | sl=18 time_stop=4 tp2=18
+  SL=10% / slope≥0.10% [range/retest/or_extreme] |   28 trades | win= 82.1% | avgWinR=0.75 | totalR=+12.2 | avgR=+0.436 | maxDD=-2.0R | GO ✓ | sl=14 time_stop=1 tp2=13
+  SL=5%  / slope≥0.10% [range/retest/or_extreme] |   28 trades | win= 78.6% | avgWinR=0.75 | totalR=+10.5 | avgR=+0.376 | maxDD=-2.0R | GO ✓ | sl=15 time_stop=1 tp2=12
+  SL=10% / no slope filter [range/retest/or_extreme] |   44 trades | win= 77.3% | avgWinR=0.79 | totalR=+17.2 | avgR=+0.390 | maxDD=-2.0R | GO ✓ | sl=19 time_stop=5 tp2=20
+  SL=5%  / no slope filter [range/retest/or_extreme] |   44 trades | win= 75.0% | avgWinR=0.79 | totalR=+15.6 | avgR=+0.355 | maxDD=-2.0R | GO ✓ | sl=20 time_stop=5 tp2=19
 
-**Asset:** xyz:SP500  |  **Period:** ~1y cached  |  **Run:** 2026-05-18  |  **Entry TF:** 5m
+  RETEST entry    |  SL=OR extreme+buf  |  TP=trail (0.5×range trail)
+  ---------------------------------------------------------------------------------------------------------
+  SL=10% / slope≥0.02% [trail/retest/or_extreme] |   40 trades | win= 77.5% | avgWinR=0.83 | totalR=+17.3 | avgR=+0.432 | maxDD=-2.0R | GO ✓ | sl=8 time_stop=4 trail=28
+  SL=5%  / slope≥0.02% [trail/retest/or_extreme] |   40 trades | win= 75.0% | avgWinR=0.85 | totalR=+15.9 | avgR=+0.398 | maxDD=-2.1R | GO ✓ | sl=9 time_stop=4 trail=27
+  SL=10% / slope≥0.10% [trail/retest/or_extreme] |   28 trades | win= 82.1% | avgWinR=0.81 | totalR=+13.7 | avgR=+0.488 | maxDD=-2.0R | GO ✓ | sl=5 time_stop=2 trail=21
+  SL=5%  / slope≥0.10% [trail/retest/or_extreme] |   28 trades | win= 78.6% | avgWinR=0.83 | totalR=+12.2 | avgR=+0.434 | maxDD=-2.1R | GO ✓ | sl=6 time_stop=2 trail=20
+  SL=10% / no slope filter [trail/retest/or_extreme] |   44 trades | win= 77.3% | avgWinR=0.82 | totalR=+18.5 | avgR=+0.420 | maxDD=-2.0R | GO ✓ | sl=9 time_stop=5 trail=30
+  SL=5%  / no slope filter [trail/retest/or_extreme] |   44 trades | win= 75.0% | avgWinR=0.84 | totalR=+17.1 | avgR=+0.390 | maxDD=-2.1R | GO ✓ | sl=10 time_stop=5 trail=29
 
-**Strategy:** Opening Range Breakout (ORB) — 15:30–15:45 CET range, breakout watch 15:45–17:30 CET, 4H 21-EMA bias filter, time stop 20:00 CET
+  RETEST entry    |  SL=OR extreme+buf  |  TP=swing_trail (50%@TP1, swing trail)
+  ---------------------------------------------------------------------------------------------------------
+  SL=10% / slope≥0.02% [swing_trail/retest/or_extreme] |   40 trades | win= 77.5% | avgWinR=0.80 | totalR=+16.3 | avgR=+0.408 | maxDD=-2.0R | GO ✓ | sl=8 time_stop=2 trail=30
+  SL=5%  / slope≥0.02% [swing_trail/retest/or_extreme] |   40 trades | win= 75.0% | avgWinR=0.82 | totalR=+14.9 | avgR=+0.374 | maxDD=-2.4R | GO ✓ | sl=9 time_stop=2 trail=29
+  SL=10% / slope≥0.10% [swing_trail/retest/or_extreme] |   28 trades | win= 82.1% | avgWinR=0.78 | totalR=+13.0 | avgR=+0.463 | maxDD=-2.0R | GO ✓ | sl=5 time_stop=1 trail=22
+  SL=5%  / slope≥0.10% [swing_trail/retest/or_extreme] |   28 trades | win= 78.6% | avgWinR=0.79 | totalR=+11.5 | avgR=+0.410 | maxDD=-2.4R | GO ✓ | sl=6 time_stop=1 trail=21
+  SL=10% / no slope filter [swing_trail/retest/or_extreme] |   44 trades | win= 77.3% | avgWinR=0.79 | totalR=+17.3 | avgR=+0.392 | maxDD=-2.0R | GO ✓ | sl=9 time_stop=2 trail=33
+  SL=5%  / no slope filter [swing_trail/retest/or_extreme] |   44 trades | win= 75.0% | avgWinR=0.80 | totalR=+15.9 | avgR=+0.362 | maxDD=-2.4R | GO ✓ | sl=10 time_stop=2 trail=32
 
-**Exits:** TP1 at 0.5R (50%, SL→BE), TP2 at 1.0R (50%), SL = ORL/ORH ± sl_buffer × range
+  RETEST entry    |  SL=OR extreme+buf  |  TP=tp2_swing (full@TP2, swing trail)
+  ---------------------------------------------------------------------------------------------------------
+  SL=10% / slope≥0.02% [tp2_swing/retest/or_extreme] |   40 trades | win= 72.5% | avgWinR=0.85 | totalR=+14.2 | avgR=+0.355 | maxDD=-2.5R | GO ✓ | sl=10 time_stop=8 trail=22
+  SL=5%  / slope≥0.02% [tp2_swing/retest/or_extreme] |   40 trades | win= 70.0% | avgWinR=0.90 | totalR=+13.7 | avgR=+0.343 | maxDD=-2.5R | GO ✓ | sl=11 time_stop=8 trail=21
+  SL=10% / slope≥0.10% [tp2_swing/retest/or_extreme] |   28 trades | win= 75.0% | avgWinR=0.88 | totalR=+11.5 | avgR=+0.409 | maxDD=-2.0R | GO ✓ | sl=7 time_stop=5 trail=16
+  SL=5%  / slope≥0.10% [tp2_swing/retest/or_extreme] |   28 trades | win= 71.4% | avgWinR=0.94 | totalR=+10.7 | avgR=+0.383 | maxDD=-2.5R | GO ✓ | sl=8 time_stop=5 trail=15
+  SL=10% / no slope filter [tp2_swing/retest/or_extreme] |   44 trades | win= 70.5% | avgWinR=0.83 | totalR=+13.3 | avgR=+0.302 | maxDD=-4.0R | GO ✓ | sl=12 time_stop=9 trail=23
+  SL=5%  / no slope filter [tp2_swing/retest/or_extreme] |   44 trades | win= 68.2% | avgWinR=0.88 | totalR=+12.9 | avgR=+0.292 | maxDD=-4.0R | GO ✓ | sl=13 time_stop=9 trail=22
 
-| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict | Exit breakdown |
-|--------|--------|------|---------|--------|------|-------|---------|----------------|
-| SL=10% / slope≥0.02% | 10 | 100.0% | 0.71 | +7.1 | +0.713 | 0.0R | NO-GO ✗ | sl=4 time_stop=1 tp2=5 |
-| SL=5%  / slope≥0.02% | 10 | 100.0% | 0.72 | +7.2 | +0.722 | 0.0R | NO-GO ✗ | sl=4 time_stop=1 tp2=5 |
-| SL=10% / slope≥0.10% |  3 | 100.0% | 0.93 | +2.8 | +0.928 | 0.0R | NO-GO ✗ | tp2=3 |
-| SL=5%  / slope≥0.10% |  3 | 100.0% | 0.95 | +2.8 | +0.947 | 0.0R | NO-GO ✗ | tp2=3 |
-| SL=10% / no slope filter | 10 | 100.0% | 0.71 | +7.1 | +0.713 | 0.0R | NO-GO ✗ | sl=4 time_stop=1 tp2=5 |
-| SL=5%  / no slope filter | 10 | 100.0% | 0.72 | +7.2 | +0.722 | 0.0R | NO-GO ✗ | sl=4 time_stop=1 tp2=5 |
+  RETEST entry    |  SL=OR extreme+buf  |  TP=fixed R:R (2×/3×SL)
+  ---------------------------------------------------------------------------------------------------------
+  SL=10% / slope≥0.02% [fixed_rr/retest/or_extreme] |   40 trades | win= 62.5% | avgWinR=0.99 | totalR=+10.2 | avgR=+0.255 | maxDD=-3.2R | GO ✓ | sl=14 time_stop=24 tp2=2
+  SL=5%  / slope≥0.02% [fixed_rr/retest/or_extreme] |   40 trades | win= 62.5% | avgWinR=1.01 | totalR=+10.7 | avgR=+0.268 | maxDD=-3.1R | GO ✓ | sl=14 time_stop=24 tp2=2
+  SL=10% / slope≥0.10% [fixed_rr/retest/or_extreme] |   28 trades | win= 64.3% | avgWinR=1.10 | totalR=+9.8 | avgR=+0.351 | maxDD=-2.7R | GO ✓ | sl=10 time_stop=16 tp2=2
+  SL=5%  / slope≥0.10% [fixed_rr/retest/or_extreme] |   28 trades | win= 64.3% | avgWinR=1.12 | totalR=+10.2 | avgR=+0.365 | maxDD=-2.6R | GO ✓ | sl=10 time_stop=16 tp2=2
+  SL=10% / no slope filter [fixed_rr/retest/or_extreme] |   44 trades | win= 61.4% | avgWinR=0.98 | totalR=+9.8 | avgR=+0.224 | maxDD=-4.0R | GO ✓ | sl=16 time_stop=26 tp2=2
+  SL=5%  / no slope filter [fixed_rr/retest/or_extreme] |   44 trades | win= 61.4% | avgWinR=1.00 | totalR=+10.5 | avgR=+0.238 | maxDD=-4.0R | GO ✓ | sl=16 time_stop=26 tp2=2
+==============================================================================================================
 
-**Notes:**
-- All configs NO-GO due to insufficient trade count (< 20). Asset has limited history in cache.
-- "win%" counts trades with r_multiple > 0; the 4 "sl" exits are post-TP1 breakeven stops (R > 0).
-- Need more data (--fetch + --years 2+) to get a statistically meaningful sample.
-
----
-
-**Asset:** xyz:SP500  |  **Period:** ~12 trading days cached  |  **Run:** 2026-05-21  |  **Entry TF:** 5m
-
-**Strategy:** ORB — 4 mode combinations: entry_mode (breakout / retest) × tp_mode (range / fixed_rr)
-
-**Breakout entry:** enter at close of first 5m candle breaking ORH/ORL  
-**Retest entry:** wait for price to touch back to ORH (long) or ORL (short) after initial breakout  
-**Range TP:** TP1=entry±0.5×range, TP2=entry±1.0×range  
-**Fixed R:R TP:** TP1=entry±2×sl_dist, TP2=entry±3×sl_dist
-
-| Config | Entry | TP | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict | Exits |
-|--------|-------|----|--------|------|---------|--------|------|-------|---------|-------|
-| SL=10% / slope≥0.02% | breakout | range | 12 | 91.7% | 0.65 | +6.2 | +0.517 | -1.0R | NO-GO ✗ | sl=7 time_stop=1 tp2=4 |
-| SL=10% / slope≥0.02% | **retest** | range | **10** | **90.0%** | **0.80** | **+6.2** | **+0.623** | **-1.0R** | NO-GO ✗ | sl=4 tp2=6 |
-| SL=10% / slope≥0.02% | breakout | fixed_rr | 12 | 66.7% | 0.83 | +3.5 | +0.294 | -2.0R | NO-GO ✗ | sl=3 time_stop=9 |
-| SL=10% / slope≥0.02% | retest | fixed_rr | 10 | 70.0% | 1.05 | +4.4 | +0.437 | -2.0R | NO-GO ✗ | sl=3 time_stop=7 |
-| SL=5%  / slope≥0.02% | breakout | range | 12 | 91.7% | 0.66 | +6.3 | +0.523 | -1.0R | NO-GO ✗ | sl=7 time_stop=1 tp2=4 |
-| SL=5%  / slope≥0.02% | **retest** | range | **10** | **90.0%** | **0.82** | **+6.4** | **+0.636** | **-1.0R** | NO-GO ✗ | sl=4 tp2=6 |
-| SL=5%  / slope≥0.02% | breakout | fixed_rr | 12 | 66.7% | 0.85 | +3.7 | +0.312 | -2.0R | NO-GO ✗ | sl=3 time_stop=9 |
-| SL=5%  / slope≥0.02% | retest | fixed_rr | 10 | 70.0% | 1.10 | +4.7 | +0.467 | -2.0R | NO-GO ✗ | sl=3 time_stop=7 |
-| SL=10% / no slope filter | breakout | range | 13 | 92.3% | 0.64 | +6.7 | +0.516 | -1.0R | NO-GO ✗ | sl=8 time_stop=1 tp2=4 |
-| SL=10% / no slope filter | **retest** | range | **11** | **90.9%** | **0.73** | **+6.3** | **+0.574** | **-1.0R** | NO-GO ✗ | eod=1 sl=4 tp2=6 |
-| SL=10% / no slope filter | breakout | fixed_rr | 13 | 61.5% | 0.83 | +3.2 | +0.248 | -2.3R | NO-GO ✗ | eod=1 sl=3 time_stop=9 |
-| SL=10% / no slope filter | retest | fixed_rr | 11 | 72.7% | 0.93 | +4.5 | +0.405 | -2.0R | NO-GO ✗ | eod=1 sl=3 time_stop=7 |
-
-**Key finding:** Retest + range-based TP is the standout combination:
-- Fewer SL hits (4 vs 7) despite fewer trades
-- Higher avgWinR (0.80 vs 0.65) — entering at ORH/ORL tightens the entry
-- Zero time stops — all trades reached a clean exit (TP2 or SL)
-- Same total R as breakout entry despite 2 fewer trades (missed retests)
-
-**Caveat:** Only 10–13 trades. Statistically meaningless. Waiting for more xyz:SP500 history to accumulate.
-
----
-
-**Asset:** xyz:SP500  |  **Period:** ~12 trading days cached  |  **Run:** 2026-05-21  |  **Entry TF:** 5m
-
-**Strategy:** ORB — SL mode comparison: or_extreme vs retest_low (retest entry only)
-
-**SL or_extreme:** SL = ORL − sl_buffer × range (long) / ORH + sl_buffer × range (short)  
-**SL retest_low:** SL = retest candle low − sl_buffer × range (long) / retest candle high + sl_buffer × range (short)
-
-**SL diagnostic (from raw candle data):**
-- Retest penetration depth: min=0pt, median=3.6pt (21.6% of range), p90=9.3pt (59.4% of range)
-- MAE on winners: min=3.6pt, median=7.5pt (48.7% of range), p90=11.8pt (67.9% of range)
-- All 3 SL hits had MAE > 100% of range — genuine reversals, not noise
-
-| Config | Entry | SL mode | TP | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Exits |
-|--------|-------|---------|----|--------|------|---------|--------|------|-------|-------|
-| SL=10% / slope≥0.02% | retest | **or_extreme** | range | 10 | **90.0%** | 0.80 | **+6.2** | +0.623 | -1.0R | sl=4 tp2=6 |
-| SL=10% / slope≥0.02% | retest | retest_low | range | 10 | 40.0% | 0.96 | -2.2 | -0.217 | -2.5R | sl=9 tp2=1 |
-| SL=5%  / slope≥0.02% | retest | **or_extreme** | range | 10 | **90.0%** | 0.82 | **+6.4** | +0.636 | -1.0R | sl=4 tp2=6 |
-| SL=5%  / slope≥0.02% | retest | retest_low | range | 10 | 40.0% | 1.06 | -1.8 | -0.177 | -2.5R | sl=9 tp2=1 |
-| SL=10% / slope≥0.02% | retest | **or_extreme** | fixed_rr | 10 | **70.0%** | 1.05 | **+4.4** | +0.437 | -2.0R | sl=3 time_stop=7 |
-| SL=10% / slope≥0.02% | retest | retest_low | fixed_rr | 10 | 30.0% | 2.00 | -1.0 | -0.100 | -3.0R | sl=7 tp2=3 |
-
-**Key finding:** retest_low SL is clearly inferior — 9/10 trades stopped out. Winner MAE (median 48.7% of range) exceeds the retest candle SL in most cases. The or_extreme SL is already well-placed: all real losers traveled >100% of range (genuine reversals), so no tighter SL would have filtered them without cutting winners.
-
-**Conclusion:** or_extreme SL is the correct anchor. The current SL formula is not the problem.
