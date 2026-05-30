@@ -1019,6 +1019,97 @@ def main():
                         break
                     # else: still below ORL, waiting
 
+            # Mechanical ORB entry — fires when retest is confirmed and all prerequisites pass.
+            # Bypasses LLM entirely: every prerequisite is already computed by the state machine.
+            if orb_breakout and not macro_ctx.get("block_new_opens"):
+                for _sp_asset in _SP500_ASSETS:
+                    if _sp_asset not in args.assets:
+                        continue
+                    _orb_e = orb_state.get(_sp_asset, {})
+                    _bias_e   = _orb_e.get("bias", "neutral")
+                    _long_e   = _orb_e.get("breakout_pending") == "long" or _orb_e.get("breakout_long")
+                    _short_e  = _orb_e.get("breakout_pending") == "short" or _orb_e.get("breakout_short")
+                    _taken_e  = _orb_e.get("trade_taken", False)
+                    _fund_ok  = _orb_e.get("funding_ok_long") if _long_e else _orb_e.get("funding_ok_short")
+                    _phase_e  = _orb_e.get("phase", "")
+                    _ready = (
+                        _phase_e == "breakout_watch"
+                        and not _taken_e
+                        and _bias_e != "neutral"
+                        and ((_long_e and _bias_e == "bull") or (_short_e and _bias_e == "bear"))
+                        and _fund_ok
+                        and not any(t.get("asset") == _sp_asset for t in active_trades)
+                    )
+                    if not _ready:
+                        continue
+                    _is_buy_e = _long_e
+                    _entry_px  = asset_prices.get(_sp_asset, 0)
+                    _tp_price  = _orb_e.get("tp2_long" if _is_buy_e else "tp2_short")
+                    _sl_price  = _orb_e.get("sl_long"  if _is_buy_e else "sl_short")
+                    if not _tp_price or not _sl_price or not _entry_px:
+                        continue
+                    # Risk-size the position using the same path as LLM trades
+                    _syn_trade = {
+                        "asset": _sp_asset, "action": "buy" if _is_buy_e else "sell",
+                        "allocation_usd": 100.0,  # placeholder; validate_trade resizes
+                        "tp_price": _tp_price, "sl_price": _sl_price, "current_price": _entry_px,
+                    }
+                    _managed_state = {**state, "positions": [p for p in state["positions"] if p.get("coin") in set(args.assets)]}
+                    _allowed, _reason, _syn_trade = risk_mgr.validate_trade(_syn_trade, _managed_state, initial_account_value or 0, open_orders_struct)
+                    if not _allowed:
+                        add_event(f"ORB mechanical entry blocked by risk: {_reason}")
+                        continue
+                    _amount = float(_syn_trade.get("allocation_usd", 100.0)) / _entry_px
+                    _amount = hyperliquid.round_size(_sp_asset, _amount)
+                    if _amount <= 0:
+                        continue
+                    try:
+                        _order = await (hyperliquid.place_buy_order(_sp_asset, _amount)
+                                        if _is_buy_e else hyperliquid.place_sell_order(_sp_asset, _amount))
+                        _tp_oid = _sl_oid_e = None
+                        await asyncio.sleep(0.5)
+                        _tp_order = await hyperliquid.place_take_profit(_sp_asset, _is_buy_e, _amount, _tp_price)
+                        _tp_oids  = hyperliquid.extract_oids(_tp_order)
+                        _tp_oid   = _tp_oids[0] if _tp_oids else None
+                        _sl_order_e = await hyperliquid.place_stop_loss(_sp_asset, _is_buy_e, _amount, _sl_price)
+                        _sl_oids_e  = hyperliquid.extract_oids(_sl_order_e)
+                        _sl_oid_e   = _sl_oids_e[0] if _sl_oids_e else None
+                        _orb_tp1_e = _orb_e.get("tp1_long" if _is_buy_e else "tp1_short")
+                        _orb_tp2_e = _tp_price
+                        active_trades.append({
+                            "asset": _sp_asset, "is_long": _is_buy_e, "amount": _amount,
+                            "entry_price": _entry_px, "tp_oid": _tp_oid, "sl_oid": _sl_oid_e,
+                            "tp_price": _tp_price, "sl_price": _sl_price,
+                            "exit_plan": "System ORB tp2_swing", "opened_at": datetime.now().isoformat(),
+                            "orb_tp1": _orb_tp1_e, "orb_tp2": _orb_tp2_e,
+                            "orb_or_range": _orb_e.get("or_range"),
+                            "orb_trail_active": False, "orb_trail_max": None,
+                        })
+                        orb_state[_sp_asset]["trade_taken"] = True
+                        orb_breakout = False  # handled — don't pass to LLM
+                        side_str = "LONG" if _is_buy_e else "SHORT"
+                        add_event(f"ORB mechanical entry: {side_str} {_sp_asset} {_amount:.4f} @ {_entry_px}  TP {_tp_price}  SL {_sl_price}")
+                        print_decision(_sp_asset, "buy" if _is_buy_e else "sell",
+                                       f"Mechanical ORB entry: bias={_bias_e} phase={_phase_e}", 5,
+                                       extra=f"{_amount:.4f} @ {_entry_px}  TP {_tp_price}  SL {_sl_price}")
+                        with open(diary_path, "a") as _f:
+                            _f.write(json.dumps({
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "asset": _sp_asset,
+                                "action": "buy" if _is_buy_e else "sell",
+                                "order_type": "market",
+                                "amount": _amount,
+                                "entry_price": _entry_px,
+                                "tp_price": _tp_price, "tp_oid": _tp_oid,
+                                "sl_price": _sl_price, "sl_oid": _sl_oid_e,
+                                "orb_tp1": _orb_tp1_e, "orb_tp2": _orb_tp2_e,
+                                "orb_or_range": _orb_e.get("or_range"),
+                                "rationale": "mechanical ORB entry",
+                                "opened_at": datetime.now(timezone.utc).isoformat(),
+                            }) + "\n")
+                    except Exception as _me:
+                        add_event(f"ORB mechanical entry failed {_sp_asset}: {_me}")
+
             # During or_formation + breakout_watch, poll every 60s to catch phase transitions promptly.
             _orb_watching = any(
                 _sp_asset in args.assets
