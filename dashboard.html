@@ -1159,8 +1159,8 @@
   async function fetchState() {
     try {
       const [stateResp, histResp] = await Promise.all([
-        fetch(`${API}/state`),
-        fetch(`${API}/history`),
+        fetch(`${API}/state`,   { credentials: 'include' }),
+        fetch(`${API}/history`, { credentials: 'include' }),
       ]);
       if (!stateResp.ok) throw new Error(stateResp.status);
       const data = await stateResp.json();
@@ -1204,7 +1204,7 @@
 
   async function toggleLlmPause() {
     try {
-      const r = await fetch(`${API}/llm-pause`, { method: 'POST' });
+      const r = await fetch(`${API}/llm-pause`, { method: 'POST', credentials: 'include' });
       const d = await r.json();
       updateLlmPauseBtn(d.llm_paused);
     } catch(e) { console.warn('toggle failed', e); }
@@ -1230,13 +1230,13 @@
       body.interval = document.getElementById('lc-interval').value;
       if (!body.assets.length) { alert('Select at least one asset.'); return; }
     }
-    const r = await fetch('/api/start', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    const r = await fetch('/api/start', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
     const d = await r.json();
     if (!d.ok) alert('Failed: ' + d.error);
     lcRefresh();
   }
   async function lcStop(name) {
-    await fetch('/api/stop', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({strategy:name}) });
+    await fetch('/api/stop', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify({strategy:name}) });
     lcRefresh();
   }
   // Log streaming
@@ -1314,7 +1314,7 @@
 
   async function lcRefresh() {
     try {
-      const d = await fetch('/api/status').then(r => r.json());
+      const d = await fetch('/api/status', { credentials: 'include' }).then(r => r.json());
       document.getElementById('launcher-bar').style.display = 'flex';
       connectLog('llm');
       connectLog('sol_momentum');
