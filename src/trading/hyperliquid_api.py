@@ -608,21 +608,24 @@ class HyperliquidAPI:
 
         balance = float(state.get("withdrawable", 0.0))
 
-        # Unified account: perps balance may be 0 while funds are in spot USDC.
-        if balance == 0 and total_value == 0:
-            try:
-                spot_state = await self._retry(
-                    lambda: self.info.spot_user_state(self.query_address)
-                )
-                for bal in spot_state.get("balances", []):
-                    if bal.get("coin") == "USDC":
-                        spot_total = float(bal.get("total", 0))
-                        spot_hold = float(bal.get("hold", 0))
+        # Unified account: funds live in spot USDC wallet, not perp margin.
+        # Always fetch spot to get the true balance — don't wait for perp to be zero.
+        try:
+            spot_state = await self._retry(
+                lambda: self.info.spot_user_state(self.query_address)
+            )
+            for bal in spot_state.get("balances", []):
+                if bal.get("coin") == "USDC":
+                    spot_total = float(bal.get("total", 0))
+                    spot_hold = float(bal.get("hold", 0))
+                    if spot_total > 0:
+                        # spot_total is the true account equity on unified accounts
+                        # spot_hold = margin in use (positions + limit order reservations)
                         balance = spot_total - spot_hold
-                        total_value = balance + sum(p.get("pnl", 0.0) for p in enriched_positions)
-                        break
-            except Exception as e:
-                logging.warning("Failed to fetch spot state for unified account: %s", e)
+                        total_value = spot_total
+                    break
+        except Exception as e:
+            logging.warning("Failed to fetch spot state for unified account: %s", e)
 
         if not total_value:
             total_value = balance + sum(max(p.get("pnl", 0.0), 0.0) for p in enriched_positions)
