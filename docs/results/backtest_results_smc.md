@@ -108,3 +108,16 @@
 | Narrow / no bias / entry@mid50 | 67 | 32.8% | 3.00 | +21.0 | +0.313 | -8.0R | GO ✓ |
 | Narrow / + bias  / entry@top | 36 | 36.1% | 3.00 | +16.0 | +0.444 | -7.0R | GO ✓ |
 | Narrow / + bias  / entry@mid50 | 25 | 40.0% | 3.00 | +15.0 | +0.600 | -6.0R | GO ✓ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-05-31 07:38 UTC  |  **Entry TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [1H bias, 5M entry, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A  / sweep=any | 67 | 32.8% | 3.00 | +21.0 | +0.313 | -8.0R | GO ✓ |
+| Candidate A  / sweep=eql_prefer | 67 | 32.8% | 3.00 | +21.0 | +0.313 | -8.0R | GO ✓ |
+| Candidate A  / sweep=eql_only | 66 | 31.8% | 3.00 | +18.0 | +0.273 | -8.0R | GO ✓ |
+| + bias       / sweep=eql_only | 23 | 39.1% | 3.00 | +13.0 | +0.565 | -7.0R | GO ✓ |

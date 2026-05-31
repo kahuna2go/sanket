@@ -128,6 +128,27 @@ def _find_swings(candles: list[dict], lookback: int) -> tuple[list[tuple[int, fl
 
 
 # ---------------------------------------------------------------------------
+# Equal highs/lows detection
+# ---------------------------------------------------------------------------
+
+_EQL_TOLERANCE_PCT = 0.15  # industry standard: 0.15% price tolerance
+
+
+def _is_eql(price: float, swings: list[tuple[int, float]], exclude_idx: int) -> bool:
+    """Return True if any other confirmed swing matches price within tolerance."""
+    tol = price * _EQL_TOLERANCE_PCT / 100
+    return any(abs(p - price) <= tol for idx, p in swings if idx != exclude_idx)
+
+
+def _filter_eql(
+    candidates: list[tuple[int, float]],
+    all_visible: list[tuple[int, float]],
+) -> list[tuple[int, float]]:
+    """Return only those candidates that have a matching swing in all_visible."""
+    return [(idx, p) for idx, p in candidates if _is_eql(p, all_visible, idx)]
+
+
+# ---------------------------------------------------------------------------
 # FVG detection
 # ---------------------------------------------------------------------------
 
@@ -167,27 +188,29 @@ _WIN_XBROAD  = [(6.0, 20.0)]                         # 14h  — near-24h excludi
 
 @dataclass
 class SmcConfig:
-    bias_filter:     bool                          = False
+    bias_filter:     bool                           = False
     session_windows: list[tuple[float,float]] | None = None  # None = no filter
-    choch_timeout:   int                           = 48
-    swing_lookback:  int                           = 5
-    sweep_lookback:  int                           = 20
-    fvg_entry:       str                           = "top"   # "top" or "mid50"
-    label:           str                           = "Baseline"
+    choch_timeout:   int                            = 48
+    swing_lookback:  int                            = 5
+    sweep_lookback:  int                            = 20
+    fvg_entry:       str                            = "mid50"  # "top" or "mid50"
+    sweep_mode:      str                            = "any"    # "any" | "eql_prefer" | "eql_only"
+    label:           str                            = "Baseline"
 
 
 def _make_configs() -> list["SmcConfig"]:
-    # Fix Narrow session, SL5, 48b, SW20; compare entry at top vs 50% midpoint
-    # across the two best filter combos from prior runs
+    # Fix Candidate A params (Narrow session, no bias, mid50, 48b, SL5, SW20)
+    # Vary sweep_mode to isolate EQL effect
     return [
-        SmcConfig(bias_filter=False, session_windows=_WIN_NARROW, fvg_entry="top",
-                  label="Narrow / no bias / entry@top"),
-        SmcConfig(bias_filter=False, session_windows=_WIN_NARROW, fvg_entry="mid50",
-                  label="Narrow / no bias / entry@mid50"),
-        SmcConfig(bias_filter=True,  session_windows=_WIN_NARROW, fvg_entry="top",
-                  label="Narrow / + bias  / entry@top"),
-        SmcConfig(bias_filter=True,  session_windows=_WIN_NARROW, fvg_entry="mid50",
-                  label="Narrow / + bias  / entry@mid50"),
+        SmcConfig(session_windows=_WIN_NARROW, sweep_mode="any",
+                  label="Candidate A  / sweep=any"),
+        SmcConfig(session_windows=_WIN_NARROW, sweep_mode="eql_prefer",
+                  label="Candidate A  / sweep=eql_prefer"),
+        SmcConfig(session_windows=_WIN_NARROW, sweep_mode="eql_only",
+                  label="Candidate A  / sweep=eql_only"),
+        # Also test eql_only with bias filter to see if it compounds
+        SmcConfig(session_windows=_WIN_NARROW, bias_filter=True, sweep_mode="eql_only",
+                  label="+ bias       / sweep=eql_only"),
     ]
 
 
@@ -323,11 +346,24 @@ def _run_simulation(
         recent_lows  = [s for s in visible_swing_lows  if s[0] >= i - cfg.sweep_lookback]
         recent_highs = [s for s in visible_swing_highs if s[0] >= i - cfg.sweep_lookback]
 
+        # Apply EQL/EQH filtering to candidate sweep levels
+        if cfg.sweep_mode == "eql_only":
+            candidate_lows  = _filter_eql(recent_lows,  visible_swing_lows)
+            candidate_highs = _filter_eql(recent_highs, visible_swing_highs)
+        elif cfg.sweep_mode == "eql_prefer":
+            eql_lows  = _filter_eql(recent_lows,  visible_swing_lows)
+            eql_highs = _filter_eql(recent_highs, visible_swing_highs)
+            candidate_lows  = eql_lows  if eql_lows  else recent_lows
+            candidate_highs = eql_highs if eql_highs else recent_highs
+        else:  # "any"
+            candidate_lows  = recent_lows
+            candidate_highs = recent_highs
+
         bias = bias_5m[i]
 
         # Bullish sweep
-        if recent_lows and (not cfg.bias_filter or bias == "bull"):
-            _, sl_price = recent_lows[-1]
+        if candidate_lows and (not cfg.bias_filter or bias == "bull"):
+            _, sl_price = candidate_lows[-1]
             if bar["low"] < sl_price and bar["close"] > sl_price:
                 if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
                     highs_before = [s for s in visible_swing_highs if s[0] < i]
@@ -342,8 +378,8 @@ def _run_simulation(
                         continue
 
         # Bearish sweep
-        if recent_highs and (not cfg.bias_filter or bias == "bear"):
-            _, sh_price = recent_highs[-1]
+        if candidate_highs and (not cfg.bias_filter or bias == "bear"):
+            _, sh_price = candidate_highs[-1]
             if bar["high"] > sh_price and bar["close"] < sh_price:
                 if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
                     lows_before = [s for s in visible_swing_lows if s[0] < i]
