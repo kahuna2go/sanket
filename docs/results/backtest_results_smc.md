@@ -121,3 +121,17 @@
 | Candidate A  / sweep=eql_prefer | 67 | 32.8% | 3.00 | +21.0 | +0.313 | -8.0R | GO ✓ |
 | Candidate A  / sweep=eql_only | 66 | 31.8% | 3.00 | +18.0 | +0.273 | -8.0R | GO ✓ |
 | + bias       / sweep=eql_only | 23 | 39.1% | 3.00 | +13.0 | +0.565 | -7.0R | GO ✓ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-05-31 08:32 UTC  |  **Entry TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [1H bias, 5M entry, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| FVG_WAIT unlimited (baseline) | 67 | 32.8% | 3.00 | +21.0 | +0.313 | -8.0R | GO ✓ |
+| FVG_WAIT  6b  (30 min) | 50 | 24.0% | 3.00 | -2.0 | -0.040 | -8.0R | NO-GO ✗ |
+| FVG_WAIT 12b  (1 h) | 67 | 26.9% | 3.00 | +5.0 | +0.075 | -7.0R | NO-GO ✗ |
+| FVG_WAIT 24b  (2 h) | 96 | 26.0% | 3.00 | +4.0 | +0.042 | -11.0R | NO-GO ✗ |
+| FVG_WAIT 48b  (4 h) | 109 | 24.8% | 3.00 | -1.0 | -0.009 | -13.0R | NO-GO ✗ |

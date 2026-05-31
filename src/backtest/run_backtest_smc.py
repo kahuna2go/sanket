@@ -194,23 +194,25 @@ class SmcConfig:
     swing_lookback:  int                            = 5
     sweep_lookback:  int                            = 20
     fvg_entry:       str                            = "mid50"  # "top" or "mid50"
-    sweep_mode:      str                            = "any"    # "any" | "eql_prefer" | "eql_only"
-    label:           str                            = "Baseline"
+    sweep_mode:       str                            = "any"   # "any" | "eql_prefer" | "eql_only"
+    fvg_wait_timeout: int | None                    = None    # None = unlimited; N = bars after CHoCH
+    label:            str                           = "Baseline"
 
 
 def _make_configs() -> list["SmcConfig"]:
-    # Fix Candidate A params (Narrow session, no bias, mid50, 48b, SL5, SW20)
-    # Vary sweep_mode to isolate EQL effect
+    # Fix Candidate A params (Narrow session, no bias, mid50, 48b, SL5, SW20, sweep=any)
+    # Vary fvg_wait_timeout to free up blocked state machine
     return [
-        SmcConfig(session_windows=_WIN_NARROW, sweep_mode="any",
-                  label="Candidate A  / sweep=any"),
-        SmcConfig(session_windows=_WIN_NARROW, sweep_mode="eql_prefer",
-                  label="Candidate A  / sweep=eql_prefer"),
-        SmcConfig(session_windows=_WIN_NARROW, sweep_mode="eql_only",
-                  label="Candidate A  / sweep=eql_only"),
-        # Also test eql_only with bias filter to see if it compounds
-        SmcConfig(session_windows=_WIN_NARROW, bias_filter=True, sweep_mode="eql_only",
-                  label="+ bias       / sweep=eql_only"),
+        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=None,
+                  label="FVG_WAIT unlimited (baseline)"),
+        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=6,
+                  label="FVG_WAIT  6b  (30 min)"),
+        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=12,
+                  label="FVG_WAIT 12b  (1 h)"),
+        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=24,
+                  label="FVG_WAIT 24b  (2 h)"),
+        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=48,
+                  label="FVG_WAIT 48b  (4 h)"),
     ]
 
 
@@ -244,6 +246,7 @@ def _run_simulation(
     choch_deadline  = 0
     choch_target    = 0.0   # CHoCH fires when price closes beyond this level
     fvg_hi = fvg_lo = 0.0   # bull: entry at fvg_hi; bear: entry at fvg_lo
+    fvg_wait_start  = 0     # bar index when FVG_WAIT began
     trade_type      = ""
     trade_entry     = trade_sl = trade_tp = 0.0
 
@@ -252,7 +255,7 @@ def _run_simulation(
     visible_swing_lows:  list[tuple[int, float]] = []
     visible_swing_highs: list[tuple[int, float]] = []
 
-    d_sweeps = d_timeout = d_no_fvg = d_inval = d_opened = 0
+    d_sweeps = d_timeout = d_no_fvg = d_inval = d_fvg_timeout = d_opened = 0
 
     for i in range(n):
         bar = candles_5m[i]
@@ -281,6 +284,8 @@ def _run_simulation(
 
         # ── FVG_WAIT ──────────────────────────────────────────────────────────
         if state == "FVG_WAIT":
+            if cfg.fvg_wait_timeout and i > fvg_wait_start + cfg.fvg_wait_timeout:
+                d_fvg_timeout += 1; state = "IDLE"; continue
             mid = (fvg_hi + fvg_lo) / 2
             bull_trigger = mid  if cfg.fvg_entry == "mid50" else fvg_hi
             bear_trigger = mid  if cfg.fvg_entry == "mid50" else fvg_lo
@@ -329,6 +334,7 @@ def _run_simulation(
                 fvg = _find_bullish_fvg(disp)
                 if fvg:
                     fvg_hi, fvg_lo = fvg
+                    fvg_wait_start = i
                     state = "FVG_WAIT"
                 else:
                     d_no_fvg += 1; state = "IDLE"
@@ -337,6 +343,7 @@ def _run_simulation(
                 fvg = _find_bearish_fvg(disp)
                 if fvg:
                     fvg_hi, fvg_lo = fvg
+                    fvg_wait_start = i
                     state = "FVG_WAIT"
                 else:
                     d_no_fvg += 1; state = "IDLE"
@@ -405,7 +412,8 @@ def _run_simulation(
 
     if debug:
         print(f"    [debug] sweeps={d_sweeps}  choch_timeout={d_timeout}"
-              f"  no_fvg={d_no_fvg}  fvg_inval={d_inval}  opened={d_opened}  closed={len(trades)}")
+              f"  no_fvg={d_no_fvg}  fvg_inval={d_inval}  fvg_timeout={d_fvg_timeout}"
+              f"  opened={d_opened}  closed={len(trades)}")
 
     if not trades:
         return {"trades": 0}
