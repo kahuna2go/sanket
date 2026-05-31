@@ -735,6 +735,10 @@ def main():
             except Exception as _rec_err:
                 add_event(f"TP/SL reconcile error (non-fatal): {_rec_err}")
 
+            _now_orb = datetime.now(timezone.utc).astimezone(_VIENNA_TZ)
+            _hf_orb = _now_orb.hour + _now_orb.minute / 60 + _now_orb.second / 3600
+            _today_orb = _now_orb.date()
+
             # ORB time stop: force-close any open SP500 position at 20:00 CET (14:00 ET).
             # Mechanical — does not rely on LLM.
             if _hf_orb >= _SP500_END:
@@ -950,9 +954,6 @@ def main():
             )
 
             # ORB triggers — all time-based, run every loop, no LLM needed.
-            _now_orb = datetime.now(timezone.utc).astimezone(_VIENNA_TZ)
-            _hf_orb = _now_orb.hour + _now_orb.minute / 60 + _now_orb.second / 3600
-            _today_orb = _now_orb.date()
 
             # Compute current ORB phase from clock alone (mirrors the in-LLM logic).
             def _orb_phase_now(hf):
