@@ -43,21 +43,14 @@ BIAS_WINDOW    = 50   # 1H bars used for rolling bias computation
 
 _UTC = timezone.utc
 
-# Session windows in UTC hours (start, end)
-_SESSION_WINDOWS_UTC: list[tuple[float, float]] = [
-    (8.0,  10.0),   # London open
-    (13.5, 15.5),   # NY open  (13:30–15:30)
-]
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _in_session_utc(ts_ms: int) -> bool:
+def _in_session_utc(ts_ms: int, windows: list[tuple[float, float]]) -> bool:
     dt = datetime.fromtimestamp(ts_ms / 1000, tz=_UTC)
     hf = dt.hour + dt.minute / 60
-    return any(s <= hf < e for s, e in _SESSION_WINDOWS_UTC)
+    return any(s <= hf < e for s, e in windows)
 
 
 def _resample_1h(candles_5m: list[dict]) -> list[dict]:
@@ -166,31 +159,39 @@ def _find_bearish_fvg(bars: list[dict]) -> tuple[float, float] | None:
 # Config
 # ---------------------------------------------------------------------------
 
+_WIN_NARROW  = [(8.0, 10.0), (13.5, 15.5)]          # 3.5h — London open + NY open
+_WIN_MEDIUM  = [(7.0, 11.5), (13.0, 16.5)]          # 8h   — extended London + overlap + NY
+_WIN_BROAD   = [(7.0, 17.0)]                         # 10h  — full EU/US day
+_WIN_XBROAD  = [(6.0, 20.0)]                         # 14h  — near-24h excluding deep Asia
+
+
 @dataclass
 class SmcConfig:
-    session_filter: bool = False
-    bias_filter:    bool = False
-    choch_timeout:  int  = 48
-    swing_lookback: int  = 5
-    sweep_lookback: int  = 20
-    label:          str  = "Baseline"
+    bias_filter:    bool                          = False
+    session_windows: list[tuple[float,float]] | None = None  # None = no filter
+    choch_timeout:  int                           = 48
+    swing_lookback: int                           = 5
+    sweep_lookback: int                           = 20
+    label:          str                           = "Baseline"
 
 
 def _make_configs() -> list["SmcConfig"]:
-    # Fix timeout=48b, SL5 (best from prior runs); vary sweep lookback 20/40/60
+    # Fix SL5, 48b, SW20 (best from prior runs); vary session windows × bias filter
     configs = []
-    for sl in [20, 40, 60]:
-        suffix = f"SW{sl}"
-        configs += [
-            SmcConfig(session_filter=False, bias_filter=False, sweep_lookback=sl,
-                      label=f"Baseline / {suffix}"),
-            SmcConfig(session_filter=True,  bias_filter=False, sweep_lookback=sl,
-                      label=f"+ Session / {suffix}"),
-            SmcConfig(session_filter=False, bias_filter=True,  sweep_lookback=sl,
-                      label=f"+ 1H Bias / {suffix}"),
-            SmcConfig(session_filter=True,  bias_filter=True,  sweep_lookback=sl,
-                      label=f"+ Session + Bias / {suffix}"),
-        ]
+    sessions = [
+        (None,         "No session"),
+        (_WIN_NARROW,  "Narrow  08-10+13:30-15:30"),
+        (_WIN_MEDIUM,  "Medium  07-11:30+13-16:30"),
+        (_WIN_BROAD,   "Broad   07-17"),
+        (_WIN_XBROAD,  "XBroad  06-20"),
+    ]
+    for windows, sess_label in sessions:
+        for bias, bias_label in [(False, "no bias"), (True, "+ bias")]:
+            configs.append(SmcConfig(
+                bias_filter=bias,
+                session_windows=windows,
+                label=f"{sess_label} / {bias_label}",
+            ))
     return configs
 
 
@@ -328,7 +329,7 @@ def _run_simulation(
         if recent_lows and (not cfg.bias_filter or bias == "bull"):
             _, sl_price = recent_lows[-1]
             if bar["low"] < sl_price and bar["close"] > sl_price:
-                if not cfg.session_filter or _in_session_utc(bar["t"]):
+                if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
                     highs_before = [s for s in visible_swing_highs if s[0] < i]
                     if highs_before:
                         state          = "SWEPT"
@@ -344,7 +345,7 @@ def _run_simulation(
         if recent_highs and (not cfg.bias_filter or bias == "bear"):
             _, sh_price = recent_highs[-1]
             if bar["high"] > sh_price and bar["close"] < sh_price:
-                if not cfg.session_filter or _in_session_utc(bar["t"]):
+                if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
                     lows_before = [s for s in visible_swing_lows if s[0] < i]
                     if lows_before:
                         state          = "SWEPT"
