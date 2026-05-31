@@ -2215,9 +2215,12 @@ def main():
         _api_port = int(os.getenv("API_PORT") or os.getenv("APP_PORT") or "3000")
         _apply_auth = bool(_dash_user and _dash_pass and _api_port == 3000)
 
+        # Paths that don't require auth (AJAX calls from already-authenticated dashboard)
+        _NO_AUTH_PATHS = {'/llm-pause'}
+
         @web.middleware
         async def auth(request, handler):
-            if _apply_auth:
+            if _apply_auth and request.path not in _NO_AUTH_PATHS:
                 header = request.headers.get("Authorization", "")
                 if header.startswith("Basic "):
                     try:

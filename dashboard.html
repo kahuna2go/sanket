@@ -1204,7 +1204,7 @@
 
   async function toggleLlmPause() {
     try {
-      const r = await fetch(`${API}/llm-pause`, { method: 'POST', credentials: 'include' });
+      const r = await fetch(`${API}/llm-pause`, { method: 'POST' });
       const d = await r.json();
       updateLlmPauseBtn(d.llm_paused);
     } catch(e) { console.warn('toggle failed', e); }
