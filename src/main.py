@@ -1759,18 +1759,22 @@ def main():
                         order_type = output.get("order_type", "market")
                         limit_price = output.get("limit_price")
 
-                        # Cancel resting entry limit orders before opening a new one.
-                        # If cancel fails, skip the order — don't stack on uncancelled limits.
-                        try:
-                            cancelled = await hyperliquid.cancel_limit_orders(asset, cached_orders=open_orders)
-                            if cancelled.get("status") == "error":
-                                add_event(f"Pre-trade cancel failed for {asset}: {cancelled.get('message')} — skipping order")
+                        # Cancel resting entry limit orders before opening a new one —
+                        # EXCEPT for Fib assets placing a new limit: multiple concurrent
+                        # entry limits are allowed there (each risk-validated individually).
+                        # Market opens still cancel first (reconcile loop would orphan them anyway).
+                        _skip_precancel = (asset in _FIB_ASSETS and order_type == "limit" and not existing_tr)
+                        if not _skip_precancel:
+                            try:
+                                cancelled = await hyperliquid.cancel_limit_orders(asset, cached_orders=open_orders)
+                                if cancelled.get("status") == "error":
+                                    add_event(f"Pre-trade cancel failed for {asset}: {cancelled.get('message')} — skipping order")
+                                    continue
+                                if cancelled.get("cancelled_count", 0) > 0:
+                                    add_event(f"Cancelled {cancelled['cancelled_count']} entry limit(s) for {asset} before new {action} order")
+                            except Exception as _ce:
+                                add_event(f"Pre-trade cancel error for {asset}: {_ce} — skipping order")
                                 continue
-                            if cancelled.get("cancelled_count", 0) > 0:
-                                add_event(f"Cancelled {cancelled['cancelled_count']} entry limit(s) for {asset} before new {action} order")
-                        except Exception as _ce:
-                            add_event(f"Pre-trade cancel error for {asset}: {_ce} — skipping order")
-                            continue
 
                         # Enforce exchange-side leverage before every order.
                         # check_leverage() only validates allocation/balance ratio; the
