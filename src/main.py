@@ -872,7 +872,7 @@ def main():
 
             dashboard = {
                 "total_return_pct": round(total_return_pct, 2),
-                "available_margin": round_or_none(state['balance'], 2),
+                "balance": round_or_none(state['balance'], 2),
                 "account_value": round_or_none(account_value, 2),
                 "positions": positions,
                 "active_trades": [
@@ -1565,7 +1565,7 @@ def main():
                 "reasoning": reasoning_text[:2000] if reasoning_text else "",
                 "decisions": cycle_decisions,
                 "account_value": round_or_none(account_value, 2),
-                "available_margin": round_or_none(state['balance'], 2),
+                "balance": round_or_none(state['balance'], 2),
                 "positions_count": len([p for p in state['positions'] if abs(float(p.get('szi') or 0)) > 0]),
             }
             try:
