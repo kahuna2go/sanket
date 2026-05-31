@@ -1176,6 +1176,12 @@ def main():
                 prev_positions_count = len(active_trades)
                 prev_account_value = account_value
                 prev_asset_prices = dict(asset_prices)
+                last_state = {
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
+                    "session_start": start_time.isoformat(),
+                    "initial_account_value": initial_account_value,
+                    "account": dashboard,
+                }
                 await asyncio.sleep(_effective_interval_secs)
                 continue
 
