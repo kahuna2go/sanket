@@ -422,12 +422,13 @@ class HyperliquidAPI:
             trigger_px_nonzero = float(o.get('triggerPx') or 0) != 0.0
         except (TypeError, ValueError):
             trigger_px_nonzero = False
+        trigger_condition = o.get('triggerCondition')
         return (
             bool(o.get('isTrigger'))
             or (isinstance(ot, dict) and 'trigger' in ot)
             or (isinstance(ot, str) and 'trigger' in ot.lower())
             or trigger_px_nonzero
-            or o.get('triggerCondition') is not None
+            or (trigger_condition is not None and trigger_condition != 'N/A')
         )
 
     async def cancel_limit_orders(self, asset, cached_orders: list | None = None):
