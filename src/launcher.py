@@ -233,7 +233,7 @@ async def handle_proxy(request):
     url  = f"http://127.0.0.1:{port}{path}"
     try:
         async with _aio.ClientSession() as sess:
-            async with sess.get(url, timeout=_aio.ClientTimeout(total=5)) as r:
+            async with sess.request(request.method, url, timeout=_aio.ClientTimeout(total=5)) as r:
                 body  = await r.read()
                 ctype = r.headers.get("Content-Type", "application/json")
                 return web.Response(body=body, content_type=ctype.split(";")[0].strip(), status=r.status)
