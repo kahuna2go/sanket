@@ -167,32 +167,28 @@ _WIN_XBROAD  = [(6.0, 20.0)]                         # 14h  — near-24h excludi
 
 @dataclass
 class SmcConfig:
-    bias_filter:    bool                          = False
+    bias_filter:     bool                          = False
     session_windows: list[tuple[float,float]] | None = None  # None = no filter
-    choch_timeout:  int                           = 48
-    swing_lookback: int                           = 5
-    sweep_lookback: int                           = 20
-    label:          str                           = "Baseline"
+    choch_timeout:   int                           = 48
+    swing_lookback:  int                           = 5
+    sweep_lookback:  int                           = 20
+    fvg_entry:       str                           = "top"   # "top" or "mid50"
+    label:           str                           = "Baseline"
 
 
 def _make_configs() -> list["SmcConfig"]:
-    # Fix SL5, 48b, SW20 (best from prior runs); vary session windows × bias filter
-    configs = []
-    sessions = [
-        (None,         "No session"),
-        (_WIN_NARROW,  "Narrow  08-10+13:30-15:30"),
-        (_WIN_MEDIUM,  "Medium  07-11:30+13-16:30"),
-        (_WIN_BROAD,   "Broad   07-17"),
-        (_WIN_XBROAD,  "XBroad  06-20"),
+    # Fix Narrow session, SL5, 48b, SW20; compare entry at top vs 50% midpoint
+    # across the two best filter combos from prior runs
+    return [
+        SmcConfig(bias_filter=False, session_windows=_WIN_NARROW, fvg_entry="top",
+                  label="Narrow / no bias / entry@top"),
+        SmcConfig(bias_filter=False, session_windows=_WIN_NARROW, fvg_entry="mid50",
+                  label="Narrow / no bias / entry@mid50"),
+        SmcConfig(bias_filter=True,  session_windows=_WIN_NARROW, fvg_entry="top",
+                  label="Narrow / + bias  / entry@top"),
+        SmcConfig(bias_filter=True,  session_windows=_WIN_NARROW, fvg_entry="mid50",
+                  label="Narrow / + bias  / entry@mid50"),
     ]
-    for windows, sess_label in sessions:
-        for bias, bias_label in [(False, "no bias"), (True, "+ bias")]:
-            configs.append(SmcConfig(
-                bias_filter=bias,
-                session_windows=windows,
-                label=f"{sess_label} / {bias_label}",
-            ))
-    return configs
 
 
 ALL_SMC_CONFIGS = _make_configs()
@@ -262,13 +258,17 @@ def _run_simulation(
 
         # ── FVG_WAIT ──────────────────────────────────────────────────────────
         if state == "FVG_WAIT":
+            mid = (fvg_hi + fvg_lo) / 2
+            bull_trigger = mid  if cfg.fvg_entry == "mid50" else fvg_hi
+            bear_trigger = mid  if cfg.fvg_entry == "mid50" else fvg_lo
+
             if sweep_type == "bull":
                 if bar["low"] < fvg_lo:
                     # Price blew through the FVG bottom — setup invalidated
                     d_inval += 1; state = "IDLE"
-                elif bar["low"] <= fvg_hi:
-                    # Price enters FVG from above → long entry at fvg_hi
-                    entry = fvg_hi
+                elif bar["low"] <= bull_trigger:
+                    # Price enters FVG → long entry
+                    entry = bull_trigger
                     risk  = entry - sweep_price
                     if risk > 0:
                         trade_entry = entry
@@ -282,9 +282,9 @@ def _run_simulation(
             else:  # bear
                 if bar["high"] > fvg_hi:
                     d_inval += 1; state = "IDLE"
-                elif bar["high"] >= fvg_lo:
-                    # Price enters FVG from below → short entry at fvg_lo
-                    entry = fvg_lo
+                elif bar["high"] >= bear_trigger:
+                    # Price enters FVG → short entry
+                    entry = bear_trigger
                     risk  = sweep_price - entry
                     if risk > 0:
                         trade_entry = entry
