@@ -39,7 +39,6 @@ from src.indicators.local_indicators import swing_structure
 MIN_TRADES    = 20
 TP_R          = 3.0
 SL_R          = 1.0
-SWING_LOOKBACK = 5    # bars on each side for swing confirmation
 SWEEP_LOOKBACK = 20   # max bars back for a swing to still be "recent"
 BIAS_WINDOW    = 50   # 1H bars used for rolling bias computation
 
@@ -116,19 +115,19 @@ def _align_bias_to_5m(bias_1h: list[str | None], n_5m: int) -> list[str | None]:
 # Swing detection (precomputed, no lookahead via SWING_LOOKBACK delay)
 # ---------------------------------------------------------------------------
 
-def _find_swings(candles: list[dict]) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
+def _find_swings(candles: list[dict], lookback: int) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
     """Return (swing_lows, swing_highs) as (index, price) pairs.
 
-    A swing at index j is confirmed in the simulation at bar j + SWING_LOOKBACK.
+    A swing at index j is confirmed in the simulation at bar j + lookback.
     """
     n = len(candles)
     highs = [c["high"] for c in candles]
     lows  = [c["low"]  for c in candles]
     sl: list[tuple[int, float]] = []
     sh: list[tuple[int, float]] = []
-    for j in range(SWING_LOOKBACK, n - SWING_LOOKBACK):
-        neighbors_l = lows[j - SWING_LOOKBACK:j] + lows[j + 1:j + SWING_LOOKBACK + 1]
-        neighbors_h = highs[j - SWING_LOOKBACK:j] + highs[j + 1:j + SWING_LOOKBACK + 1]
+    for j in range(lookback, n - lookback):
+        neighbors_l = lows[j - lookback:j] + lows[j + 1:j + lookback + 1]
+        neighbors_h = highs[j - lookback:j] + highs[j + 1:j + lookback + 1]
         if lows[j]  < min(neighbors_l):
             sl.append((j, lows[j]))
         if highs[j] > max(neighbors_h):
@@ -172,22 +171,24 @@ def _find_bearish_fvg(bars: list[dict]) -> tuple[float, float] | None:
 class SmcConfig:
     session_filter: bool = False
     bias_filter:    bool = False
-    choch_timeout:  int  = 12
+    choch_timeout:  int  = 48
+    swing_lookback: int  = 5
     label:          str  = "Baseline"
 
 
 def _make_configs() -> list["SmcConfig"]:
+    # Fix timeout at 48b (best from prior run); vary swing lookback 3/5/7
     configs = []
-    for timeout in [12, 24, 48]:
-        suffix = f"CHoCH {timeout}b"
+    for lb in [3, 5, 7]:
+        suffix = f"SL{lb}"
         configs += [
-            SmcConfig(session_filter=False, bias_filter=False, choch_timeout=timeout,
+            SmcConfig(session_filter=False, bias_filter=False, swing_lookback=lb,
                       label=f"Baseline / {suffix}"),
-            SmcConfig(session_filter=True,  bias_filter=False, choch_timeout=timeout,
+            SmcConfig(session_filter=True,  bias_filter=False, swing_lookback=lb,
                       label=f"+ Session / {suffix}"),
-            SmcConfig(session_filter=False, bias_filter=True,  choch_timeout=timeout,
+            SmcConfig(session_filter=False, bias_filter=True,  swing_lookback=lb,
                       label=f"+ 1H Bias / {suffix}"),
-            SmcConfig(session_filter=True,  bias_filter=True,  choch_timeout=timeout,
+            SmcConfig(session_filter=True,  bias_filter=True,  swing_lookback=lb,
                       label=f"+ Session + Bias / {suffix}"),
         ]
     return configs
@@ -210,7 +211,8 @@ def _run_simulation(
     if n < 100:
         return {}
 
-    swing_lows, swing_highs = _find_swings(candles_5m)
+    lb = cfg.swing_lookback
+    swing_lows, swing_highs = _find_swings(candles_5m, lb)
 
     trades: list[float] = []
 
@@ -235,11 +237,11 @@ def _run_simulation(
     for i in range(n):
         bar = candles_5m[i]
 
-        # Advance visible swings: swing at j confirmed at bar j + SWING_LOOKBACK
-        while sl_ptr < len(swing_lows)  and swing_lows[sl_ptr][0]  + SWING_LOOKBACK <= i:
+        # Advance visible swings: swing at j confirmed at bar j + lb
+        while sl_ptr < len(swing_lows)  and swing_lows[sl_ptr][0]  + lb <= i:
             visible_swing_lows.append(swing_lows[sl_ptr])
             sl_ptr += 1
-        while sh_ptr < len(swing_highs) and swing_highs[sh_ptr][0] + SWING_LOOKBACK <= i:
+        while sh_ptr < len(swing_highs) and swing_highs[sh_ptr][0] + lb <= i:
             visible_swing_highs.append(swing_highs[sh_ptr])
             sh_ptr += 1
 

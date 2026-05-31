@@ -34,3 +34,24 @@
 | + Session / CHoCH 48b | 115 | 30.4% | 3.00 | +25.0 | +0.217 | -17.0R | GO ✓ |
 | + 1H Bias / CHoCH 48b | 98 | 26.5% | 3.00 | +6.0 | +0.061 | -11.0R | NO-GO ✗ |
 | + Session + Bias / CHoCH 48b | 36 | 36.1% | 3.00 | +16.0 | +0.444 | -7.0R | GO ✓ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-05-31 05:07 UTC  |  **Entry TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [1H bias, 5M entry, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Baseline / SL3 | 168 | 25.6% | 3.00 | +4.0 | +0.024 | -14.0R | NO-GO ✗ |
+| + Session / SL3 | 93 | 23.7% | 3.00 | -5.0 | -0.054 | -11.0R | NO-GO ✗ |
+| + 1H Bias / SL3 | 68 | 22.1% | 3.00 | -8.0 | -0.118 | -18.0R | NO-GO ✗ |
+| + Session + Bias / SL3 | 48 | 31.2% | 3.00 | +12.0 | +0.250 | -13.0R | GO ✓ |
+| Baseline / SL5 | 128 | 22.7% | 3.00 | -12.0 | -0.094 | -36.0R | NO-GO ✗ |
+| + Session / SL5 | 115 | 30.4% | 3.00 | +25.0 | +0.217 | -17.0R | GO ✓ |
+| + 1H Bias / SL5 | 98 | 26.5% | 3.00 | +6.0 | +0.061 | -11.0R | NO-GO ✗ |
+| + Session + Bias / SL5 | 36 | 36.1% | 3.00 | +16.0 | +0.444 | -7.0R | GO ✓ |
+| Baseline / SL7 | 85 | 23.5% | 3.00 | -5.0 | -0.059 | -22.0R | NO-GO ✗ |
+| + Session / SL7 | 35 | 22.9% | 3.00 | -3.0 | -0.086 | -11.0R | NO-GO ✗ |
+| + 1H Bias / SL7 | 64 | 23.4% | 3.00 | -4.0 | -0.062 | -19.0R | NO-GO ✗ |
+| + Session + Bias / SL7 | 24 | 37.5% | 3.00 | +12.0 | +0.500 | -6.0R | GO ✓ |
