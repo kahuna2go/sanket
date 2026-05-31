@@ -416,11 +416,17 @@ class HyperliquidAPI:
     def _is_trigger_order(self, o) -> bool:
         """Return True if order is a TP/SL trigger regardless of orderType format."""
         ot = o.get('orderType')
+        # Hyperliquid sends triggerPx="0" (string) for plain limit orders — must do a
+        # numeric check, not bool(), because bool("0") is True in Python.
+        try:
+            trigger_px_nonzero = float(o.get('triggerPx') or 0) != 0.0
+        except (TypeError, ValueError):
+            trigger_px_nonzero = False
         return (
             bool(o.get('isTrigger'))
             or (isinstance(ot, dict) and 'trigger' in ot)
             or (isinstance(ot, str) and 'trigger' in ot.lower())
-            or bool(o.get('triggerPx'))
+            or trigger_px_nonzero
             or o.get('triggerCondition') is not None
         )
 

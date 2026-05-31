@@ -1569,6 +1569,23 @@ def main():
                     rationale = output.get("rationale", "")
                     thesis_strength = output.get("thesis_strength")
                     if action == "cancel_limits":
+                        # For Fib-entry assets (ETH, SOL): protect a pending limit entry order.
+                        # If there are resting limits on the book but no open position, the order
+                        # is a valid unfilled entry — hold it regardless of thesis_strength.
+                        # cancel_limits should only execute when there IS a position (orphan cleanup)
+                        # or there are genuinely no orders to protect.
+                        if asset in _FIB_ASSETS and asset not in assets_with_positions:
+                            _pending = [o for o in (open_orders or [])
+                                        if hyperliquid._coin_matches(o.get('coin', ''), asset)
+                                        and not hyperliquid._is_trigger_order(o)]
+                            if _pending:
+                                add_event(
+                                    f"CANCEL_LIMITS {asset} blocked — {len(_pending)} pending entry "
+                                    f"limit(s) preserved (set-and-forget; no position open)"
+                                )
+                                print_decision(asset, "hold", rationale, thesis_strength,
+                                               extra="set-and-forget: limit preserved")
+                                continue
                         try:
                             result = await hyperliquid.cancel_limit_orders(asset, cached_orders=open_orders)
                             n = result.get("cancelled_count", 0)
