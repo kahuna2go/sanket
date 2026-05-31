@@ -39,7 +39,6 @@ from src.indicators.local_indicators import swing_structure
 MIN_TRADES    = 20
 TP_R          = 3.0
 SL_R          = 1.0
-SWEEP_LOOKBACK = 20   # max bars back for a swing to still be "recent"
 BIAS_WINDOW    = 50   # 1H bars used for rolling bias computation
 
 _UTC = timezone.utc
@@ -173,22 +172,23 @@ class SmcConfig:
     bias_filter:    bool = False
     choch_timeout:  int  = 48
     swing_lookback: int  = 5
+    sweep_lookback: int  = 20
     label:          str  = "Baseline"
 
 
 def _make_configs() -> list["SmcConfig"]:
-    # Fix timeout at 48b (best from prior run); vary swing lookback 3/5/7
+    # Fix timeout=48b, SL5 (best from prior runs); vary sweep lookback 20/40/60
     configs = []
-    for lb in [3, 5, 7]:
-        suffix = f"SL{lb}"
+    for sl in [20, 40, 60]:
+        suffix = f"SW{sl}"
         configs += [
-            SmcConfig(session_filter=False, bias_filter=False, swing_lookback=lb,
+            SmcConfig(session_filter=False, bias_filter=False, sweep_lookback=sl,
                       label=f"Baseline / {suffix}"),
-            SmcConfig(session_filter=True,  bias_filter=False, swing_lookback=lb,
+            SmcConfig(session_filter=True,  bias_filter=False, sweep_lookback=sl,
                       label=f"+ Session / {suffix}"),
-            SmcConfig(session_filter=False, bias_filter=True,  swing_lookback=lb,
+            SmcConfig(session_filter=False, bias_filter=True,  sweep_lookback=sl,
                       label=f"+ 1H Bias / {suffix}"),
-            SmcConfig(session_filter=True,  bias_filter=True,  swing_lookback=lb,
+            SmcConfig(session_filter=True,  bias_filter=True,  sweep_lookback=sl,
                       label=f"+ Session + Bias / {suffix}"),
         ]
     return configs
@@ -319,8 +319,8 @@ def _run_simulation(
             continue
 
         # ── IDLE: detect sweeps ───────────────────────────────────────────────
-        recent_lows  = [s for s in visible_swing_lows  if s[0] >= i - SWEEP_LOOKBACK]
-        recent_highs = [s for s in visible_swing_highs if s[0] >= i - SWEEP_LOOKBACK]
+        recent_lows  = [s for s in visible_swing_lows  if s[0] >= i - cfg.sweep_lookback]
+        recent_highs = [s for s in visible_swing_highs if s[0] >= i - cfg.sweep_lookback]
 
         bias = bias_5m[i]
 
