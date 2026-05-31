@@ -454,6 +454,7 @@
         &nbsp;&nbsp;CYCLE&nbsp;<span id="cycle">—</span>
         &nbsp;&nbsp;UPDATED&nbsp;<span id="updated">—</span>
       </div>
+      <button id="llm-pause-btn" onclick="toggleLlmPause()" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;cursor:pointer;border:1px solid var(--accent);background:transparent;color:var(--accent);">LLM ACTIVE</button>
       <div class="refresh-wrap">
         <div class="refresh-track"><div class="refresh-fill" id="rfill"></div></div>
         <div class="refresh-label">10s</div>
@@ -1177,11 +1178,36 @@
       renderDecisions(data);
       renderModel(data);
       updateCbBanner(detectCircuitBreaker(data));
+      updateLlmPauseBtn(data.llm_paused);
       startProgress();
     } catch (e) {
       console.warn('Fetch failed:', e);
       setTxt('updated', 'offline');
     }
+  }
+
+  function updateLlmPauseBtn(paused) {
+    const btn = document.getElementById('llm-pause-btn');
+    if (!btn) return;
+    if (paused) {
+      btn.textContent = 'LLM PAUSED';
+      btn.style.background = 'var(--warn)';
+      btn.style.color = '#fff';
+      btn.style.borderColor = 'var(--warn)';
+    } else {
+      btn.textContent = 'LLM ACTIVE';
+      btn.style.background = 'transparent';
+      btn.style.color = 'var(--accent)';
+      btn.style.borderColor = 'var(--accent)';
+    }
+  }
+
+  async function toggleLlmPause() {
+    try {
+      const r = await fetch(`${API}/llm-pause`, { method: 'POST' });
+      const d = await r.json();
+      updateLlmPauseBtn(d.llm_paused);
+    } catch(e) { console.warn('toggle failed', e); }
   }
 
   initLlmCostInput();

@@ -152,6 +152,7 @@ def main():
     model_usage = {"sonnet": 0, "skipped": 0}
     last_sonnet_time: datetime | None = None
     last_sonnet_prices: dict = {}
+    llm_paused: bool = False  # toggled via /llm-pause — suppresses LLM, all assets auto-hold
     # Perp mid-price history sampled each loop (authoritative, avoids spot/perp basis mismatch)
     price_history = {}
 
@@ -163,7 +164,7 @@ def main():
 
     async def run_loop():
         """Main trading loop that gathers data, calls the agent, and executes trades."""
-        nonlocal invocation_count, initial_account_value, prev_positions_count, prev_account_value, prev_asset_prices, last_state, model_usage, last_sonnet_time, last_sonnet_prices
+        nonlocal invocation_count, initial_account_value, prev_positions_count, prev_account_value, prev_asset_prices, last_state, model_usage, last_sonnet_time, last_sonnet_prices, llm_paused
 
         # Pre-load meta cache for correct order sizing
         await hyperliquid.get_meta_and_ctxs()
@@ -1152,6 +1153,10 @@ def main():
 
             use_sonnet = first_run or price_moved or tpsl_near or health_check_due or orb_breakout or orb_phase_trigger
 
+            if use_sonnet and llm_paused:
+                use_sonnet = False
+                add_event("LLM paused via dashboard — auto-hold all assets")
+
             if use_sonnet and macro_ctx.get("block_new_opens") and not active_trades and not health_check_due and not price_moved and not orb_breakout and not orb_phase_trigger:
                 use_sonnet = False
                 add_event("Skipping LLM: block_new_opens=True and no open positions to manage")
@@ -2039,6 +2044,7 @@ def main():
                 "uptime_minutes": round((datetime.now(timezone.utc) - start_time).total_seconds() / 60, 1),
                 "invocation_count": invocation_count,
                 "model_usage": model_usage,
+                "llm_paused": llm_paused,
                 "recent_decisions": recent_decisions,
                 **last_state,
             })
@@ -2181,6 +2187,14 @@ def main():
         dashboard = pathlib.Path(__file__).parent.parent / "dashboard.html"
         return web.FileResponse(dashboard)
 
+    async def handle_llm_pause(request):
+        """Toggle LLM pause state. POST to flip, GET to query."""
+        nonlocal llm_paused
+        if request.method == "POST":
+            llm_paused = not llm_paused
+            logging.info("LLM %s via dashboard", "PAUSED" if llm_paused else "RESUMED")
+        return web.json_response({"llm_paused": llm_paused})
+
     async def start_api(app):
         """Register HTTP endpoints for observing diary entries and logs."""
         app.router.add_get('/', handle_dashboard)
@@ -2188,6 +2202,8 @@ def main():
         app.router.add_get('/logs', handle_logs)
         app.router.add_get('/state', handle_state)
         app.router.add_get('/history', handle_history)
+        app.router.add_get('/llm-pause', handle_llm_pause)
+        app.router.add_post('/llm-pause', handle_llm_pause)
 
     async def main_async():
         """Start the aiohttp server and kick off the trading loop."""
