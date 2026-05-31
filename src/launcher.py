@@ -288,9 +288,11 @@ def build_app() -> web.Application:
     _dash_user = os.getenv("DASHBOARD_USER")
     _dash_pass = os.getenv("DASHBOARD_PASSWORD")
 
+    _NO_AUTH_PATHS = {'/llm-pause'}
+
     @web.middleware
     async def auth(request, handler):
-        if _dash_user and _dash_pass:
+        if _dash_user and _dash_pass and request.path not in _NO_AUTH_PATHS:
             header = request.headers.get("Authorization", "")
             if header.startswith("Basic "):
                 try:
@@ -322,6 +324,8 @@ def build_app() -> web.Application:
     # Proxy LLM strategy endpoints so dashboard.html works unchanged on port 3000
     for path in ("/state", "/history", "/diary", "/logs"):
         app.router.add_get(path, handle_proxy)
+    app.router.add_get("/llm-pause",  handle_proxy)
+    app.router.add_post("/llm-pause", handle_proxy)
     return app
 
 
