@@ -360,7 +360,7 @@ def main():
                         "oid": o.get('oid'),
                         "is_buy": o.get('isBuy'),
                         "size": round_or_none(o.get('sz'), 6),
-                        "price": round_or_none(o.get('px'), 2),
+                        "price": round_or_none(o.get('limitPx') or o.get('px'), 2),
                         "trigger_price": round_or_none(o.get('triggerPx'), 2),
                         "is_trigger": o.get('isTrigger', False),
                         "order_type": o.get('orderType'),
