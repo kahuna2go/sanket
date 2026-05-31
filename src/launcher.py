@@ -29,6 +29,20 @@ logging.basicConfig(
 
 DASHBOARD_HTML = pathlib.Path(__file__).parent.parent / "dashboard.html"
 PYTHON = sys.executable
+_ROOT = pathlib.Path(__file__).parent.parent
+_PAUSE_FILE = _ROOT / "data" / "llm_pause.json"
+
+
+def _get_llm_paused() -> bool:
+    try:
+        return json.loads(_PAUSE_FILE.read_text()).get("paused", False)
+    except Exception:
+        return False
+
+
+def _set_llm_paused(v: bool):
+    _PAUSE_FILE.parent.mkdir(exist_ok=True)
+    _PAUSE_FILE.write_text(json.dumps({"paused": v}))
 
 # Per-strategy state
 _strategies: dict[str, dict] = {
@@ -222,6 +236,27 @@ _STUB_STATE = {
     "model_usage": {}, "recent_decisions": [],
 }
 
+async def handle_llm_pause(request):
+    """Toggle or query the LLM pause flag.
+
+    Works before the LLM strategy starts (state persisted in a file).
+    When the strategy is running, also syncs the flag to the subprocess.
+    """
+    import aiohttp as _aio
+    if request.method == "POST":
+        _set_llm_paused(not _get_llm_paused())
+        # Best-effort sync to running process
+        if _is_running("llm"):
+            try:
+                port = _strategies["llm"]["port"]
+                async with _aio.ClientSession() as sess:
+                    await sess.post(f"http://127.0.0.1:{port}/llm-pause",
+                                    timeout=_aio.ClientTimeout(total=2))
+            except Exception:
+                pass
+    return web.json_response({"llm_paused": _get_llm_paused()})
+
+
 async def handle_proxy(request):
     """Proxy LLM strategy API endpoints to port 3001 so dashboard works unchanged.
     When LLM is not running, return stub data so the dashboard renders (overlay clears)
@@ -324,8 +359,8 @@ def build_app() -> web.Application:
     # Proxy LLM strategy endpoints so dashboard.html works unchanged on port 3000
     for path in ("/state", "/history", "/diary", "/logs"):
         app.router.add_get(path, handle_proxy)
-    app.router.add_get("/llm-pause",  handle_proxy)
-    app.router.add_post("/llm-pause", handle_proxy)
+    app.router.add_get("/llm-pause",  handle_llm_pause)
+    app.router.add_post("/llm-pause", handle_llm_pause)
     return app
 
 

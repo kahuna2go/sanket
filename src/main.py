@@ -152,7 +152,13 @@ def main():
     model_usage = {"sonnet": 0, "skipped": 0}
     last_sonnet_time: datetime | None = None
     last_sonnet_prices: dict = {}
-    llm_paused: bool = False  # toggled via /llm-pause — suppresses LLM, all assets auto-hold
+    # Read pause state set by launcher before process started
+    try:
+        llm_paused: bool = json.loads((_ROOT / "data" / "llm_pause.json").read_text()).get("paused", False)
+        if llm_paused:
+            logging.info("LLM starting in PAUSED state (set via dashboard before launch)")
+    except Exception:
+        llm_paused: bool = False
     # Perp mid-price history sampled each loop (authoritative, avoids spot/perp basis mismatch)
     price_history = {}
 
