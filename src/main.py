@@ -2257,11 +2257,12 @@ def main():
         app = web.Application(middlewares=[auth, cors])
         await start_api(app)
         from src.config_loader import CONFIG as CFG
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, CFG.get("api_host"), int(CFG.get("api_port")))
-        await site.start()
         strategy = (CFG.get("strategy") or "llm").lower()
+        if strategy == "llm":
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, CFG.get("api_host"), int(CFG.get("api_port")))
+            await site.start()
         if strategy == "hybrid":
             from src.strategies.hybrid.hybrid_manager import HybridManager
             mgr = HybridManager(hyperliquid, risk_mgr)
@@ -2281,7 +2282,7 @@ def main():
             await hyperliquid.get_meta_and_ctxs()
             strat = Smc(hyperliquid, dry_run=dry_run)
             await strat.run()
-        elif strategy == "sol_smc":
+        elif strategy == "smocy":
             from src.strategies.sol_momentum import SolMomentum
             from src.strategies.smc import Smc
             from src.config_loader import CONFIG as _CFG
