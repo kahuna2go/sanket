@@ -1317,15 +1317,28 @@
     es.onerror = () => { es.close(); delete _logEs[name]; setTimeout(() => connectLog(name), 5000); };
   }
 
+  function _copyFlash(name) {
+    const btn = document.getElementById('log-copy-' + name);
+    btn.textContent = 'COPIED';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'COPY'; btn.classList.remove('copied'); }, 1500);
+  }
+  function _legacyCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+  }
   function lcCopyLog(name) {
-    const el = document.getElementById('log-body-' + name);
-    const text = el.innerText || el.textContent;
-    navigator.clipboard.writeText(text).then(() => {
-      const btn = document.getElementById('log-copy-' + name);
-      btn.textContent = 'COPIED';
-      btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = 'COPY'; btn.classList.remove('copied'); }, 1500);
-    });
+    const text = (document.getElementById('log-body-' + name).innerText || '');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => _copyFlash(name)).catch(() => { _legacyCopy(text); _copyFlash(name); });
+    } else {
+      _legacyCopy(text); _copyFlash(name);
+    }
   }
 
   function lcToggleLog(name) {
