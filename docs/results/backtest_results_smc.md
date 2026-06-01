@@ -135,3 +135,13 @@
 | FVG_WAIT 12b  (1 h) | 67 | 26.9% | 3.00 | +5.0 | +0.075 | -7.0R | NO-GO ✗ |
 | FVG_WAIT 24b  (2 h) | 96 | 26.0% | 3.00 | +4.0 | +0.042 | -11.0R | NO-GO ✗ |
 | FVG_WAIT 48b  (4 h) | 109 | 24.8% | 3.00 | -1.0 | -0.009 | -13.0R | NO-GO ✗ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-01 10:47 UTC  |  **Entry TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [1H bias, 5M entry, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A | 67 | 32.8% | 3.00 | +21.0 | +0.313 | -8.0R | GO ✓ |

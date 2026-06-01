@@ -200,19 +200,9 @@ class SmcConfig:
 
 
 def _make_configs() -> list["SmcConfig"]:
-    # Fix Candidate A params (Narrow session, no bias, mid50, 48b, SL5, SW20, sweep=any)
-    # Vary fvg_wait_timeout to free up blocked state machine
+    # Candidate A — final locked config
     return [
-        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=None,
-                  label="FVG_WAIT unlimited (baseline)"),
-        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=6,
-                  label="FVG_WAIT  6b  (30 min)"),
-        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=12,
-                  label="FVG_WAIT 12b  (1 h)"),
-        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=24,
-                  label="FVG_WAIT 24b  (2 h)"),
-        SmcConfig(session_windows=_WIN_NARROW, fvg_wait_timeout=48,
-                  label="FVG_WAIT 48b  (4 h)"),
+        SmcConfig(session_windows=_WIN_NARROW, label="Candidate A"),
     ]
 
 
@@ -237,6 +227,7 @@ def _run_simulation(
     swing_lows, swing_highs = _find_swings(candles_5m, lb)
 
     trades: list[float] = []
+    durations: list[float] = []   # trade duration in hours
 
     # State machine
     state = "IDLE"
@@ -247,6 +238,7 @@ def _run_simulation(
     choch_target    = 0.0   # CHoCH fires when price closes beyond this level
     fvg_hi = fvg_lo = 0.0   # bull: entry at fvg_hi; bear: entry at fvg_lo
     fvg_wait_start  = 0     # bar index when FVG_WAIT began
+    trade_open_bar  = 0     # bar index when IN_TRADE began
     trade_type      = ""
     trade_entry     = trade_sl = trade_tp = 0.0
 
@@ -270,16 +262,21 @@ def _run_simulation(
 
         # ── IN_TRADE ──────────────────────────────────────────────────────────
         if state == "IN_TRADE":
+            closed_r = None
             if trade_type == "long":
                 if bar["low"] <= trade_sl:
-                    trades.append(-SL_R); state = "IDLE"
+                    closed_r = -SL_R
                 elif bar["high"] >= trade_tp:
-                    trades.append(TP_R);  state = "IDLE"
+                    closed_r = TP_R
             else:
                 if bar["high"] >= trade_sl:
-                    trades.append(-SL_R); state = "IDLE"
+                    closed_r = -SL_R
                 elif bar["low"] <= trade_tp:
-                    trades.append(TP_R);  state = "IDLE"
+                    closed_r = TP_R
+            if closed_r is not None:
+                trades.append(closed_r)
+                durations.append((i - trade_open_bar) * 5 / 60)  # bars → hours
+                state = "IDLE"
             continue
 
         # ── FVG_WAIT ──────────────────────────────────────────────────────────
@@ -299,12 +296,13 @@ def _run_simulation(
                     entry = bull_trigger
                     risk  = entry - sweep_price
                     if risk > 0:
-                        trade_entry = entry
-                        trade_sl    = sweep_price
-                        trade_tp    = entry + TP_R * risk
-                        trade_type  = "long"
-                        state       = "IN_TRADE"
-                        d_opened   += 1
+                        trade_entry    = entry
+                        trade_sl       = sweep_price
+                        trade_tp       = entry + TP_R * risk
+                        trade_type     = "long"
+                        trade_open_bar = i
+                        state          = "IN_TRADE"
+                        d_opened      += 1
                     else:
                         state = "IDLE"
             else:  # bear
@@ -315,12 +313,13 @@ def _run_simulation(
                     entry = bear_trigger
                     risk  = sweep_price - entry
                     if risk > 0:
-                        trade_entry = entry
-                        trade_sl    = sweep_price
-                        trade_tp    = entry - TP_R * risk
-                        trade_type  = "short"
-                        state       = "IN_TRADE"
-                        d_opened   += 1
+                        trade_entry    = entry
+                        trade_sl       = sweep_price
+                        trade_tp       = entry - TP_R * risk
+                        trade_type     = "short"
+                        trade_open_bar = i
+                        state          = "IN_TRADE"
+                        d_opened      += 1
                     else:
                         state = "IDLE"
             continue
@@ -409,6 +408,7 @@ def _run_simulation(
             risk = trade_sl - trade_entry
             r = (trade_entry - last_close) / risk if risk > 0 else 0.0
         trades.append(r)
+        durations.append((n - 1 - trade_open_bar) * 5 / 60)
 
     if debug:
         print(f"    [debug] sweeps={d_sweeps}  choch_timeout={d_timeout}"
@@ -429,6 +429,17 @@ def _run_simulation(
         peak   = max(peak, cum)
         max_dd = max(max_dd, peak - cum)
 
+    sorted_d  = sorted(durations)
+    n_d       = len(sorted_d)
+    dur_mean  = sum(sorted_d) / n_d
+    dur_med   = sorted_d[n_d // 2]
+    dur_min   = sorted_d[0]
+    dur_max   = sorted_d[-1]
+    win_dur   = [d for d, r in zip(durations, trades) if r > 0]
+    loss_dur  = [d for d, r in zip(durations, trades) if r <= 0]
+    win_mean  = sum(win_dur)  / len(win_dur)  if win_dur  else 0.0
+    loss_mean = sum(loss_dur) / len(loss_dur) if loss_dur else 0.0
+
     return {
         "trades":    len(trades),
         "wins":      wins,
@@ -437,6 +448,12 @@ def _run_simulation(
         "total_r":   total_r,
         "avg_r":     total_r / len(trades),
         "max_dd_r":  -max_dd,
+        "dur_mean":  dur_mean,
+        "dur_med":   dur_med,
+        "dur_min":   dur_min,
+        "dur_max":   dur_max,
+        "win_dur":   win_mean,
+        "loss_dur":  loss_mean,
     }
 
 
@@ -460,7 +477,7 @@ def _dt(ms: int) -> str:
 
 _STRATEGY_LABEL = "SMC Scalping: Sweep + CHoCH + FVG Fill  [1H bias, 5M entry, TP=3×risk]"
 _RESULTS_FILE = (
-    pathlib.Path(__file__).parent.parent.parent / "docs" / "results" / "backtest_results_smc.md"
+    pathlib.Path(__file__).parent.parent / "docs" / "results" / "backtest_results_smc.md"
 )
 
 
@@ -486,6 +503,12 @@ def _print_table(asset: str, candles: list, all_stats: list):
             f"{s['max_dd_r']:>7.1f}  "
             f"{_verdict(s)}"
         )
+        if "dur_mean" in s:
+            print(f"\n  Trade duration (hours):")
+            print(f"    All trades — mean: {s['dur_mean']:.1f}h  median: {s['dur_med']:.1f}h  "
+                  f"min: {s['dur_min']:.1f}h  max: {s['dur_max']:.1f}h")
+            print(f"    Winners    — mean: {s['win_dur']:.1f}h")
+            print(f"    Losers     — mean: {s['loss_dur']:.1f}h")
 
 
 def _append_results_md(asset: str, candles: list, all_stats: list):
