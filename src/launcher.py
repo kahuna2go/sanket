@@ -13,6 +13,7 @@ Usage:
 import asyncio
 import json
 import logging
+import logging.handlers
 import os
 import pathlib
 import signal
@@ -76,14 +77,29 @@ def _is_running(name: str) -> bool:
     return proc is not None and proc.returncode is None
 
 
+def _get_file_logger(name: str) -> logging.Logger:
+    log_path = _ROOT / "logs" / f"{name}.log"
+    logger = logging.getLogger(f"strategy.{name}")
+    if not logger.handlers:
+        handler = logging.handlers.RotatingFileHandler(
+            log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+        )
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger.addHandler(handler)
+        logger.propagate = False
+    return logger
+
+
 async def _read_logs(name: str, proc: asyncio.subprocess.Process):
     """Read subprocess stdout+stderr and push lines to buffer + SSE subscribers."""
     buf = _strategies[name]["logs"]
     subs = _strategies[name]["subscribers"]
+    file_log = _get_file_logger(name)
     try:
         async for raw in proc.stdout:
             line = raw.decode(errors="replace").rstrip()
             buf.append(line)
+            file_log.info(line)
             dead = set()
             for q in subs:
                 try:
