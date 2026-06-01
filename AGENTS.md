@@ -193,6 +193,7 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
 - Always call `HyperliquidAPI.round_price()` on every price before submitting to Hyperliquid — the exchange enforces 5 significant figures (e.g. ETH at ~$2300 accepts 1 decimal place max; raw Fib/LLM prices like 2209.2288 are rejected with "Order has invalid price").
+- Always call `await hyperliquid.get_meta_and_ctxs()` before any strategy's `run()` — `round_size()` is synchronous and reads `_meta_cache` directly; if the cache is empty it falls back to `round(amount, 8)`, sending too many decimal places (e.g. SOL needs `szDecimals=1`, so 483.5649 is rejected with "Order has invalid size").
 - tvdatafeed (used for HIP-3 assets: xyz:SP500, xyz:GOLD, xyz:OIL) returns timezone-naive timestamps in the TradingView chart timezone (Vienna/CEST). `pandas.Timestamp.timestamp()` treats naive as UTC, producing +1h (winter) or +2h (summer) offset. Fix: `ts.tz_localize('Europe/Vienna')` before `.timestamp()`.
 
 ---
