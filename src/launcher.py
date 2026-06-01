@@ -329,7 +329,7 @@ def build_app() -> web.Application:
     _dash_user = os.getenv("DASHBOARD_USER")
     _dash_pass = os.getenv("DASHBOARD_PASSWORD")
 
-    _NO_AUTH_PATHS = {'/llm-pause'}
+    _NO_AUTH_PATHS = {'/llm-pause', '/favicon.ico', '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png'}
 
     @web.middleware
     async def auth(request, handler):
