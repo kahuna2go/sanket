@@ -2271,6 +2271,7 @@ def main():
             from src.config_loader import CONFIG as _CFG
             risk_pct = float(_CFG.get("sol_momentum_risk_pct") or 0.015)
             dry_run  = _CFG.get("dry_run", False)
+            await hyperliquid.get_meta_and_ctxs()
             strat = SolMomentum(hyperliquid, risk_pct=risk_pct, dry_run=dry_run)
             await strat.run()
         else:
