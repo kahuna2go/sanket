@@ -72,6 +72,17 @@ YFINANCE_SYMBOLS = {
     "xyz:SILVER": "SI=F",  # Silver futures
 }
 
+# Alpaca symbols for assets with deep intraday history (years of 5m data)
+ALPACA_SYMBOLS = {
+    "xyz:SP500": "SPY",
+}
+
+# Alpaca timeframe strings
+ALPACA_TIMEFRAME = {
+    "1m": "1Min", "5m": "5Min", "15m": "15Min", "30m": "30Min",
+    "1h": "1Hour", "4h": "4Hour", "1d": "1Day",
+}
+
 # TradingView (tvdatafeed) symbols for HIP-3 assets — deeper 5m history than yfinance
 TVDATAFEED_SYMBOLS = {
     "xyz:SP500": ("SPY", "AMEX"),
@@ -418,6 +429,84 @@ def fetch_tvdatafeed(asset: str, interval: str) -> list:
         return []
 
 
+def fetch_alpaca(asset: str, interval: str, years: int) -> list:
+    """Fetch bars from Alpaca Data API v2.
+
+    Requires ALPACA_API_KEY and ALPACA_SECRET_KEY in the environment.
+    Free accounts get SIP historical data for US stocks going back years.
+    Paginates via next_page_token until the full requested range is covered.
+    """
+    import os, json as _json, urllib.parse, urllib.request as _req
+
+    api_key = os.environ.get("ALPACA_API_KEY")
+    secret_key = os.environ.get("ALPACA_SECRET_KEY")
+    if not api_key or not secret_key:
+        print("\n  ALPACA_API_KEY / ALPACA_SECRET_KEY not set — skipping", end="")
+        return []
+
+    symbol = ALPACA_SYMBOLS.get(asset)
+    timeframe = ALPACA_TIMEFRAME.get(interval)
+    if not symbol or not timeframe:
+        return []
+
+    end_dt = datetime.now(timezone.utc)
+    start_dt = end_dt - timedelta(days=int(365 * years))
+
+    base_url = f"https://data.alpaca.markets/v2/stocks/{symbol}/bars"
+    headers = {
+        "APCA-API-KEY-ID": api_key,
+        "APCA-API-SECRET-KEY": secret_key,
+    }
+    ctx = _ssl_ctx()
+
+    all_candles: list = []
+    seen: set = set()
+    page_token: str | None = None
+
+    while True:
+        params: dict = {
+            "timeframe": timeframe,
+            "start": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "limit": 10000,
+            "adjustment": "all",
+            "feed": "sip",
+        }
+        if page_token:
+            params["page_token"] = page_token
+
+        url = base_url + "?" + urllib.parse.urlencode(params)
+        request = _req.Request(url, headers=headers)
+        try:
+            with _req.urlopen(request, timeout=30, context=ctx) as resp:
+                data = _json.loads(resp.read())
+        except Exception as e:
+            print(f"\n  Alpaca fetch error: {e}", end="")
+            break
+
+        for bar in data.get("bars") or []:
+            from datetime import datetime as _dt
+            t_ms = int(_dt.fromisoformat(bar["t"].replace("Z", "+00:00")).timestamp() * 1000)
+            if t_ms not in seen:
+                seen.add(t_ms)
+                all_candles.append({
+                    "t":      t_ms,
+                    "open":   float(bar["o"]),
+                    "high":   float(bar["h"]),
+                    "low":    float(bar["l"]),
+                    "close":  float(bar["c"]),
+                    "volume": float(bar["v"]),
+                })
+
+        page_token = data.get("next_page_token")
+        if not page_token:
+            break
+        time.sleep(0.05)
+
+    all_candles.sort(key=lambda c: c["t"])
+    return all_candles
+
+
 def import_tv_csv(csv_path: str, interval: str) -> list:
     """Parse a TradingView 'Export chart data' CSV into the standard candle format.
 
@@ -510,7 +599,14 @@ async def fetch_all(hl: HyperliquidAPI, asset: str, interval: str, years: int) -
 
     Returns (candles, source) where source is 'hyperliquid', 'binance', or 'yfinance'.
     """
-    # HIP-3 assets (xyz:*): try tvdatafeed first (deeper 5m history), then yfinance
+    # HIP-3 assets with Alpaca coverage: deepest intraday history (years of 5m)
+    if ":" in asset and asset in ALPACA_SYMBOLS:
+        candles = fetch_alpaca(asset, interval, years)
+        if candles:
+            return candles, "alpaca"
+        print(f"\n  Alpaca returned no data for {asset} {interval}, falling back to tvdatafeed", end="")
+
+    # HIP-3 assets (xyz:*): try tvdatafeed next (deeper 5m history than yfinance), then yfinance
     if ":" in asset and asset in TVDATAFEED_SYMBOLS:
         candles = fetch_tvdatafeed(asset, interval)
         if candles:
