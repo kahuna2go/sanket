@@ -470,7 +470,7 @@ def fetch_alpaca(asset: str, interval: str, years: int) -> list:
             "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "limit": 10000,
             "adjustment": "all",
-            "feed": "sip",
+            "feed": "iex",
         }
         if page_token:
             params["page_token"] = page_token
