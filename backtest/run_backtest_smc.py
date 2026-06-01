@@ -543,6 +543,182 @@ def _append_results_md(asset: str, candles: list, all_stats: list):
 
 
 # ---------------------------------------------------------------------------
+# Warm-up: reconstruct live state from recent historical bars
+# ---------------------------------------------------------------------------
+
+_WARMUP_BARS = 200   # ~17h of 5M data — covers any in-flight setup
+
+
+def smc_warm_up(candles_5m: list[dict], cfg: SmcConfig) -> dict:
+    """Replay recent candles through the SMC state machine.
+
+    Returns the current state so a live strategy can pick up mid-setup
+    after a restart or connection drop. Pass the last ~200 5M bars.
+    """
+    n = len(candles_5m)
+    lb = cfg.swing_lookback
+    swing_lows, swing_highs = _find_swings(candles_5m, lb)
+
+    bias_1h = _compute_1h_bias(_resample_1h(candles_5m))
+    bias_5m  = _align_bias_to_5m(bias_1h, n)
+
+    state = "IDLE"
+    sweep_type = ""; sweep_price = 0.0; sweep_bar_idx = 0
+    choch_deadline = 0; choch_target = 0.0
+    fvg_hi = fvg_lo = fvg_wait_start = 0
+    trade_type = ""; trade_entry = trade_sl = trade_tp = 0.0
+    trade_open_bar = 0
+
+    sl_ptr = sh_ptr = 0
+    visible_swing_lows:  list[tuple[int, float]] = []
+    visible_swing_highs: list[tuple[int, float]] = []
+
+    for i in range(n):
+        bar = candles_5m[i]
+
+        while sl_ptr < len(swing_lows)  and swing_lows[sl_ptr][0]  + lb <= i:
+            visible_swing_lows.append(swing_lows[sl_ptr]);  sl_ptr += 1
+        while sh_ptr < len(swing_highs) and swing_highs[sh_ptr][0] + lb <= i:
+            visible_swing_highs.append(swing_highs[sh_ptr]); sh_ptr += 1
+
+        if state == "IN_TRADE":
+            if trade_type == "long":
+                if bar["low"] <= trade_sl or bar["high"] >= trade_tp:
+                    state = "IDLE"
+            else:
+                if bar["high"] >= trade_sl or bar["low"] <= trade_tp:
+                    state = "IDLE"
+            continue
+
+        if state == "FVG_WAIT":
+            if cfg.fvg_wait_timeout and i > fvg_wait_start + cfg.fvg_wait_timeout:
+                state = "IDLE"; continue
+            mid = (fvg_hi + fvg_lo) / 2
+            bull_trigger = mid if cfg.fvg_entry == "mid50" else fvg_hi
+            bear_trigger = mid if cfg.fvg_entry == "mid50" else fvg_lo
+            if sweep_type == "bull":
+                if bar["low"] < fvg_lo:
+                    state = "IDLE"
+                elif bar["low"] <= bull_trigger:
+                    entry = bull_trigger; risk = entry - sweep_price
+                    if risk > 0:
+                        trade_entry = entry; trade_sl = sweep_price
+                        trade_tp = entry + TP_R * risk
+                        trade_type = "long"; trade_open_bar = i; state = "IN_TRADE"
+                    else:
+                        state = "IDLE"
+            else:
+                if bar["high"] > fvg_hi:
+                    state = "IDLE"
+                elif bar["high"] >= bear_trigger:
+                    entry = bear_trigger; risk = sweep_price - entry
+                    if risk > 0:
+                        trade_entry = entry; trade_sl = sweep_price
+                        trade_tp = entry - TP_R * risk
+                        trade_type = "short"; trade_open_bar = i; state = "IN_TRADE"
+                    else:
+                        state = "IDLE"
+            continue
+
+        if state == "SWEPT":
+            if i > choch_deadline:
+                state = "IDLE"
+            elif sweep_type == "bull" and bar["close"] > choch_target:
+                disp = candles_5m[sweep_bar_idx:i + 1]
+                fvg = _find_bullish_fvg(disp)
+                if fvg:
+                    fvg_hi, fvg_lo = fvg; fvg_wait_start = i; state = "FVG_WAIT"
+                else:
+                    state = "IDLE"
+            elif sweep_type == "bear" and bar["close"] < choch_target:
+                disp = candles_5m[sweep_bar_idx:i + 1]
+                fvg = _find_bearish_fvg(disp)
+                if fvg:
+                    fvg_hi, fvg_lo = fvg; fvg_wait_start = i; state = "FVG_WAIT"
+                else:
+                    state = "IDLE"
+            continue
+
+        # IDLE
+        recent_lows  = [s for s in visible_swing_lows  if s[0] >= i - cfg.sweep_lookback]
+        recent_highs = [s for s in visible_swing_highs if s[0] >= i - cfg.sweep_lookback]
+        if cfg.sweep_mode == "eql_only":
+            recent_lows  = _filter_eql(recent_lows,  visible_swing_lows)
+            recent_highs = _filter_eql(recent_highs, visible_swing_highs)
+        elif cfg.sweep_mode == "eql_prefer":
+            el = _filter_eql(recent_lows, visible_swing_lows)
+            eh = _filter_eql(recent_highs, visible_swing_highs)
+            recent_lows  = el if el else recent_lows
+            recent_highs = eh if eh else recent_highs
+
+        bias = bias_5m[i]
+        if recent_lows and (not cfg.bias_filter or bias == "bull"):
+            _, sl_price = recent_lows[-1]
+            if bar["low"] < sl_price and bar["close"] > sl_price:
+                if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
+                    highs_before = [s for s in visible_swing_highs if s[0] < i]
+                    if highs_before:
+                        state = "SWEPT"; sweep_type = "bull"
+                        sweep_price = bar["low"]; sweep_bar_idx = i
+                        choch_deadline = i + cfg.choch_timeout
+                        choch_target = highs_before[-1][1]
+                        continue
+        if recent_highs and (not cfg.bias_filter or bias == "bear"):
+            _, sh_price = recent_highs[-1]
+            if bar["high"] > sh_price and bar["close"] < sh_price:
+                if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
+                    lows_before = [s for s in visible_swing_lows if s[0] < i]
+                    if lows_before:
+                        state = "SWEPT"; sweep_type = "bear"
+                        sweep_price = bar["high"]; sweep_bar_idx = i
+                        choch_deadline = i + cfg.choch_timeout
+                        choch_target = lows_before[-1][1]
+
+    def _fmt(ts_ms: int) -> str:
+        return datetime.fromtimestamp(ts_ms / 1000, tz=_UTC).strftime("%Y-%m-%d %H:%M UTC")
+
+    last_ts = _fmt(candles_5m[-1]["t"])
+    print(f"\nSMC warm-up (last {n} bars, as of {last_ts}):")
+
+    if state == "IN_TRADE":
+        direction = "LONG" if trade_type == "long" else "SHORT"
+        opened_at = _fmt(candles_5m[trade_open_bar]["t"])
+        print(f"  State: IN_TRADE [{direction}]")
+        print(f"  Opened: {opened_at}  entry={trade_entry:.4f}  SL={trade_sl:.4f}  TP={trade_tp:.4f}")
+
+    elif state == "FVG_WAIT":
+        mid = (fvg_hi + fvg_lo) / 2
+        trigger = mid if cfg.fvg_entry == "mid50" else (fvg_hi if sweep_type == "bull" else fvg_lo)
+        sweep_ts = _fmt(candles_5m[sweep_bar_idx]["t"])
+        choch_ts  = _fmt(candles_5m[fvg_wait_start]["t"])
+        risk = abs(trigger - sweep_price)
+        tp   = trigger + TP_R * risk if sweep_type == "bull" else trigger - TP_R * risk
+        print(f"  State: FVG_WAIT [{sweep_type.upper()}]")
+        print(f"  Sweep:  {sweep_ts}  price={sweep_price:.4f}")
+        print(f"  CHoCH:  {choch_ts}  ✓ broke {choch_target:.4f}")
+        print(f"  FVG:    {fvg_lo:.4f} – {fvg_hi:.4f}")
+        print(f"  → Waiting for price to reach {trigger:.4f}")
+        print(f"    Entry={trigger:.4f}  SL={sweep_price:.4f}  TP={tp:.4f}")
+
+    elif state == "SWEPT":
+        sweep_ts = _fmt(candles_5m[sweep_bar_idx]["t"])
+        bars_left = choch_deadline - (n - 1)
+        print(f"  State: SWEPT [{sweep_type.upper()}]")
+        print(f"  Sweep:  {sweep_ts}  price={sweep_price:.4f}")
+        print(f"  Waiting for CHoCH above {choch_target:.4f}  ({max(bars_left,0)} bars left)")
+
+    else:
+        print(f"  State: IDLE  (no active setup)")
+
+    return {
+        "state": state, "sweep_type": sweep_type, "sweep_price": sweep_price,
+        "choch_target": choch_target, "fvg_hi": fvg_hi, "fvg_lo": fvg_lo,
+        "trade_type": trade_type, "trade_entry": trade_entry,
+        "trade_sl": trade_sl, "trade_tp": trade_tp,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Entry points
 # ---------------------------------------------------------------------------
 
@@ -578,9 +754,34 @@ async def run_smc_asset(asset: str, years: int, fetch: bool):
     _append_results_md(asset, candles_5m, all_stats)
 
 
-async def main_async(assets: list[str], years: int, fetch: bool):
+async def run_warmup_asset(asset: str, fetch: bool):
+    from src.trading.hyperliquid_api import HyperliquidAPI
+
+    cached = load_cache(asset, "5m")
+    if cached is None or fetch:
+        hl = HyperliquidAPI()
+        await hl.get_meta_and_ctxs()
+        print(f"Fetching {asset} 5m…", end=" ", flush=True)
+        candles_5m, source = await fetch_all(hl, asset, "5m", years=1)
+        save_cache(asset, "5m", candles_5m)
+        print(f"{len(candles_5m)} bars [{source}]")
+    else:
+        candles_5m = cached
+
+    if not candles_5m:
+        print(f"{asset}: no data"); return
+
+    recent = candles_5m[-_WARMUP_BARS:]
+    cfg = ALL_SMC_CONFIGS[0]   # Candidate A
+    smc_warm_up(recent, cfg)
+
+
+async def main_async(assets: list[str], years: int, fetch: bool, warmup: bool):
     for asset in assets:
-        await run_smc_asset(asset, years, fetch)
+        if warmup:
+            await run_warmup_asset(asset, fetch)
+        else:
+            await run_smc_asset(asset, years, fetch)
 
 
 def main():
@@ -588,8 +789,10 @@ def main():
     parser.add_argument("--assets", nargs="+", default=["SOL"])
     parser.add_argument("--years",  type=int,  default=2)
     parser.add_argument("--fetch",  action="store_true")
+    parser.add_argument("--warmup", action="store_true",
+                        help="Reconstruct current SMC state from recent bars")
     args = parser.parse_args()
-    asyncio.run(main_async(args.assets, args.years, args.fetch))
+    asyncio.run(main_async(args.assets, args.years, args.fetch, args.warmup))
 
 
 if __name__ == "__main__":
