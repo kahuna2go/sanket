@@ -2281,6 +2281,16 @@ def main():
             await hyperliquid.get_meta_and_ctxs()
             strat = Smc(hyperliquid, dry_run=dry_run)
             await strat.run()
+        elif strategy == "sol_smc":
+            from src.strategies.sol_momentum import SolMomentum
+            from src.strategies.smc import Smc
+            from src.config_loader import CONFIG as _CFG
+            dry_run  = _CFG.get("dry_run", False)
+            risk_pct = float(_CFG.get("sol_momentum_risk_pct") or 0.015)
+            await hyperliquid.get_meta_and_ctxs()
+            smoby = SolMomentum(hyperliquid, risk_pct=risk_pct, dry_run=dry_run)
+            smc   = Smc(hyperliquid, dry_run=dry_run)
+            await asyncio.gather(smoby.run(), smc.run())
         else:
             await run_loop()
 
