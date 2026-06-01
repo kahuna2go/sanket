@@ -53,12 +53,13 @@ def _in_session_utc(ts_ms: int, windows: list[tuple[float, float]]) -> bool:
     return any(s <= hf < e for s, e in windows)
 
 
-def _resample_1h(candles_5m: list[dict]) -> list[dict]:
+def _resample(candles_5m: list[dict], n: int) -> list[dict]:
+    """Resample 5m candles into n-bar groups (e.g. n=3 → 15m, n=12 → 1h)."""
     result = []
     group: list[dict] = []
     for c in candles_5m:
         group.append(c)
-        if len(group) == 12:
+        if len(group) == n:
             result.append({
                 "t":      group[0]["t"],
                 "open":   group[0]["open"],
@@ -69,6 +70,10 @@ def _resample_1h(candles_5m: list[dict]) -> list[dict]:
             })
             group = []
     return result
+
+
+def _resample_1h(candles_5m: list[dict]) -> list[dict]:
+    return _resample(candles_5m, 12)
 
 
 def _compute_1h_bias(candles_1h: list[dict]) -> list[str | None]:
@@ -196,11 +201,12 @@ class SmcConfig:
     fvg_entry:       str                            = "mid50"  # "top" or "mid50"
     sweep_mode:       str                            = "any"   # "any" | "eql_prefer" | "eql_only"
     fvg_wait_timeout: int | None                    = None    # None = unlimited; N = bars after CHoCH
+    fvg_tf:           str                           = "5m"    # "5m" or "15m"
     label:            str                           = "Baseline"
 
 
 def _make_configs() -> list["SmcConfig"]:
-    # Candidate A — final locked config
+    # Candidate A — final locked config (5m FVG wins over 15m FVG; see backtest results)
     return [
         SmcConfig(session_windows=_WIN_NARROW, label="Candidate A"),
     ]
@@ -217,6 +223,7 @@ def _run_simulation(
     candles_5m: list[dict],
     bias_5m: list[str | None],
     cfg: SmcConfig,
+    candles_15m: list[dict] | None = None,
     debug: bool = False,
 ) -> dict:
     n = len(candles_5m)
@@ -329,7 +336,10 @@ def _run_simulation(
             if i > choch_deadline:
                 d_timeout += 1; state = "IDLE"
             elif sweep_type == "bull" and bar["close"] > choch_target:
-                disp = candles_5m[sweep_bar_idx:i + 1]
+                if cfg.fvg_tf == "15m" and candles_15m:
+                    disp = candles_15m[sweep_bar_idx // 3 : i // 3 + 1]
+                else:
+                    disp = candles_5m[sweep_bar_idx:i + 1]
                 fvg = _find_bullish_fvg(disp)
                 if fvg:
                     fvg_hi, fvg_lo = fvg
@@ -338,7 +348,10 @@ def _run_simulation(
                 else:
                     d_no_fvg += 1; state = "IDLE"
             elif sweep_type == "bear" and bar["close"] < choch_target:
-                disp = candles_5m[sweep_bar_idx:i + 1]
+                if cfg.fvg_tf == "15m" and candles_15m:
+                    disp = candles_15m[sweep_bar_idx // 3 : i // 3 + 1]
+                else:
+                    disp = candles_5m[sweep_bar_idx:i + 1]
                 fvg = _find_bearish_fvg(disp)
                 if fvg:
                     fvg_hi, fvg_lo = fvg
@@ -475,7 +488,7 @@ def _dt(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=_UTC).strftime("%Y-%m-%d")
 
 
-_STRATEGY_LABEL = "SMC Scalping: Sweep + CHoCH + FVG Fill  [1H bias, 5M entry, TP=3×risk]"
+_STRATEGY_LABEL = "SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]"
 _RESULTS_FILE = (
     pathlib.Path(__file__).parent.parent / "docs" / "results" / "backtest_results_smc.md"
 )
@@ -516,7 +529,7 @@ def _append_results_md(asset: str, candles: list, all_stats: list):
     run_date = datetime.now(tz=_UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
         "\n---\n\n",
-        f"**Asset:** {asset}  |  **Period:** {period}  |  **Run:** {run_date}  |  **Entry TF:** 5m\n\n",
+        f"**Asset:** {asset}  |  **Period:** {period}  |  **Run:** {run_date}  |  **Sweep/CHoCH TF:** 5m\n\n",
         f"**Strategy:** {_STRATEGY_LABEL}\n\n",
         "| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |\n",
         "|--------|--------|------|---------|--------|------|-------|---------|\n",
@@ -740,14 +753,15 @@ async def run_smc_asset(asset: str, years: int, fetch: bool):
         print(f"{asset}: no 5m data available")
         return
 
-    candles_1h = _resample_1h(candles_5m)
-    print(f"  Resampled {len(candles_5m)} × 5m → {len(candles_1h)} × 1h bars", flush=True)
+    candles_15m = _resample(candles_5m, 3)
+    candles_1h  = _resample(candles_5m, 12)
+    print(f"  Resampled {len(candles_5m)} × 5m → {len(candles_15m)} × 15m, {len(candles_1h)} × 1h bars", flush=True)
 
     bias_1h = _compute_1h_bias(candles_1h)
     bias_5m = _align_bias_to_5m(bias_1h, len(candles_5m))
 
     all_stats = [
-        (cfg, _run_simulation(candles_5m, bias_5m, cfg, debug=(i == 0)))
+        (cfg, _run_simulation(candles_5m, bias_5m, cfg, candles_15m=candles_15m, debug=(i == 0)))
         for i, cfg in enumerate(ALL_SMC_CONFIGS)
     ]
     _print_table(asset, candles_5m, all_stats)
