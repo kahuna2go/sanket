@@ -6,8 +6,8 @@ Detects:
   - Rule violations: buy/sell action when thesis_strength <= 3 (opening against entry rules)
 
 Usage:
-  python -m src.backtest.compliance_check
-  python -m src.backtest.compliance_check --path /path/to/decisions.jsonl
+  python -m backtest.compliance_check
+  python -m backtest.compliance_check --path /path/to/decisions.jsonl
 """
 
 import argparse

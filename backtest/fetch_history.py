@@ -15,7 +15,7 @@ history, falls back to yfinance (SPY, GC=F, etc.). yfinance returns up to
 ~60 days of 5m data per request; the fetcher chunks into 50-day windows to
 maximise coverage. 4h data is fetched as 1h and resampled.
 
-Run directly:  python -m src.backtest.fetch_history --assets BTC ETH SOL --years 2
+Run directly:  python -m backtest.fetch_history --assets BTC ETH SOL --years 2
 """
 
 import argparse

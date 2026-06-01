@@ -17,8 +17,8 @@ Config variations:
   Baseline / + Session (London 08-10 + NY 13:30-15:30 UTC) / + 1H Bias / + Both
 
 Usage:
-  python -m src.backtest.run_backtest_smc --assets SOL
-  python -m src.backtest.run_backtest_smc --assets SOL --fetch --years 2
+  python -m backtest.run_backtest_smc --assets SOL
+  python -m backtest.run_backtest_smc --assets SOL --fetch --years 2
 """
 
 import argparse
@@ -33,7 +33,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.backtest.fetch_history import load_cache, fetch_all, save_cache
+from backtest.fetch_history import load_cache, fetch_all, save_cache
 from src.indicators.local_indicators import swing_structure
 
 MIN_TRADES    = 20

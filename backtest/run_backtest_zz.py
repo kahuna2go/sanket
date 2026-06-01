@@ -13,8 +13,8 @@ Strategy:
   Config matrix sweeps deviation_pct (2 / 3 / 5 %) × RVOL × session filters.
 
 Usage:
-  python -m src.backtest.run_backtest_zz --assets BTC ETH SOL
-  python -m src.backtest.run_backtest_zz --assets SOL --fetch --years 2
+  python -m backtest.run_backtest_zz --assets BTC ETH SOL
+  python -m backtest.run_backtest_zz --assets SOL --fetch --years 2
 """
 
 import argparse
@@ -35,7 +35,7 @@ from src.indicators.local_indicators import (
     volume_profile as vol_profile_fn,
     rvol           as rvol_fn,
 )
-from src.backtest.fetch_history import load_cache, fetch_all, save_cache
+from backtest.fetch_history import load_cache, fetch_all, save_cache
 
 MIN_TRADES    = 20
 SL_BUFFER_PCT = 0.15

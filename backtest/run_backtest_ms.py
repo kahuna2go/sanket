@@ -26,8 +26,8 @@ Strategy:
 Go/no-go: win_rate >= breakeven_win_rate + 5%  AND  trades >= 20.
 
 Usage:
-  python -m src.backtest.run_backtest_ms --assets BTC ETH SOL
-  python -m src.backtest.run_backtest_ms --assets SOL --fetch --years 2
+  python -m backtest.run_backtest_ms --assets BTC ETH SOL
+  python -m backtest.run_backtest_ms --assets SOL --fetch --years 2
 """
 
 import argparse
@@ -48,7 +48,7 @@ from src.indicators.local_indicators import (
     volume_profile  as vol_profile_fn,
     rvol            as rvol_fn,
 )
-from src.backtest.fetch_history import load_cache, fetch_all, save_cache
+from backtest.fetch_history import load_cache, fetch_all, save_cache
 
 MIN_TRADES       = 20
 SL_BUFFER_PCT    = 0.15   # fraction of VA_width below VAL (long) / above VAH (short)

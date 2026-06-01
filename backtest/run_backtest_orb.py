@@ -28,9 +28,9 @@ Strategy:
 Go/no-go criteria: win_rate >= breakeven + 5%  AND  trades >= 20.
 
 Usage:
-  python -m src.backtest.run_backtest_orb --asset SPX --fetch
-  python -m src.backtest.run_backtest_orb --asset SPX --sl-buffer 0.05
-  python -m src.backtest.run_backtest_orb --asset SPX --tp-mode fixed_rr
+  python -m backtest.run_backtest_orb --asset SPX --fetch
+  python -m backtest.run_backtest_orb --asset SPX --sl-buffer 0.05
+  python -m backtest.run_backtest_orb --asset SPX --tp-mode fixed_rr
 """
 
 import argparse
@@ -46,7 +46,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.backtest.fetch_history import load_cache, fetch_all, save_cache
+from backtest.fetch_history import load_cache, fetch_all, save_cache
 
 _VIENNA = ZoneInfo("Europe/Vienna")
 _ET     = ZoneInfo("America/New_York")

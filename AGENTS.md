@@ -159,16 +159,16 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 ### Commands
 - Python interpreter: `/Users/peermagnus/Library/Caches/pypoetry/virtualenvs/trading-agent-iHVPNt-P-py3.12/bin/python3.12`
 - Run live agent: `python3.12 -m src.main --assets SOL ETH --interval 5m`
-- Run ORB backtest: `python3.12 -m src.backtest.run_backtest_orb --assets SOL`
-- Run momentum backtest: `python3.12 -m src.backtest.run_backtest_momentum --assets SOL`
-- Run ms backtest: `python3.12 -m src.backtest.run_backtest_ms --assets SOL`
+- Run ORB backtest: `python3.12 -m backtest.run_backtest_orb --assets SOL`
+- Run momentum backtest: `python3.12 -m backtest.run_backtest_momentum --assets SOL`
+- Run ms backtest: `python3.12 -m backtest.run_backtest_ms --assets SOL`
 - Deploy to server: `git pull && docker compose up -d --build` (run on server)
 
 ### Layout
 - `src/main.py` — entry point for live trading
 - `src/agent/decision_maker.py` — LLM-based trade decisions
 - `src/trading/hyperliquid_api.py` — exchange API wrapper (price rounding lives here)
-- `src/backtest/` — one file per strategy (orb, momentum, fib, fvg, ms, zz, blend)
+- `backtest/` — one file per strategy (orb, momentum, fib, fvg, ms, zz, blend); excluded from Docker
 - `src/strategies/` — live strategy implementations (sol_momentum, hybrid/)
 - `src/indicators/` — taapi client + local indicator calculations
 - `config/` — YAML config files

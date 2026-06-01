@@ -17,8 +17,8 @@ Strategy:
   TP2: 127.2% fib extension — remainder
 
 Usage:
-  python -m src.backtest.run_backtest_fib --assets BTC ETH SOL
-  python -m src.backtest.run_backtest_fib --assets SOL
+  python -m backtest.run_backtest_fib --assets BTC ETH SOL
+  python -m backtest.run_backtest_fib --assets SOL
 """
 
 import argparse
@@ -38,7 +38,7 @@ from src.indicators.local_indicators import (
     zz_structure   as zz_struct_fn,
     rvol           as rvol_fn,
 )
-from src.backtest.fetch_history import load_cache, fetch_all, save_cache
+from backtest.fetch_history import load_cache, fetch_all, save_cache
 
 MIN_TRADES    = 20
 STRUCT_WINDOW = 200

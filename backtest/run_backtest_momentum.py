@@ -18,8 +18,8 @@ Go/no-go: win_rate >= breakeven_win_rate + 5%  AND  trades >= 20.
 Breakeven WR for 2:1 R:R = 1/(1+2) ≈ 33.3% → need ≥ 38.3% to pass.
 
 Usage:
-  python -m src.backtest.run_backtest_momentum --assets SOL
-  python -m src.backtest.run_backtest_momentum --assets SOL --fetch --years 2
+  python -m backtest.run_backtest_momentum --assets SOL
+  python -m backtest.run_backtest_momentum --assets SOL --fetch --years 2
 """
 
 import argparse
@@ -35,7 +35,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent))
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.backtest.fetch_history import load_cache, fetch_all, save_cache
+from backtest.fetch_history import load_cache, fetch_all, save_cache
 
 MIN_TRADES = 20
 TP_R = 2.0   # TP at 2× risk

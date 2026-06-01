@@ -19,8 +19,8 @@ By default runs all 5 combinations and prints a comparison table.
 Go/no-go: win_rate > 0.38 AND total_trades >= 200.
 
 Usage:
-  python -m src.backtest.run_backtest --assets BTC ETH SOL
-  python -m src.backtest.run_backtest --assets BTC --fetch
+  python -m backtest.run_backtest --assets BTC ETH SOL
+  python -m backtest.run_backtest --assets BTC --fetch
 """
 
 import argparse
@@ -40,7 +40,7 @@ from src.indicators.local_indicators import (
     ema, adx as adx_fn, rsi as rsi_fn, obv as obv_fn, atr as atr_fn, sma,
     bbands as bbands_fn,
 )
-from src.backtest.fetch_history import load_cache, fetch_all, save_cache
+from backtest.fetch_history import load_cache, fetch_all, save_cache
 
 
 MIN_TRADES = 200

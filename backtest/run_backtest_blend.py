@@ -21,8 +21,8 @@ SL:  VAL - 0.15×VA_width (long) / VAH + 0.15×VA_width (short)
 R:R: min_rr = 1.5 on TP1 leg
 
 Usage:
-  python -m src.backtest.run_backtest_blend --assets SOL
-  python -m src.backtest.run_backtest_blend --assets SOL --fetch
+  python -m backtest.run_backtest_blend --assets SOL
+  python -m backtest.run_backtest_blend --assets SOL --fetch
 """
 
 import argparse
@@ -44,7 +44,7 @@ from src.indicators.local_indicators import (
     rvol            as rvol_fn,
     ema, adx as adx_fn, rsi as rsi_fn, obv as obv_fn, atr as atr_fn,
 )
-from src.backtest.fetch_history import load_cache, fetch_all, save_cache
+from backtest.fetch_history import load_cache, fetch_all, save_cache
 
 MIN_TRADES       = 20
 SL_BUFFER_PCT    = 0.15

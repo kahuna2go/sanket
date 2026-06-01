@@ -27,9 +27,9 @@ Strategy (5m candles; same logic applies if you swap in 1m data):
      Time stop: 16:00 EST.
 
 Usage:
-  python -m src.backtest.run_backtest_fvg --fetch          # needs POLYGON_API_KEY in .env
-  python -m src.backtest.run_backtest_fvg --fetch --yf     # yfinance fallback (~60 days)
-  python -m src.backtest.run_backtest_fvg                  # use cached data
+  python -m backtest.run_backtest_fvg --fetch          # needs POLYGON_API_KEY in .env
+  python -m backtest.run_backtest_fvg --fetch --yf     # yfinance fallback (~60 days)
+  python -m backtest.run_backtest_fvg                  # use cached data
 """
 
 import argparse
