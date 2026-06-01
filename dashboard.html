@@ -502,6 +502,15 @@
       <button id="sol-start-btn" onclick="lcStart('sol_momentum')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
       <button id="sol-stop-btn"  onclick="lcStop('sol_momentum')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
     </div>
+    <div style="width:1px;height:40px;background:var(--border-2);"></div>
+    <!-- SMOCY (SOL Momentum + SMC combined) -->
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="smocy-dot" style="width:8px;height:8px;border-radius:50%;background:#d42f2f;display:inline-block;"></span>
+      <span style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">SMOCY</span>
+      <span style="font-family:var(--font-data);font-size:10px;color:var(--muted);">Smoby + SMC · mutual exclusion</span>
+      <button id="smocy-start-btn" onclick="lcStart('smocy')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
+      <button id="smocy-stop-btn"  onclick="lcStop('smocy')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
+    </div>
   </div>
 
   <!-- Circuit breaker banner -->
@@ -691,6 +700,17 @@
         </div>
       </div>
       <div class="log-body" id="log-body-sol_momentum"></div>
+    </div>
+
+    <div class="log-panel">
+      <div class="log-head" onclick="lcToggleLog('smocy')">
+        <span class="log-title" id="log-hdr-smocy">▾ SMOCY (Smoby + SMC) — Live Output</span>
+        <div class="log-actions">
+          <button class="log-copy-btn" id="log-copy-smocy" onclick="event.stopPropagation();lcCopyLog('smocy')">COPY</button>
+          <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-smocy').innerHTML=''">CLEAR</button>
+        </div>
+      </div>
+      <div class="log-body" id="log-body-smocy"></div>
     </div>
 
   </div><!-- /tab-logs -->
@@ -1004,6 +1024,10 @@
       const notional = qty * entry;
       const chg = entry ? (curr - entry) / entry * 100 : 0;
       const t = trades.find(t => t.asset === p.symbol) || {};
+      const planTxt = t.orb_trail_active
+        ? `trail ● max ${fAbs(t.orb_trail_max)} · sl ${fAbs(t.sl_price)}`
+        : (t.exit_plan || '—');
+      const planCls = t.orb_trail_active ? 'gd' : 'mu';
       return `<tr>
         <td><span class="sym">${p.symbol||'—'}</span></td>
         <td>${long ? '<span class="pill pill-l">Long</span>' : '<span class="pill pill-s">Short</span>'}</td>
@@ -1013,7 +1037,7 @@
         <td>${fAbs(curr)}</td>
         <td class="${pClass(chg)}">${fPct(chg)}</td>
         <td class="${pClass(upnl)}">${fSign(upnl)}</td>
-        <td class="mu" style="font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis">${t.exit_plan||'—'}</td>
+        <td class="${planCls}" style="font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis">${planTxt}</td>
       </tr>`;
     }).join('');
 
@@ -1249,7 +1273,7 @@
     if (name === 'logs') {
       document.getElementById('logs-tab-dot').classList.remove('on');
       // scroll log bodies to bottom when switching in
-      ['llm', 'sol_momentum'].forEach(n => {
+      ['llm', 'sol_momentum', 'smocy'].forEach(n => {
         const el = document.getElementById('log-body-' + n);
         if (el) el.scrollTop = el.scrollHeight;
       });
@@ -1257,8 +1281,8 @@
   }
 
   const _logEs = {};
-  const _logCollapsed = { llm: false, sol_momentum: false };
-  const _logLabels    = { llm: 'LLM Strategy', sol_momentum: 'SOL Momentum' };
+  const _logCollapsed = { llm: false, sol_momentum: false, smocy: false };
+  const _logLabels    = { llm: 'LLM Strategy', sol_momentum: 'SOL Momentum', smocy: 'SMOCY (Smoby + SMC)' };
 
   function lcColorLine(line) {
     const l = line.toLowerCase();
@@ -1318,15 +1342,20 @@
       document.getElementById('launcher-bar').style.display = 'flex';
       connectLog('llm');
       connectLog('sol_momentum');
+      connectLog('smocy');
 
-      const llmR = d.strategies?.llm?.running;
-      const solR = d.strategies?.sol_momentum?.running;
-      document.getElementById('llm-dot').style.background  = llmR ? '#0aab5c' : '#d42f2f';
-      document.getElementById('sol-dot').style.background  = solR ? '#0aab5c' : '#d42f2f';
-      document.getElementById('llm-start-btn').disabled = llmR;
-      document.getElementById('llm-stop-btn').disabled  = !llmR;
-      document.getElementById('sol-start-btn').disabled = solR;
-      document.getElementById('sol-stop-btn').disabled  = !solR;
+      const llmR   = d.strategies?.llm?.running;
+      const solR   = d.strategies?.sol_momentum?.running;
+      const smocyR = d.strategies?.smocy?.running;
+      document.getElementById('llm-dot').style.background   = llmR   ? '#0aab5c' : '#d42f2f';
+      document.getElementById('sol-dot').style.background   = solR   ? '#0aab5c' : '#d42f2f';
+      document.getElementById('smocy-dot').style.background = smocyR ? '#0aab5c' : '#d42f2f';
+      document.getElementById('llm-start-btn').disabled   = llmR;
+      document.getElementById('llm-stop-btn').disabled    = !llmR;
+      document.getElementById('sol-start-btn').disabled   = solR;
+      document.getElementById('sol-stop-btn').disabled    = !solR;
+      document.getElementById('smocy-start-btn').disabled = smocyR;
+      document.getElementById('smocy-stop-btn').disabled  = !smocyR;
     } catch { /* launcher not running */ }
   }
 

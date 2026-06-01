@@ -58,6 +58,12 @@ _strategies: dict[str, dict] = {
         "logs": deque(maxlen=300),
         "subscribers": set(),
     },
+    "smocy": {
+        "port": 3003,
+        "proc": None,
+        "logs": deque(maxlen=300),
+        "subscribers": set(),
+    },
 }
 
 
@@ -211,7 +217,7 @@ async def handle_start(request):
         args = ["--assets"] + assets + ["--interval", interval]
         result = await _start(name, args=args)
     else:
-        result = await _start(name, extra_env={"STRATEGY": "sol_momentum"})
+        result = await _start(name, extra_env={"STRATEGY": name})
 
     return web.json_response(result)
 
