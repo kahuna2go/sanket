@@ -569,6 +569,55 @@ def _print_results(cfg: ORBConfig, trades: list[Trade]):
     )
 
 
+def _print_splits(trades: list[Trade], label: str) -> None:
+    """Print year-by-year and long/short breakdown for a single config."""
+    if not trades:
+        print("  No trades.")
+        return
+
+    def _stats(subset: list[Trade]) -> str:
+        if not subset:
+            return "  —"
+        wins    = [t for t in subset if t.r_multiple > 0]
+        wr      = 100 * len(wins) / len(subset)
+        total_r = sum(t.r_multiple for t in subset)
+        avg_r   = total_r / len(subset)
+        peak = trough = max_dd = cumr = 0.0
+        for t in subset:
+            cumr += t.r_multiple
+            if cumr > peak:
+                peak = trough = cumr
+            else:
+                trough = min(trough, cumr)
+            max_dd = min(max_dd, trough - peak)
+        return (f"{len(subset):>4} trades | win={wr:5.1f}% | "
+                f"totalR={total_r:+7.1f} | avgR={avg_r:+.3f} | maxDD={max_dd:.1f}R")
+
+    print(f"\n{'='*90}")
+    print(f"  Detail: {label}")
+    print(f"{'='*90}")
+
+    # Year-by-year
+    from itertools import groupby
+    years = sorted({t.day.year for t in trades})
+    print(f"\n  YEAR-BY-YEAR")
+    print(f"  {'─'*85}")
+    for yr in years:
+        subset = [t for t in trades if t.day.year == yr]
+        print(f"  {yr}  |  {_stats(subset)}")
+    print(f"  {'─'*85}")
+    print(f"  TOTAL  |  {_stats(trades)}")
+
+    # Long vs short
+    longs  = [t for t in trades if t.direction == "long"]
+    shorts = [t for t in trades if t.direction == "short"]
+    print(f"\n  LONG vs SHORT")
+    print(f"  {'─'*85}")
+    print(f"  LONG   |  {_stats(longs)}")
+    print(f"  SHORT  |  {_stats(shorts)}")
+    print(f"{'='*90}\n")
+
+
 def _print_breakout_funnel(candles_5m: list, candles_4h: list) -> None:
     """Print a day-by-day funnel: OR days → raw breakouts → bias-aligned setups."""
     days: dict[date, list] = {}
@@ -637,7 +686,7 @@ def _print_breakout_funnel(candles_5m: list, candles_4h: list) -> None:
           f"  — long filtered={filtered_long} (bias≠bull)  short filtered={filtered_short} (bias≠bear)")
 
 
-async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConfig | None, no_bias: bool = False, tp_mode_filter: str | None = None, entry_mode_filter: str | None = None, sl_mode_filter: str | None = None):
+async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConfig | None, no_bias: bool = False, tp_mode_filter: str | None = None, entry_mode_filter: str | None = None, sl_mode_filter: str | None = None, detail: bool = False):
     hl = None
     for interval in ("5m", "4h"):
         cached = load_cache(asset, interval)
@@ -702,6 +751,15 @@ async def main_async(asset: str, fetch: bool, years: int, single_config: ORBConf
 
     print(f"{'='*110}\n")
 
+    if detail:
+        best_cfg = ORBConfig(
+            sl_buffer=0.05, slope_threshold=0.0, tp_mode="trail",
+            entry_mode="retest", sl_mode="retest_low",
+            label="SL=5% / no slope filter [trail/retest/retest_low]",
+        )
+        best_trades = _run_config(best_cfg, candles_5m, candles_4h, no_bias)
+        _print_splits(best_trades, best_cfg.label)
+
 
 def main():
     parser = argparse.ArgumentParser(description="ORB backtest for Hyperliquid S&P 500 Perp")
@@ -720,6 +778,8 @@ def main():
                         help="Entry mode: 'breakout' (default) or 'retest' (wait for ORH/ORL touch)")
     parser.add_argument("--sl-mode",    default=None, choices=["or_extreme", "retest_low"],
                         help="SL mode: 'or_extreme' (default, SL outside OR) or 'retest_low' (SL below retest candle)")
+    parser.add_argument("--detail",     action="store_true",
+                        help="Print year-by-year and long/short breakdown for the best config (trail/retest/retest_low/no-slope/SL=5%%)")
     args = parser.parse_args()
 
     single = None
@@ -735,7 +795,7 @@ def main():
             sl_mode=sl_mode,
             label=f"SL={args.sl_buffer:.0%} / slope={args.slope or 0.0005:.4f} [{tp_mode}/{entry_mode}/{sl_mode}]",
         )
-    asyncio.run(main_async(args.asset, args.fetch, args.years, single, no_bias=args.no_bias, tp_mode_filter=args.tp_mode, entry_mode_filter=args.entry_mode, sl_mode_filter=args.sl_mode))
+    asyncio.run(main_async(args.asset, args.fetch, args.years, single, no_bias=args.no_bias, tp_mode_filter=args.tp_mode, entry_mode_filter=args.entry_mode, sl_mode_filter=args.sl_mode, detail=args.detail))
 
 
 if __name__ == "__main__":
