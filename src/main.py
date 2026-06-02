@@ -2286,22 +2286,23 @@ def main():
             strat = SolMomentum(hyperliquid, risk_pct=risk_pct, dry_run=dry_run)
             await strat.run()
         elif strategy == "smc":
-            from src.strategies.smc import Smc
+            from src.strategies.smc import Smc, SOL_SESSION_WINDOWS
             from src.config_loader import CONFIG as _CFG
             dry_run = _CFG.get("dry_run", False)
             await hyperliquid.get_meta_and_ctxs()
-            strat = Smc(hyperliquid, dry_run=dry_run)
+            strat = Smc(hyperliquid, asset="SOL", session_windows=SOL_SESSION_WINDOWS, dry_run=dry_run)
             await strat.run()
         elif strategy == "smocy":
             from src.strategies.sol_momentum import SolMomentum
-            from src.strategies.smc import Smc
+            from src.strategies.smc import Smc, SOL_SESSION_WINDOWS, ETH_SESSION_WINDOWS
             from src.config_loader import CONFIG as _CFG
             dry_run  = _CFG.get("dry_run", False)
             risk_pct = float(_CFG.get("sol_momentum_risk_pct") or 0.015)
             await hyperliquid.get_meta_and_ctxs()
-            smoby = SolMomentum(hyperliquid, risk_pct=risk_pct, dry_run=dry_run)
-            smc   = Smc(hyperliquid, dry_run=dry_run)
-            await asyncio.gather(smoby.run(), smc.run())
+            smoby    = SolMomentum(hyperliquid, risk_pct=risk_pct, dry_run=dry_run)
+            sol_smc  = Smc(hyperliquid, asset="SOL", session_windows=SOL_SESSION_WINDOWS, dry_run=dry_run)
+            eth_smc  = Smc(hyperliquid, asset="ETH", session_windows=ETH_SESSION_WINDOWS, dry_run=dry_run)
+            await asyncio.gather(smoby.run(), sol_smc.run(), eth_smc.run())
         elif strategy == "orb":
             from src.strategies.orb import Orb
             from src.config_loader import CONFIG as _CFG
