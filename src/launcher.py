@@ -53,13 +53,13 @@ _strategies: dict[str, dict] = {
         "logs": deque(maxlen=300),
         "subscribers": set(),
     },
-    "sol_momentum": {
+    "smocy": {
         "port": 3002,
         "proc": None,
         "logs": deque(maxlen=300),
         "subscribers": set(),
     },
-    "smocy": {
+    "orb": {
         "port": 3003,
         "proc": None,
         "logs": deque(maxlen=300),

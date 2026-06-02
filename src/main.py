@@ -2302,6 +2302,13 @@ def main():
             smoby = SolMomentum(hyperliquid, risk_pct=risk_pct, dry_run=dry_run)
             smc   = Smc(hyperliquid, dry_run=dry_run)
             await asyncio.gather(smoby.run(), smc.run())
+        elif strategy == "orb":
+            from src.strategies.orb import Orb
+            from src.config_loader import CONFIG as _CFG
+            dry_run  = _CFG.get("dry_run", False)
+            risk_pct = float(_CFG.get("orb_risk_pct") or 0.015)
+            await hyperliquid.get_meta_and_ctxs()
+            await Orb(hyperliquid, risk_pct=risk_pct, dry_run=dry_run).run()
         else:
             await run_loop()
 

@@ -494,15 +494,6 @@
       <button id="llm-stop-btn"  onclick="lcStop('llm')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
     </div>
     <div style="width:1px;height:40px;background:var(--border-2);"></div>
-    <!-- SOL Momentum -->
-    <div style="display:flex;align-items:center;gap:10px;">
-      <span id="sol-dot" style="width:8px;height:8px;border-radius:50%;background:#d42f2f;display:inline-block;"></span>
-      <span style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">SOL Momentum</span>
-      <span style="font-family:var(--font-data);font-size:10px;color:var(--muted);">EMA9/21 · RSI · 15m · Session</span>
-      <button id="sol-start-btn" onclick="lcStart('sol_momentum')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
-      <button id="sol-stop-btn"  onclick="lcStop('sol_momentum')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
-    </div>
-    <div style="width:1px;height:40px;background:var(--border-2);"></div>
     <!-- SMOCY (SOL Momentum + SMC combined) -->
     <div style="display:flex;align-items:center;gap:10px;">
       <span id="smocy-dot" style="width:8px;height:8px;border-radius:50%;background:#d42f2f;display:inline-block;"></span>
@@ -510,6 +501,15 @@
       <span style="font-family:var(--font-data);font-size:10px;color:var(--muted);">Smoby + SMC · mutual exclusion</span>
       <button id="smocy-start-btn" onclick="lcStart('smocy')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
       <button id="smocy-stop-btn"  onclick="lcStop('smocy')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
+    </div>
+    <div style="width:1px;height:40px;background:var(--border-2);"></div>
+    <!-- ORB (Opening Range Breakout — SP500) -->
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="orb-dot" style="width:8px;height:8px;border-radius:50%;background:#d42f2f;display:inline-block;"></span>
+      <span style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">ORB</span>
+      <span style="font-family:var(--font-data);font-size:10px;color:var(--muted);">SP500 · EMA21 bias · retest entry · range trail</span>
+      <button id="orb-start-btn" onclick="lcStart('orb')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
+      <button id="orb-stop-btn"  onclick="lcStop('orb')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
     </div>
   </div>
 
@@ -692,14 +692,14 @@
     </div>
 
     <div class="log-panel">
-      <div class="log-head" onclick="lcToggleLog('sol_momentum')">
-        <span class="log-title" id="log-hdr-sol_momentum">▾ SOL Momentum — Live Output</span>
+      <div class="log-head" onclick="lcToggleLog('orb')">
+        <span class="log-title" id="log-hdr-orb">▾ ORB — Live Output</span>
         <div class="log-actions">
-          <button class="log-copy-btn" id="log-copy-sol_momentum" onclick="event.stopPropagation();lcCopyLog('sol_momentum')">COPY</button>
-          <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-sol_momentum').innerHTML=''">CLEAR</button>
+          <button class="log-copy-btn" id="log-copy-orb" onclick="event.stopPropagation();lcCopyLog('orb')">COPY</button>
+          <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-orb').innerHTML=''">CLEAR</button>
         </div>
       </div>
-      <div class="log-body" id="log-body-sol_momentum"></div>
+      <div class="log-body" id="log-body-orb"></div>
     </div>
 
     <div class="log-panel">
@@ -1354,21 +1354,21 @@
       const d = await fetch('/api/status', { credentials: 'include' }).then(r => r.json());
       document.getElementById('launcher-bar').style.display = 'flex';
       connectLog('llm');
-      connectLog('sol_momentum');
       connectLog('smocy');
+      connectLog('orb');
 
       const llmR   = d.strategies?.llm?.running;
-      const solR   = d.strategies?.sol_momentum?.running;
       const smocyR = d.strategies?.smocy?.running;
+      const orbR   = d.strategies?.orb?.running;
       document.getElementById('llm-dot').style.background   = llmR   ? '#0aab5c' : '#d42f2f';
-      document.getElementById('sol-dot').style.background   = solR   ? '#0aab5c' : '#d42f2f';
       document.getElementById('smocy-dot').style.background = smocyR ? '#0aab5c' : '#d42f2f';
+      document.getElementById('orb-dot').style.background   = orbR   ? '#0aab5c' : '#d42f2f';
       document.getElementById('llm-start-btn').disabled   = llmR;
       document.getElementById('llm-stop-btn').disabled    = !llmR;
-      document.getElementById('sol-start-btn').disabled   = solR;
-      document.getElementById('sol-stop-btn').disabled    = !solR;
       document.getElementById('smocy-start-btn').disabled = smocyR;
       document.getElementById('smocy-stop-btn').disabled  = !smocyR;
+      document.getElementById('orb-start-btn').disabled   = orbR;
+      document.getElementById('orb-stop-btn').disabled    = !orbR;
     } catch { /* launcher not running */ }
   }
 
