@@ -197,3 +197,45 @@
 | Narrow / + bias  / eql_only | 17 | 35.3% | 3.00 | +7.0 | +0.412 | -3.0R | INCONCLUSIVE (<20) |
 | Narrow / no bias / SL3 | 61 | 31.1% | 3.00 | +15.0 | +0.246 | -10.0R | GO ✓ |
 | Narrow / no bias / SL7 | 15 | 33.3% | 3.00 | +5.0 | +0.333 | -4.0R | INCONCLUSIVE (<20) |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-02 15:34 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A | 118 | 34.7% | 3.00 | +46.0 | +0.390 | -8.0R | GO ✓ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-02 15:35 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A | 107 | 29.9% | 3.00 | +21.0 | +0.196 | -11.0R | NO-GO ✗ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-02 15:39 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A | 118 | 34.7% | 3.00 | +46.0 | +0.390 | -8.0R | GO ✓ |
+| Candidate B | 100 | 33.0% | 3.00 | +32.0 | +0.320 | -11.0R | GO ✓ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-02 15:41 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A | 107 | 29.9% | 3.00 | +21.0 | +0.196 | -11.0R | NO-GO ✗ |
+| Candidate B | 39 | 30.8% | 3.00 | +9.0 | +0.231 | -9.0R | GO ✓ |

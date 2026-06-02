@@ -242,8 +242,10 @@ def _make_configs(eth_sweep: bool = False) -> list["SmcConfig"]:
         configs.append(SmcConfig(session_windows=_WIN_NARROW, swing_lookback=7, label="Narrow / no bias / SL7"))
         return configs
     # Candidate A — final locked config (5m FVG wins over 15m FVG; see backtest results)
+    # Candidate B — broad session (ETH live config)
     return [
         SmcConfig(session_windows=_WIN_NARROW, label="Candidate A"),
+        SmcConfig(session_windows=_WIN_BROAD,  label="Candidate B"),
     ]
 
 
