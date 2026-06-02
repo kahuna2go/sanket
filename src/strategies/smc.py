@@ -22,6 +22,7 @@ Warm-up on startup: replays last 200 5M bars to reconstruct any in-flight
 import asyncio
 import logging
 from datetime import datetime, timezone
+from src.utils import trade_log
 
 from src.trading.hyperliquid_api import HyperliquidAPI
 
@@ -509,6 +510,13 @@ class Smc:
             self._stats["trades"], self._stats["wins"],
             self._stats["losses"], self._stats["total_r"],
         )
+
+        trade_log.append({
+            "strategy": "smc", "asset": self.ASSET,
+            "dir": self._direction, "entry": self._entry,
+            "tp": self._tp, "sl": self._sl,
+            "size": self._size, "outcome": outcome, "pnl_r": pnl_r,
+        })
 
         self._in_trade  = False
         self._direction = None

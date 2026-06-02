@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo
 
 from src.trading.hyperliquid_api import HyperliquidAPI
 from src.config_loader import CONFIG
+from src.utils import trade_log
 
 _VIENNA     = ZoneInfo("Europe/Vienna")
 _ASSET      = "xyz:SP500"
@@ -362,6 +363,12 @@ class Orb:
             )
             if abs(float(pos.get("szi", 0)) if pos else 0.0) < 0.001:
                 logging.info("[ORB] Trail SL hit — position closed")
+                trade_log.append({
+                    "strategy": "orb", "asset": self.ASSET,
+                    "dir": "long" if self._is_long else "short",
+                    "entry": self._entry_px, "tp": None, "sl": self._sl_price,
+                    "size": self._amount, "outcome": "trail_win", "pnl_r": None,
+                })
                 self._in_trade = False
                 self._trail_active = False
                 return
@@ -402,6 +409,12 @@ class Orb:
             self._trail_active = True
             self._trail_max    = price
             logging.info("[ORB] TP1 hit @ %.2f — 50%% closed, SL→BE=%.2f, range trail active", price, be_sl)
+            trade_log.append({
+                "strategy": "orb", "asset": self.ASSET,
+                "dir": "long" if self._is_long else "short",
+                "entry": self._entry_px, "tp": self._tp1, "sl": self._sl_price,
+                "size": self._amount, "outcome": "tp1_partial", "pnl_r": 1.0,
+            })
 
         else:
             # Range trail: advance SL as price moves in our favour
@@ -440,6 +453,12 @@ class Orb:
                 await self.hl.place_close_order(self.ASSET)
             except Exception as e:
                 logging.error("[ORB] time stop close failed: %s", e)
+        trade_log.append({
+            "strategy": "orb", "asset": self.ASSET,
+            "dir": "long" if self._is_long else "short",
+            "entry": self._entry_px, "tp": self._tp1, "sl": self._sl_price,
+            "size": self._amount, "outcome": "time_stop", "pnl_r": None,
+        })
         self._in_trade     = False
         self._trail_active = False
 

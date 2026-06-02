@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from src.trading.hyperliquid_api import HyperliquidAPI
+from src.utils import trade_log
 
 _VIENNA_TZ = ZoneInfo("Europe/Vienna")
 
@@ -214,6 +215,13 @@ class SolMomentum:
             self._stats["trades"], self._stats["wins"],
             self._stats["losses"], self._stats["total_r"],
         )
+
+        trade_log.append({
+            "strategy": "sol_momentum", "asset": self.ASSET,
+            "dir": self._direction, "entry": self._entry_price,
+            "tp": self._tp_price, "sl": self._sl_price,
+            "size": self._size, "outcome": outcome, "pnl_r": pnl_r,
+        })
 
         self._in_trade    = False
         self._direction   = None
