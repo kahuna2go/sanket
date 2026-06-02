@@ -75,7 +75,6 @@ class Orb:
         self._retest_low:  float | None = None
         self._retest_high: float | None = None
         self._trade_taken        = False
-        self._last_phase: str | None = None
 
         # --- active trade state ---
         self._in_trade     = False
@@ -89,15 +88,6 @@ class Orb:
         self._trail_active = False
         self._trail_max    = 0.0
 
-        # --- optional Haiku client for phase commentary ---
-        self._haiku = None
-        try:
-            import anthropic
-            key = CONFIG.get("anthropic_api_key")
-            if key:
-                self._haiku = anthropic.AsyncAnthropic(api_key=key)
-        except ImportError:
-            pass
 
     # ------------------------------------------------------------------
     # Main loop
@@ -155,13 +145,6 @@ class Orb:
         if self._orh is None and hf >= 15.5:
             await self._build_or()
 
-        # Phase-transition commentary (Haiku)
-        phase_now = _phase(hf)
-        if phase_now != self._last_phase:
-            self._last_phase = phase_now
-            if phase_now in ("or_formation", "breakout_watch"):
-                asyncio.ensure_future(self._haiku_commentary(phase_now))
-
         # Breakout + retest detection: 15:45–17:30 CET
         if 15.75 <= hf < 17.5 and not self._trade_taken and self._orh is not None:
             await self._check_breakout()
@@ -182,7 +165,6 @@ class Orb:
         self._retest_low       = None
         self._retest_high      = None
         self._trade_taken      = False
-        self._last_phase       = None
         logging.info("[ORB] New day reset (%s)", today)
 
     # ------------------------------------------------------------------
@@ -462,27 +444,3 @@ class Orb:
         self._in_trade     = False
         self._trail_active = False
 
-    # ------------------------------------------------------------------
-    # Haiku phase commentary (best-effort, non-blocking)
-    # ------------------------------------------------------------------
-
-    async def _haiku_commentary(self, phase: str):
-        if not self._haiku:
-            return
-        try:
-            or_range = round(self._orh - self._orl, 2) if self._orh and self._orl else None
-            prompt = (
-                f"ORB entered phase: {phase}. "
-                f"Bias: {self._bias}, ORH: {self._orh}, ORL: {self._orl}, "
-                f"range: {or_range}, "
-                f"funding_ok_long: {self._funding_ok_long}, funding_ok_short: {self._funding_ok_short}. "
-                f"One sentence market read for this setup."
-            )
-            resp = await self._haiku.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=100,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            logging.info("[ORB] Haiku (%s): %s", phase, resp.content[0].text.strip())
-        except Exception as e:
-            logging.warning("[ORB] Haiku commentary failed: %s", e)
