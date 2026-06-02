@@ -315,6 +315,20 @@ class SolMomentum:
         if entry <= 0:
             return
 
+        # Cap size so required margin ≤ 40% of free margin (leaves room for SMC)
+        free_margin = state["balance"]
+        margin_cap = self.hl.round_size(self.ASSET, (free_margin * self.LEVERAGE * 0.40) / entry)
+        if size_sol > margin_cap:
+            logging.warning(
+                "[SolMomentum] size capped by margin: %.1f → %.1f SOL "
+                "(free=$%.0f cap=40%%×%dx)",
+                size_sol, margin_cap, free_margin, self.LEVERAGE,
+            )
+            size_sol = margin_cap
+        if size_sol <= 0:
+            logging.warning("[SolMomentum] insufficient free margin — skipping signal")
+            return
+
         if direction == "long":
             tp = self.hl.round_price(entry + 2.0 * atr_cur)
             sl = self.hl.round_price(entry - 1.0 * atr_cur)
@@ -322,11 +336,12 @@ class SolMomentum:
             tp = self.hl.round_price(entry - 2.0 * atr_cur)
             sl = self.hl.round_price(entry + 1.0 * atr_cur)
 
+        actual_risk = size_sol * atr_cur
         logging.info(
             "[SolMomentum] SIGNAL %s | entry=~%.4f TP=%.4f SL=%.4f | "
             "size=%.4f SOL | risk=$%.2f (%.1f%% of $%.0f)",
             direction.upper(), entry, tp, sl, size_sol,
-            risk_usd, self.risk_pct * 100, total_value,
+            actual_risk, actual_risk / total_value * 100, total_value,
         )
 
         if self.dry_run:
