@@ -145,3 +145,24 @@
 | Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
 |--------|--------|------|---------|--------|------|-------|---------|
 | Candidate A | 67 | 32.8% | 3.00 | +21.0 | +0.313 | -8.0R | GO ✓ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-01 12:47 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A (5m FVG) | 67 | 32.8% | 3.00 | +21.0 | +0.313 | -8.0R | GO ✓ |
+| Candidate A (15m FVG) | 46 | 28.3% | 3.00 | +6.0 | +0.130 | -11.0R | NO-GO ✗ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-02 09:35 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A | 41 | 31.7% | 3.00 | +11.0 | +0.268 | -9.0R | GO ✓ |
