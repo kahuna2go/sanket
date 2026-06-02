@@ -112,6 +112,7 @@ class SolMomentum:
         self._sl_oid       = None
 
         self._last_bar_ts  = 0   # timestamp of last processed completed bar
+        self._entry_time   = 0   # ms timestamp when entry was placed
 
         # Session stats
         self._stats = {"trades": 0, "wins": 0, "losses": 0, "total_r": 0.0}
@@ -192,9 +193,11 @@ class SolMomentum:
             if not self.dry_run:
                 await self.hl.cancel_order(self.ASSET, self._tp_oid)
         else:
-            outcome, pnl_r = "unknown", 0.0
             if not self.dry_run:
                 await self.hl.cancel_all_orders(self.ASSET)
+                outcome, pnl_r = await self._infer_outcome_from_fills()
+            else:
+                outcome, pnl_r = "unknown", 0.0
 
         self._stats["trades"] += 1
         self._stats["total_r"] += pnl_r
@@ -217,6 +220,38 @@ class SolMomentum:
         self._entry_oid   = None
         self._tp_oid      = None
         self._sl_oid      = None
+
+    async def _infer_outcome_from_fills(self) -> tuple[str, float]:
+        """Infer trade outcome from recent exchange fills when OID tracking fails.
+
+        Searches fills after entry time for the closing fill (opposite side),
+        then computes actual R from the fill price vs entry/SL.
+        Falls back to ("unknown", 0.0) if no qualifying fill is found.
+        """
+        fills = await self.hl.get_recent_fills(limit=20)
+        close_side = "B" if self._direction == "short" else "A"
+        for fill in reversed(fills):  # newest first
+            if fill.get("coin") != self.ASSET:
+                continue
+            if fill.get("side") != close_side:
+                continue
+            if (fill.get("time") or 0) < self._entry_time:
+                continue
+            try:
+                close_px = float(fill["px"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            if self._direction == "long":
+                pnl_r = (close_px - self._entry_price) / (self._entry_price - self._sl_price)
+            else:
+                pnl_r = (self._entry_price - close_px) / (self._sl_price - self._entry_price)
+            pnl_r = round(pnl_r, 2)
+            outcome = "win" if pnl_r > 0 else "loss"
+            logging.info(
+                "[SolMomentum] outcome inferred from fill at %.4f → %.2fR", close_px, pnl_r,
+            )
+            return outcome, pnl_r
+        return "unknown", 0.0
 
     # ------------------------------------------------------------------
     # Signal detection
@@ -302,6 +337,7 @@ class SolMomentum:
             self._tp_price    = tp
             self._sl_price    = sl
             self._size        = size_sol
+            self._entry_time  = int(datetime.now(timezone.utc).timestamp() * 1000)
             return
 
         # Atomic entry + bracket: TP/SL only activate once the entry limit fills
@@ -316,6 +352,12 @@ class SolMomentum:
         tp_oid    = oids[1] if len(oids) > 1 else None
         sl_oid    = oids[2] if len(oids) > 2 else None
 
+        if tp_oid is None or sl_oid is None:
+            logging.warning(
+                "[SolMomentum] TP/SL OIDs missing from response (got %d OIDs) — "
+                "will infer outcome from fills on close", len(oids),
+            )
+
         if not entry_oid:
             logging.error("[SolMomentum] entry rejected by exchange — raw resp: %s", resp)
             return
@@ -329,6 +371,7 @@ class SolMomentum:
         self._entry_oid   = entry_oid
         self._tp_oid      = tp_oid
         self._sl_oid      = sl_oid
+        self._entry_time  = int(datetime.now(timezone.utc).timestamp() * 1000)
 
         logging.info(
             "[SolMomentum] entry placed | entry_oid=%s tp_oid=%s sl_oid=%s",
