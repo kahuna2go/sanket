@@ -330,8 +330,8 @@ def _run_simulation(
             bear_trigger = mid  if cfg.fvg_entry == "mid50" else fvg_lo
 
             if sweep_type == "bull":
-                if bar["low"] < fvg_lo:
-                    # Price blew through the FVG bottom — setup invalidated
+                if bar["close"] < fvg_lo:
+                    # Price closed below FVG bottom — setup invalidated
                     d_inval += 1; state = "IDLE"
                 elif bar["low"] <= bull_trigger:
                     # Price enters FVG → long entry
@@ -348,7 +348,7 @@ def _run_simulation(
                     else:
                         state = "IDLE"
             else:  # bear
-                if bar["high"] > fvg_hi:
+                if bar["close"] > fvg_hi:
                     d_inval += 1; state = "IDLE"
                 elif bar["high"] >= bear_trigger:
                     # Price enters FVG → short entry
@@ -645,7 +645,7 @@ def smc_warm_up(candles_5m: list[dict], cfg: SmcConfig) -> dict:
             bull_trigger = mid if cfg.fvg_entry == "mid50" else fvg_hi
             bear_trigger = mid if cfg.fvg_entry == "mid50" else fvg_lo
             if sweep_type == "bull":
-                if bar["low"] < fvg_lo:
+                if bar["close"] < fvg_lo:
                     state = "IDLE"
                 elif bar["low"] <= bull_trigger:
                     entry = bull_trigger; risk = entry - sweep_price
@@ -656,7 +656,7 @@ def smc_warm_up(candles_5m: list[dict], cfg: SmcConfig) -> dict:
                     else:
                         state = "IDLE"
             else:
-                if bar["high"] > fvg_hi:
+                if bar["close"] > fvg_hi:
                     state = "IDLE"
                 elif bar["high"] >= bear_trigger:
                     entry = bear_trigger; risk = sweep_price - entry

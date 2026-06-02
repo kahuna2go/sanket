@@ -120,12 +120,12 @@ def _reconstruct_state(candles: list[dict], session_windows: list[tuple[float, f
             mid = (fvg_hi + fvg_lo) / 2
             trig = mid if _FVG_ENTRY == "mid50" else fvg_hi
             if sweep_type == "bull":
-                if bar["low"] < fvg_lo:
+                if bar["close"] < fvg_lo:
                     state = "IDLE"
                 elif bar["low"] <= trig:
                     state = "IN_TRADE"
             else:
-                if bar["high"] > fvg_hi:
+                if bar["close"] > fvg_hi:
                     state = "IDLE"
                 elif bar["high"] >= (mid if _FVG_ENTRY == "mid50" else fvg_lo):
                     state = "IN_TRADE"
@@ -316,13 +316,13 @@ class Smc:
             trig = mid   # mid50
 
             if self._sweep_type == "bull":
-                if bar["low"] < self._fvg_lo:
+                if bar["close"] < self._fvg_lo:
                     logging.info("%s FVG invalidated (bull) — IDLE", self._tag)
                     self._state = "IDLE"
                 elif bar["low"] <= trig:
                     await self._enter(trig, "long")
             else:
-                if bar["high"] > self._fvg_hi:
+                if bar["close"] > self._fvg_hi:
                     logging.info("%s FVG invalidated (bear) — IDLE", self._tag)
                     self._state = "IDLE"
                 elif bar["high"] >= trig:
