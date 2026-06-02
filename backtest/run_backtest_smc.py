@@ -205,14 +205,49 @@ class SmcConfig:
     label:            str                           = "Baseline"
 
 
-def _make_configs() -> list["SmcConfig"]:
+def _make_configs(eth_sweep: bool = False) -> list["SmcConfig"]:
+    if eth_sweep:
+        # Full parameter sweep for ETH (mirrors SOL exploration)
+        configs = []
+        # Session × Bias (CHoCH=48b, SL=5, mid50, sweep=any)
+        for sess_label, sess_win in [
+            ("No session", None),
+            ("Narrow 08-10+13:30-15:30", _WIN_NARROW),
+            ("Medium 07-11:30+13-16:30", _WIN_MEDIUM),
+            ("Broad 07-17", _WIN_BROAD),
+            ("XBroad 06-20", _WIN_XBROAD),
+        ]:
+            for bias, bias_label in [(False, "no bias"), (True, "+ bias")]:
+                configs.append(SmcConfig(
+                    session_windows=sess_win,
+                    bias_filter=bias,
+                    choch_timeout=48,
+                    label=f"{sess_label} / {bias_label}",
+                ))
+        # CHoCH timeout sweep (Narrow session, no bias, mid50)
+        for choch in [12, 24]:
+            configs.append(SmcConfig(session_windows=_WIN_NARROW, choch_timeout=choch, label=f"Narrow / no bias / CHoCH {choch}b"))
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, bias_filter=True, choch_timeout=12, label="Narrow / + bias / CHoCH 12b"))
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, bias_filter=True, choch_timeout=24, label="Narrow / + bias / CHoCH 24b"))
+        # Entry style (Narrow, no bias vs + bias)
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, fvg_entry="top", label="Narrow / no bias / entry@top"))
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, bias_filter=True, fvg_entry="top", label="Narrow / + bias  / entry@top"))
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, bias_filter=True, fvg_entry="mid50", label="Narrow / + bias  / entry@mid50"))
+        # Sweep mode (Narrow, no bias, mid50)
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, sweep_mode="eql_prefer", label="Narrow / no bias / eql_prefer"))
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, sweep_mode="eql_only",   label="Narrow / no bias / eql_only"))
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, bias_filter=True, sweep_mode="eql_only", label="Narrow / + bias  / eql_only"))
+        # Swing lookback (Narrow, no bias, mid50, CHoCH 48b)
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, swing_lookback=3, label="Narrow / no bias / SL3"))
+        configs.append(SmcConfig(session_windows=_WIN_NARROW, swing_lookback=7, label="Narrow / no bias / SL7"))
+        return configs
     # Candidate A — final locked config (5m FVG wins over 15m FVG; see backtest results)
     return [
         SmcConfig(session_windows=_WIN_NARROW, label="Candidate A"),
     ]
 
 
-ALL_SMC_CONFIGS = _make_configs()
+ALL_SMC_CONFIGS = _make_configs()  # overridden by --eth-sweep at runtime
 
 
 # ---------------------------------------------------------------------------
@@ -735,7 +770,7 @@ def smc_warm_up(candles_5m: list[dict], cfg: SmcConfig) -> dict:
 # Entry points
 # ---------------------------------------------------------------------------
 
-async def run_smc_asset(asset: str, years: int, fetch: bool):
+async def run_smc_asset(asset: str, years: int, fetch: bool, eth_sweep: bool = False):
     from src.trading.hyperliquid_api import HyperliquidAPI
 
     cached = load_cache(asset, "5m")
@@ -760,9 +795,10 @@ async def run_smc_asset(asset: str, years: int, fetch: bool):
     bias_1h = _compute_1h_bias(candles_1h)
     bias_5m = _align_bias_to_5m(bias_1h, len(candles_5m))
 
+    configs = _make_configs(eth_sweep=eth_sweep) if eth_sweep else ALL_SMC_CONFIGS
     all_stats = [
         (cfg, _run_simulation(candles_5m, bias_5m, cfg, candles_15m=candles_15m, debug=(i == 0)))
-        for i, cfg in enumerate(ALL_SMC_CONFIGS)
+        for i, cfg in enumerate(configs)
     ]
     _print_table(asset, candles_5m, all_stats)
     _append_results_md(asset, candles_5m, all_stats)
@@ -790,12 +826,12 @@ async def run_warmup_asset(asset: str, fetch: bool):
     smc_warm_up(recent, cfg)
 
 
-async def main_async(assets: list[str], years: int, fetch: bool, warmup: bool):
+async def main_async(assets: list[str], years: int, fetch: bool, warmup: bool, eth_sweep: bool = False):
     for asset in assets:
         if warmup:
             await run_warmup_asset(asset, fetch)
         else:
-            await run_smc_asset(asset, years, fetch)
+            await run_smc_asset(asset, years, fetch, eth_sweep=eth_sweep)
 
 
 def main():
@@ -805,8 +841,10 @@ def main():
     parser.add_argument("--fetch",  action="store_true")
     parser.add_argument("--warmup", action="store_true",
                         help="Reconstruct current SMC state from recent bars")
+    parser.add_argument("--eth-sweep", action="store_true",
+                        help="Run full parameter sweep for ETH (session×bias×CHoCH×entry×sweep)")
     args = parser.parse_args()
-    asyncio.run(main_async(args.assets, args.years, args.fetch, args.warmup))
+    asyncio.run(main_async(args.assets, args.years, args.fetch, args.warmup, eth_sweep=args.eth_sweep))
 
 
 if __name__ == "__main__":

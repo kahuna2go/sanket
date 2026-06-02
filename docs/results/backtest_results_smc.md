@@ -166,3 +166,34 @@
 | Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
 |--------|--------|------|---------|--------|------|-------|---------|
 | Candidate A | 41 | 31.7% | 3.00 | +11.0 | +0.268 | -9.0R | GO ✓ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-02 12:44 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| No session / no bias | 43 | 27.9% | 3.00 | +5.0 | +0.116 | -10.0R | NO-GO ✗ |
+| No session / + bias | 23 | 34.8% | 3.00 | +9.0 | +0.391 | -4.0R | GO ✓ |
+| Narrow 08-10+13:30-15:30 / no bias | 41 | 31.7% | 3.00 | +11.0 | +0.268 | -9.0R | GO ✓ |
+| Narrow 08-10+13:30-15:30 / + bias | 16 | 37.5% | 3.00 | +8.0 | +0.500 | -3.0R | INCONCLUSIVE (<20) |
+| Medium 07-11:30+13-16:30 / no bias | 51 | 33.3% | 3.00 | +17.0 | +0.333 | -8.0R | GO ✓ |
+| Medium 07-11:30+13-16:30 / + bias | 16 | 50.0% | 3.00 | +16.0 | +1.000 | -3.0R | INCONCLUSIVE (<20) |
+| Broad 07-17 / no bias | 42 | 38.1% | 3.00 | +22.0 | +0.524 | -10.0R | GO ✓ |
+| Broad 07-17 / + bias | 11 | 36.4% | 3.00 | +5.0 | +0.455 | -5.0R | INCONCLUSIVE (<20) |
+| XBroad 06-20 / no bias | 48 | 35.4% | 3.00 | +20.0 | +0.417 | -7.0R | GO ✓ |
+| XBroad 06-20 / + bias | 14 | 21.4% | 3.00 | -2.0 | -0.143 | -6.0R | INCONCLUSIVE (<20) |
+| Narrow / no bias / CHoCH 12b | 27 | 33.3% | 3.00 | +9.0 | +0.333 | -6.0R | GO ✓ |
+| Narrow / no bias / CHoCH 24b | 11 | 45.5% | 3.00 | +9.0 | +0.818 | -3.0R | INCONCLUSIVE (<20) |
+| Narrow / + bias / CHoCH 12b | 8 | 37.5% | 3.00 | +4.0 | +0.500 | -2.0R | INCONCLUSIVE (<20) |
+| Narrow / + bias / CHoCH 24b | 13 | 38.5% | 3.00 | +7.0 | +0.538 | -3.0R | INCONCLUSIVE (<20) |
+| Narrow / no bias / entry@top | 77 | 23.4% | 3.00 | -5.0 | -0.065 | -17.0R | NO-GO ✗ |
+| Narrow / + bias  / entry@top | 26 | 30.8% | 3.00 | +6.0 | +0.231 | -5.0R | GO ✓ |
+| Narrow / + bias  / entry@mid50 | 16 | 37.5% | 3.00 | +8.0 | +0.500 | -3.0R | INCONCLUSIVE (<20) |
+| Narrow / no bias / eql_prefer | 41 | 31.7% | 3.00 | +11.0 | +0.268 | -9.0R | GO ✓ |
+| Narrow / no bias / eql_only | 41 | 31.7% | 3.00 | +11.0 | +0.268 | -9.0R | GO ✓ |
+| Narrow / + bias  / eql_only | 17 | 35.3% | 3.00 | +7.0 | +0.412 | -3.0R | INCONCLUSIVE (<20) |
+| Narrow / no bias / SL3 | 61 | 31.1% | 3.00 | +15.0 | +0.246 | -10.0R | GO ✓ |
+| Narrow / no bias / SL7 | 15 | 33.3% | 3.00 | +5.0 | +0.333 | -4.0R | INCONCLUSIVE (<20) |
