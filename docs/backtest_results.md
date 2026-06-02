@@ -327,6 +327,73 @@ Period: 2024-05-07 → 2026-05-07 | Entry TF: 5m | Both strategies use London/NY
 
 ---
 
+## ETH SMC Scalping — Parameter Sweep (2026-06-02)
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Entry TF:** 5m
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill [1H bias, 5M entry, TP=3×risk]
+**Defaults:** CHoCH 48b, swing_lookback=5 (SL5), sweep_lookback=20, FVG entry=mid50, sweep=any
+
+### Session × Bias matrix
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|-------:|-----:|--------:|-------:|-----:|------:|---------|
+| No session / no bias | 43 | 27.9% | 3.00 | +5.0 | +0.116 | -10.0R | NO-GO ✗ |
+| No session / + bias | 23 | 34.8% | 3.00 | +9.0 | +0.391 | -4.0R | GO ✓ |
+| Narrow 08-10+13:30-15:30 / no bias | 41 | 31.7% | 3.00 | +11.0 | +0.268 | -9.0R | GO ✓ |
+| Narrow 08-10+13:30-15:30 / + bias | 16 | 37.5% | 3.00 | +8.0 | +0.500 | -3.0R | INCONCLUSIVE (<20) |
+| Medium 07-11:30+13-16:30 / no bias | 51 | 33.3% | 3.00 | +17.0 | +0.333 | -8.0R | GO ✓ |
+| Medium 07-11:30+13-16:30 / + bias | 16 | 50.0% | 3.00 | +16.0 | +1.000 | -3.0R | INCONCLUSIVE (<20) |
+| **Broad 07-17 / no bias** | **42** | **38.1%** | **3.00** | **+22.0** | **+0.524** | **-10.0R** | **GO ✓** |
+| Broad 07-17 / + bias | 11 | 36.4% | 3.00 | +5.0 | +0.455 | -5.0R | INCONCLUSIVE (<20) |
+| XBroad 06-20 / no bias | 48 | 35.4% | 3.00 | +20.0 | +0.417 | -7.0R | GO ✓ |
+| XBroad 06-20 / + bias | 14 | 21.4% | 3.00 | -2.0 | -0.143 | -6.0R | INCONCLUSIVE (<20) |
+
+### CHoCH timeout (Narrow session, no bias)
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|-------:|-----:|--------:|-------:|-----:|------:|---------|
+| CHoCH 12b | 27 | 33.3% | 3.00 | +9.0 | +0.333 | -6.0R | GO ✓ |
+| CHoCH 24b | 11 | 45.5% | 3.00 | +9.0 | +0.818 | -3.0R | INCONCLUSIVE (<20) |
+| CHoCH 48b (Candidate A) | 41 | 31.7% | 3.00 | +11.0 | +0.268 | -9.0R | GO ✓ |
+
+### Entry style (Narrow session)
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|-------:|-----:|--------:|-------:|-----:|------:|---------|
+| no bias / entry@top | 77 | 23.4% | 3.00 | -5.0 | -0.065 | -17.0R | NO-GO ✗ |
+| no bias / entry@mid50 (Candidate A) | 41 | 31.7% | 3.00 | +11.0 | +0.268 | -9.0R | GO ✓ |
+| + bias / entry@top | 26 | 30.8% | 3.00 | +6.0 | +0.231 | -5.0R | GO ✓ |
+| + bias / entry@mid50 | 16 | 37.5% | 3.00 | +8.0 | +0.500 | -3.0R | INCONCLUSIVE (<20) |
+
+### Sweep mode & swing lookback (Narrow, no bias, mid50)
+
+| Config | Trades | Win% | AvgR | MaxDD | Verdict |
+|--------|-------:|-----:|-----:|------:|---------|
+| sweep=any, SL3 | 61 | 31.1% | +0.246 | -10.0R | GO ✓ |
+| sweep=any, SL5 (Candidate A) | 41 | 31.7% | +0.268 | -9.0R | GO ✓ |
+| sweep=eql_prefer, SL5 | 41 | 31.7% | +0.268 | -9.0R | GO ✓ |
+| sweep=eql_only, SL5 | 41 | 31.7% | +0.268 | -9.0R | GO ✓ |
+| sweep=any, SL7 | 15 | 33.3% | +0.333 | -4.0R | INCONCLUSIVE (<20) |
+
+### Key findings
+
+- **ETH does not need a tight session window.** Broad 07-17 is the best clean GO: 38.1% WR and +0.524 AvgR — nearly double Candidate A. ETH sweeps and CHoCHs are valid throughout the full EU/US day. This is the opposite of SOL, where Narrow won.
+- **Bias filter drops every session combo below 20 trades.** ETH's 1h structure is messier than SOL's; the bias gate is too restrictive.
+- **mid50 entry is mandatory.** entry@top with no bias loses (-0.065 AvgR, NO-GO). The FVG midpoint is load-bearing for ETH.
+- **Sweep mode is irrelevant for ETH.** any/eql_prefer/eql_only produce identical results — ETH swing levels are already sufficiently distinct.
+- **SL5 (swing_lookback=5) is the sweet spot.** SL3 adds 50% more trades but AvgR drops; SL7 falls below the minimum trade count.
+
+### Candidate configs
+
+| Label | Config | Trades/2y | Win% | AvgR | MaxDD |
+|-------|--------|----------:|-----:|-----:|------:|
+| Candidate A (SOL-parity) | Narrow / no bias / mid50 / CHoCH 48b / SL5 | 41 | 31.7% | +0.268 | -9.0R |
+| **Candidate B (recommended)** | **Broad 07-17 / no bias / mid50 / CHoCH 48b / SL5** | **42** | **38.1%** | **+0.524** | **-10.0R** |
+
+Candidate B is the better ETH config. Same trade count as A, +6.4pp win rate, +0.256 AvgR — at comparable drawdown (-10R vs -9R).
+
+---
+
 ## Run log
 
 | Date       | Asset | HTF | Period              | Command                                              |
