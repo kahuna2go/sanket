@@ -1,9 +1,9 @@
-"""Append a structured trade record to trades.jsonl at the project root."""
+"""Append a structured trade record to data/trades.jsonl (persisted volume)."""
 import json
 import pathlib
 from datetime import datetime, timezone
 
-_LOG_PATH = pathlib.Path(__file__).parent.parent.parent / "trades.jsonl"
+_LOG_PATH = pathlib.Path(__file__).parent.parent.parent / "data" / "trades.jsonl"
 
 
 def append(record: dict) -> None:

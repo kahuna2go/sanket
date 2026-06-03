@@ -194,7 +194,7 @@ class Orb:
 
         # 3. Check trades.jsonl: was a trade already taken today?
         today_str = self._day.isoformat()
-        log_path = pathlib.Path(__file__).parent.parent.parent / "trades.jsonl"
+        log_path = pathlib.Path(__file__).parent.parent.parent / "data" / "trades.jsonl"
         try:
             if log_path.exists():
                 with open(log_path, encoding="utf-8") as f:
