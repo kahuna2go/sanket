@@ -15,7 +15,9 @@ Exit:
 """
 
 import asyncio
+import json
 import logging
+import pathlib
 from datetime import datetime, timezone, date
 from zoneinfo import ZoneInfo
 
@@ -121,6 +123,8 @@ class Orb:
 
         if today != self._day:
             self._reset_day(today)
+            if hf >= 15.0:
+                await self._warm_up(hf)
 
         # Time stop: force-close at 20:00 CET
         if hf >= 20.0:
@@ -166,6 +170,106 @@ class Orb:
         self._retest_high      = None
         self._trade_taken      = False
         logging.info("[ORB] New day reset (%s)", today)
+
+    # ------------------------------------------------------------------
+    # Mid-session warm-up (called after _reset_day when hf >= 15.0)
+    # ------------------------------------------------------------------
+
+    async def _warm_up(self, hf: float):
+        """Reconstruct intra-day state after a mid-session restart.
+
+        Runs once per day, immediately after _reset_day, when the bot
+        starts (or restarts) while the ORB session is already in progress.
+        Restores enough state to decide whether a trade can still be taken
+        and to continue managing any open position.
+        """
+        logging.info("[ORB] Warm-up: reconstructing state for %s (hf=%.2f)", self._day, hf)
+
+        # 1. Bias + funding — always live, re-evaluate
+        await self._eval_bias()
+
+        # 2. OR levels — reconstruct from candle history if window has passed
+        if hf >= 15.5:
+            await self._build_or()
+
+        # 3. Check trades.jsonl: was a trade already taken today?
+        today_str = self._day.isoformat()
+        log_path = pathlib.Path(__file__).parent.parent.parent / "trades.jsonl"
+        try:
+            if log_path.exists():
+                with open(log_path, encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            rec = json.loads(line)
+                            if rec.get("strategy") == "orb" and rec.get("ts", "").startswith(today_str):
+                                self._trade_taken = True
+                                logging.info("[ORB] Warm-up: trade already logged today — skipping entry")
+                                break
+                        except (json.JSONDecodeError, KeyError):
+                            pass
+        except Exception as e:
+            logging.warning("[ORB] Warm-up: could not read trades.jsonl: %s", e)
+
+        # 4. Check exchange for an open position — reconstruct active trade state
+        try:
+            state = await self.hl.get_user_state()
+            short_name = self.ASSET.split(":", 1)[-1]
+            pos = next(
+                (p for p in state["positions"]
+                 if p.get("coin") in (self.ASSET, short_name)),
+                None,
+            )
+            if not pos or abs(float(pos.get("szi", 0) or 0)) < 0.001:
+                return  # no open position — warm-up complete
+
+            szi      = float(pos["szi"])
+            is_long  = szi > 0
+            amount   = abs(szi)
+            entry_px = float(pos.get("entryPx", 0) or 0)
+
+            if self._orh is None or self._orl is None:
+                # OR not available yet (restart before 15:30) — mark in_trade to block new entries
+                logging.warning("[ORB] Warm-up: open position found but OR unavailable — blocking new entries")
+                self._in_trade    = True
+                self._is_long     = is_long
+                self._amount      = amount
+                self._entry_px    = entry_px
+                self._trade_taken = True
+                return
+
+            or_range = self._orh - self._orl
+            tp1 = round(self._orh + 0.5 * or_range, 2) if is_long \
+                else round(self._orl - 0.5 * or_range, 2)
+
+            # Find SL order
+            sl_price = self.hl.round_price(entry_px)  # fallback: treat entry as SL
+            sl_oid   = None
+            try:
+                orders = await self.hl.get_open_orders()
+                for o in orders:
+                    if o.get("coin") in (self.ASSET, short_name) and "triggerPx" in o:
+                        sl_price = float(o["triggerPx"])
+                        sl_oid   = o.get("oid")
+                        break
+            except Exception as e:
+                logging.warning("[ORB] Warm-up: could not read open orders: %s", e)
+
+            self._set_trade(is_long, amount, entry_px, tp1, or_range, sl_price, sl_oid)
+
+            # Infer trail state: SL at/beyond entry means TP1 was already hit
+            trail_active = (sl_price >= entry_px) if is_long else (sl_price <= entry_px)
+            if trail_active:
+                # Reconstruct trail_max from SL: trail_sl = trail_max ± 0.5*range
+                self._trail_max = sl_price + 0.5 * or_range if is_long \
+                    else sl_price - 0.5 * or_range
+            self._trail_active = trail_active
+
+            logging.info(
+                "[ORB] Warm-up: restored %s — entry=%.2f tp1=%.2f sl=%.2f trail=%s",
+                "LONG" if is_long else "SHORT", entry_px, tp1, sl_price, trail_active,
+            )
+        except Exception as e:
+            logging.warning("[ORB] Warm-up: position check failed: %s", e)
 
     # ------------------------------------------------------------------
     # Bias + OR formation
