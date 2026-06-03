@@ -257,11 +257,10 @@ def _make_configs(eth_sweep: bool = False) -> list["SmcConfig"]:
                     label=f"15mFVG / {sess_label} / {bias_label}",
                 ))
         return configs
-    # Candidate A — final locked config (5m FVG wins over 15m FVG; see backtest results)
-    # Candidate B — broad session (ETH live config)
     return [
-        SmcConfig(session_windows=_WIN_NARROW, label="Candidate A"),
-        SmcConfig(session_windows=_WIN_BROAD,  label="Candidate B"),
+        SmcConfig(session_windows=_WIN_NARROW,              label="Candidate A (5m FVG)"),
+        SmcConfig(session_windows=_WIN_NARROW, fvg_tf="15m", label="Candidate A (15m FVG)"),
+        SmcConfig(session_windows=_WIN_BROAD,               label="Candidate B"),
     ]
 
 

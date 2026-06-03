@@ -291,3 +291,15 @@
 | 15mFVG / Broad 07-17 / + bias | 18 | 50.0% | 3.00 | +18.0 | +1.000 | -2.0R | INCONCLUSIVE (<20) |
 | 15mFVG / XBroad 06-20 / no bias | 84 | 34.5% | 3.00 | +32.0 | +0.381 | -12.0R | GO ✓ |
 | 15mFVG / XBroad 06-20 / + bias | 22 | 40.9% | 3.00 | +14.0 | +0.636 | -5.0R | GO ✓ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-03 08:04 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A (5m FVG) | 118 | 34.7% | 3.00 | +46.0 | +0.390 | -8.0R | GO ✓ |
+| Candidate A (15m FVG) | 77 | 27.3% | 3.00 | +7.0 | +0.091 | -11.0R | NO-GO ✗ |
+| Candidate B | 100 | 33.0% | 3.00 | +32.0 | +0.320 | -11.0R | GO ✓ |
