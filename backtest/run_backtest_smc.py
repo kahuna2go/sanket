@@ -240,6 +240,22 @@ def _make_configs(eth_sweep: bool = False) -> list["SmcConfig"]:
         # Swing lookback (Narrow, no bias, mid50, CHoCH 48b)
         configs.append(SmcConfig(session_windows=_WIN_NARROW, swing_lookback=3, label="Narrow / no bias / SL3"))
         configs.append(SmcConfig(session_windows=_WIN_NARROW, swing_lookback=7, label="Narrow / no bias / SL7"))
+        # 15m FVG — session × bias grid (same as 5m block above, fvg_tf="15m")
+        for sess_label, sess_win in [
+            ("No session", None),
+            ("Narrow 08-10+13:30-15:30", _WIN_NARROW),
+            ("Medium 07-11:30+13-16:30", _WIN_MEDIUM),
+            ("Broad 07-17", _WIN_BROAD),
+            ("XBroad 06-20", _WIN_XBROAD),
+        ]:
+            for bias, bias_label in [(False, "no bias"), (True, "+ bias")]:
+                configs.append(SmcConfig(
+                    session_windows=sess_win,
+                    bias_filter=bias,
+                    choch_timeout=48,
+                    fvg_tf="15m",
+                    label=f"15mFVG / {sess_label} / {bias_label}",
+                ))
         return configs
     # Candidate A — final locked config (5m FVG wins over 15m FVG; see backtest results)
     # Candidate B — broad session (ETH live config)
@@ -290,6 +306,8 @@ def _run_simulation(
     sl_ptr = sh_ptr = 0
     visible_swing_lows:  list[tuple[int, float]] = []
     visible_swing_highs: list[tuple[int, float]] = []
+    # Window-start pointers for O(1) recent-swing lookup (advanced monotonically)
+    recent_sl_start = recent_sh_start = 0
 
     d_sweeps = d_timeout = d_no_fvg = d_inval = d_fvg_timeout = d_opened = 0
 
@@ -399,8 +417,13 @@ def _run_simulation(
             continue
 
         # ── IDLE: detect sweeps ───────────────────────────────────────────────
-        recent_lows  = [s for s in visible_swing_lows  if s[0] >= i - cfg.sweep_lookback]
-        recent_highs = [s for s in visible_swing_highs if s[0] >= i - cfg.sweep_lookback]
+        # Advance recent-window start pointers (O(1) amortized)
+        while recent_sl_start < len(visible_swing_lows)  and visible_swing_lows[recent_sl_start][0]  < i - cfg.sweep_lookback:
+            recent_sl_start += 1
+        while recent_sh_start < len(visible_swing_highs) and visible_swing_highs[recent_sh_start][0] < i - cfg.sweep_lookback:
+            recent_sh_start += 1
+        recent_lows  = visible_swing_lows[recent_sl_start:]
+        recent_highs = visible_swing_highs[recent_sh_start:]
 
         # Apply EQL/EQH filtering to candidate sweep levels
         if cfg.sweep_mode == "eql_only":
@@ -417,19 +440,18 @@ def _run_simulation(
 
         bias = bias_5m[i]
 
-        # Bullish sweep
+        # Bullish sweep — all visible_swing_highs are confirmed at j+lb<=i, so j<i always
         if candidate_lows and (not cfg.bias_filter or bias == "bull"):
             _, sl_price = candidate_lows[-1]
             if bar["low"] < sl_price and bar["close"] > sl_price:
                 if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
-                    highs_before = [s for s in visible_swing_highs if s[0] < i]
-                    if highs_before:
+                    if visible_swing_highs:
                         state          = "SWEPT"
                         sweep_type     = "bull"
                         sweep_price    = bar["low"]
                         sweep_bar_idx  = i
                         choch_deadline = i + cfg.choch_timeout
-                        choch_target   = highs_before[-1][1]
+                        choch_target   = visible_swing_highs[-1][1]
                         d_sweeps      += 1
                         continue
 
@@ -438,14 +460,13 @@ def _run_simulation(
             _, sh_price = candidate_highs[-1]
             if bar["high"] > sh_price and bar["close"] < sh_price:
                 if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
-                    lows_before = [s for s in visible_swing_lows if s[0] < i]
-                    if lows_before:
+                    if visible_swing_lows:
                         state          = "SWEPT"
                         sweep_type     = "bear"
                         sweep_price    = bar["high"]
                         sweep_bar_idx  = i
                         choch_deadline = i + cfg.choch_timeout
-                        choch_target   = lows_before[-1][1]
+                        choch_target   = visible_swing_lows[-1][1]
                         d_sweeps      += 1
 
     # Close any still-open trade at end of dataset

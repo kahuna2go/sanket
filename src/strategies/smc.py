@@ -12,8 +12,8 @@ Risk: fixed 50 USDC per trade.
 Mutual exclusion: checks for an existing position in the asset before entering.
 
 Configs:
-  SOL Candidate A — Narrow session (08-10 + 13:30-15:30 UTC)
-  ETH Candidate B — Broad session (07-17 UTC)
+  SOL Candidate A — Narrow session (08-10 + 13:30-15:30 UTC), 5m FVG
+  ETH Candidate   — Narrow session (08-10 + 13:30-15:30 UTC), 15m FVG
 
 Warm-up on startup: replays last 200 5M bars to reconstruct any in-flight
   setup so no setup is missed after a restart or connection drop.
@@ -46,9 +46,10 @@ SOL_SESSION_WINDOWS: list[tuple[float, float]] = [
     (13.5, 15.5),   # NY open
 ]
 
-# ETH Candidate B — Broad session 07-17 UTC
+# ETH — Narrow session (same windows as SOL, 15m FVG — see backtest Candidate)
 ETH_SESSION_WINDOWS: list[tuple[float, float]] = [
-    (7.0, 17.0),
+    (8.0,  10.0),   # London open
+    (13.5, 15.5),   # NY open
 ]
 
 
@@ -89,7 +90,22 @@ def _find_bearish_fvg(bars: list[dict]) -> tuple[float, float] | None:
     return None
 
 
-def _reconstruct_state(candles: list[dict], session_windows: list[tuple[float, float]]) -> dict:
+def _resample_15m(candles: list[dict]) -> list[dict]:
+    result = []
+    for i in range(0, len(candles) - 2, 3):
+        group = candles[i:i+3]
+        if len(group) == 3:
+            result.append({
+                "t":    group[0]["t"],
+                "open": group[0]["open"],
+                "high": max(g["high"] for g in group),
+                "low":  min(g["low"]  for g in group),
+                "close": group[-1]["close"],
+            })
+    return result
+
+
+def _reconstruct_state(candles: list[dict], session_windows: list[tuple[float, float]], fvg_tf: str = "5m") -> dict:
     """Replay candles through SMC state machine, return current state dict."""
     n = len(candles)
     lb = _SWING_LOOKBACK
@@ -136,13 +152,15 @@ def _reconstruct_state(candles: list[dict], session_windows: list[tuple[float, f
             if i > choch_dl:
                 state = "IDLE"
             elif sweep_type == "bull" and bar["close"] > choch_tgt:
-                fvg = _find_bullish_fvg(candles[sweep_idx:i+1])
+                disp = candles[sweep_idx:i+1]
+                fvg = _find_bullish_fvg(_resample_15m(disp) if fvg_tf == "15m" else disp)
                 if fvg:
                     fvg_hi, fvg_lo = fvg; fvg_start = i; state = "FVG_WAIT"
                 else:
                     state = "IDLE"
             elif sweep_type == "bear" and bar["close"] < choch_tgt:
-                fvg = _find_bearish_fvg(candles[sweep_idx:i+1])
+                disp = candles[sweep_idx:i+1]
+                fvg = _find_bearish_fvg(_resample_15m(disp) if fvg_tf == "15m" else disp)
                 if fvg:
                     fvg_hi, fvg_lo = fvg; fvg_start = i; state = "FVG_WAIT"
                 else:
@@ -198,11 +216,13 @@ class Smc:
         hl: HyperliquidAPI,
         asset: str = "SOL",
         session_windows: list[tuple[float, float]] | None = None,
+        fvg_tf: str = "5m",
         dry_run: bool = False,
     ):
         self.hl               = hl
         self.ASSET            = asset
         self._session_windows = session_windows if session_windows is not None else SOL_SESSION_WINDOWS
+        self._fvg_tf          = fvg_tf
         self.dry_run          = dry_run
         self._tag             = f"[SMC/{asset}]"
 
@@ -255,7 +275,7 @@ class Smc:
             return
 
         recent = candles[-_WARMUP_BARS:]
-        s = _reconstruct_state(recent, self._session_windows)
+        s = _reconstruct_state(recent, self._session_windows, fvg_tf=self._fvg_tf)
         self._state       = s["state"]
         self._sweep_type  = s["sweep_type"]
         self._sweep_price = s["sweep_price"]
@@ -337,7 +357,8 @@ class Smc:
                 self._state = "IDLE"
             elif self._sweep_type == "bull" and bar["close"] > self._choch_tgt:
                 disp_start = max(0, n - 1 - _CHOCH_TIMEOUT)
-                fvg = _find_bullish_fvg(candles[disp_start:])
+                disp = candles[disp_start:]
+                fvg = _find_bullish_fvg(_resample_15m(disp) if self._fvg_tf == "15m" else disp)
                 if fvg:
                     self._fvg_hi, self._fvg_lo = fvg
                     self._state = "FVG_WAIT"
@@ -348,7 +369,8 @@ class Smc:
                     self._state = "IDLE"
             elif self._sweep_type == "bear" and bar["close"] < self._choch_tgt:
                 disp_start = max(0, n - 1 - _CHOCH_TIMEOUT)
-                fvg = _find_bearish_fvg(candles[disp_start:])
+                disp = candles[disp_start:]
+                fvg = _find_bearish_fvg(_resample_15m(disp) if self._fvg_tf == "15m" else disp)
                 if fvg:
                     self._fvg_hi, self._fvg_lo = fvg
                     self._state = "FVG_WAIT"

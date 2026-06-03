@@ -239,3 +239,55 @@
 |--------|--------|------|---------|--------|------|-------|---------|
 | Candidate A | 107 | 29.9% | 3.00 | +21.0 | +0.196 | -11.0R | NO-GO ✗ |
 | Candidate B | 39 | 30.8% | 3.00 | +9.0 | +0.231 | -9.0R | GO ✓ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-03 07:43 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Candidate A | 118 | 34.7% | 3.00 | +46.0 | +0.390 | -8.0R | GO ✓ |
+| Candidate B | 100 | 33.0% | 3.00 | +32.0 | +0.320 | -11.0R | GO ✓ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-06-03 07:48 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| No session / no bias | 79 | 30.4% | 3.00 | +17.0 | +0.215 | -17.0R | GO ✓ |
+| No session / + bias | 57 | 33.3% | 3.00 | +19.0 | +0.333 | -8.0R | GO ✓ |
+| Narrow 08-10+13:30-15:30 / no bias | 107 | 29.9% | 3.00 | +21.0 | +0.196 | -11.0R | NO-GO ✗ |
+| Narrow 08-10+13:30-15:30 / + bias | 31 | 25.8% | 3.00 | +1.0 | +0.032 | -9.0R | NO-GO ✗ |
+| Medium 07-11:30+13-16:30 / no bias | 117 | 31.6% | 3.00 | +31.0 | +0.265 | -24.0R | GO ✓ |
+| Medium 07-11:30+13-16:30 / + bias | 33 | 36.4% | 3.00 | +15.0 | +0.455 | -6.0R | GO ✓ |
+| Broad 07-17 / no bias | 39 | 30.8% | 3.00 | +9.0 | +0.231 | -9.0R | GO ✓ |
+| Broad 07-17 / + bias | 29 | 34.5% | 3.00 | +11.0 | +0.379 | -8.0R | GO ✓ |
+| XBroad 06-20 / no bias | 122 | 32.0% | 3.00 | +34.0 | +0.279 | -11.0R | GO ✓ |
+| XBroad 06-20 / + bias | 40 | 30.0% | 3.00 | +8.0 | +0.200 | -10.0R | GO ✓ |
+| Narrow / no bias / CHoCH 12b | 57 | 29.8% | 3.00 | +11.0 | +0.193 | -6.0R | NO-GO ✗ |
+| Narrow / no bias / CHoCH 24b | 30 | 36.7% | 3.00 | +14.0 | +0.467 | -4.0R | GO ✓ |
+| Narrow / + bias / CHoCH 12b | 17 | 23.5% | 3.00 | -1.0 | -0.059 | -9.0R | INCONCLUSIVE (<20) |
+| Narrow / + bias / CHoCH 24b | 25 | 28.0% | 3.00 | +3.0 | +0.120 | -7.0R | NO-GO ✗ |
+| Narrow / no bias / entry@top | 122 | 27.0% | 3.00 | +10.0 | +0.082 | -16.0R | NO-GO ✗ |
+| Narrow / + bias  / entry@top | 36 | 22.2% | 3.00 | -4.0 | -0.111 | -9.0R | NO-GO ✗ |
+| Narrow / + bias  / entry@mid50 | 31 | 25.8% | 3.00 | +1.0 | +0.032 | -9.0R | NO-GO ✗ |
+| Narrow / no bias / eql_prefer | 107 | 29.9% | 3.00 | +21.0 | +0.196 | -11.0R | NO-GO ✗ |
+| Narrow / no bias / eql_only | 107 | 29.9% | 3.00 | +21.0 | +0.196 | -11.0R | NO-GO ✗ |
+| Narrow / + bias  / eql_only | 31 | 25.8% | 3.00 | +1.0 | +0.032 | -9.0R | NO-GO ✗ |
+| Narrow / no bias / SL3 | 138 | 29.7% | 3.00 | +26.0 | +0.188 | -13.0R | NO-GO ✗ |
+| Narrow / no bias / SL7 | 71 | 39.4% | 3.00 | +41.0 | +0.577 | -6.0R | GO ✓ |
+| 15mFVG / No session / no bias | 73 | 23.3% | 3.00 | -5.0 | -0.068 | -13.0R | NO-GO ✗ |
+| 15mFVG / No session / + bias | 36 | 41.7% | 3.00 | +24.0 | +0.667 | -4.0R | GO ✓ |
+| 15mFVG / Narrow 08-10+13:30-15:30 / no bias | 77 | 40.3% | 3.00 | +47.0 | +0.610 | -6.0R | GO ✓ |
+| 15mFVG / Narrow 08-10+13:30-15:30 / + bias | 20 | 50.0% | 3.00 | +20.0 | +1.000 | -3.0R | GO ✓ |
+| 15mFVG / Medium 07-11:30+13-16:30 / no bias | 38 | 36.8% | 3.00 | +18.0 | +0.474 | -6.0R | GO ✓ |
+| 15mFVG / Medium 07-11:30+13-16:30 / + bias | 24 | 41.7% | 3.00 | +16.0 | +0.667 | -7.0R | GO ✓ |
+| 15mFVG / Broad 07-17 / no bias | 49 | 32.7% | 3.00 | +15.0 | +0.306 | -9.0R | GO ✓ |
+| 15mFVG / Broad 07-17 / + bias | 18 | 50.0% | 3.00 | +18.0 | +1.000 | -2.0R | INCONCLUSIVE (<20) |
+| 15mFVG / XBroad 06-20 / no bias | 84 | 34.5% | 3.00 | +32.0 | +0.381 | -12.0R | GO ✓ |
+| 15mFVG / XBroad 06-20 / + bias | 22 | 40.9% | 3.00 | +14.0 | +0.636 | -5.0R | GO ✓ |

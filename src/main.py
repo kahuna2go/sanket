@@ -2301,7 +2301,7 @@ def main():
             await hyperliquid.get_meta_and_ctxs()
             smoby    = SolMomentum(hyperliquid, risk_pct=risk_pct, dry_run=dry_run)
             sol_smc  = Smc(hyperliquid, asset="SOL", session_windows=SOL_SESSION_WINDOWS, dry_run=dry_run)
-            eth_smc  = Smc(hyperliquid, asset="ETH", session_windows=ETH_SESSION_WINDOWS, dry_run=dry_run)
+            eth_smc  = Smc(hyperliquid, asset="ETH", session_windows=ETH_SESSION_WINDOWS, fvg_tf="15m", dry_run=dry_run)
             await asyncio.gather(smoby.run(), sol_smc.run(), eth_smc.run())
         elif strategy == "orb":
             from src.strategies.orb import Orb
