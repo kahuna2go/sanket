@@ -22,6 +22,7 @@ Warm-up on startup: replays last 200 5M bars to reconstruct any in-flight
 import asyncio
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from src.utils import trade_log
 
 from src.trading.hyperliquid_api import HyperliquidAPI
@@ -266,7 +267,7 @@ class Smc:
         if self._state == "SWEPT":
             self._choch_dl_ts = now_ts + s["choch_bars_left"] * 5 * 60
 
-        last_ts = datetime.fromtimestamp(recent[-1]["t"] / 1000, tz=_UTC).strftime("%H:%M UTC")
+        last_ts = datetime.fromtimestamp(recent[-1]["t"] / 1000, tz=_UTC).astimezone(ZoneInfo("Europe/Vienna")).strftime("%H:%M Vienna")
         logging.info(
             "%s warm-up done (last bar %s): state=%s sweep_type=%s choch_tgt=%.4f fvg=%.4f–%.4f",
             self._tag, last_ts, self._state, self._sweep_type,
