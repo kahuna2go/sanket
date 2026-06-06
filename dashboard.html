@@ -494,13 +494,22 @@
       <button id="llm-stop-btn"  onclick="lcStop('llm')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
     </div>
     <div style="width:1px;height:40px;background:var(--border-2);"></div>
-    <!-- SMOCY (SOL Momentum + SMC combined) -->
+    <!-- SMOBY (SOL Momentum) -->
     <div style="display:flex;align-items:center;gap:10px;">
-      <span id="smocy-dot" style="width:8px;height:8px;border-radius:50%;background:#d42f2f;display:inline-block;"></span>
-      <span style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">SMOCY</span>
-      <span style="font-family:var(--font-data);font-size:10px;color:var(--muted);">Smoby + SMC · mutual exclusion</span>
-      <button id="smocy-start-btn" onclick="lcStart('smocy')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
-      <button id="smocy-stop-btn"  onclick="lcStop('smocy')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
+      <span id="smoby-dot" style="width:8px;height:8px;border-radius:50%;background:#d42f2f;display:inline-block;"></span>
+      <span style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">SMOBY</span>
+      <span style="font-family:var(--font-data);font-size:10px;color:var(--muted);">SOL · EMA9/21 crossover · 15m</span>
+      <button id="smoby-start-btn" onclick="lcStart('smoby')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
+      <button id="smoby-stop-btn"  onclick="lcStop('smoby')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
+    </div>
+    <div style="width:1px;height:40px;background:var(--border-2);"></div>
+    <!-- SMC (SOL + ETH Smart Money Concepts) -->
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="smc-dot" style="width:8px;height:8px;border-radius:50%;background:#d42f2f;display:inline-block;"></span>
+      <span style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">SMC</span>
+      <span style="font-family:var(--font-data);font-size:10px;color:var(--muted);">SOL + ETH · liquidity sweep · FVG</span>
+      <button id="smc-start-btn" onclick="lcStart('smc')" style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:none;background:#0aab5c;color:#fff;cursor:pointer;">Start</button>
+      <button id="smc-stop-btn"  onclick="lcStop('smc')"  style="font-family:var(--font-label);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 14px;border-radius:6px;border:1px solid #d42f2f;background:transparent;color:#d42f2f;cursor:pointer;" disabled>Stop</button>
     </div>
     <div style="width:1px;height:40px;background:var(--border-2);"></div>
     <!-- ORB (Opening Range Breakout — SP500) -->
@@ -703,14 +712,25 @@
     </div>
 
     <div class="log-panel">
-      <div class="log-head" onclick="lcToggleLog('smocy')">
-        <span class="log-title" id="log-hdr-smocy">▾ SMOCY (Smoby + SMC) — Live Output</span>
+      <div class="log-head" onclick="lcToggleLog('smoby')">
+        <span class="log-title" id="log-hdr-smoby">▾ SMOBY (SOL Momentum) — Live Output</span>
         <div class="log-actions">
-          <button class="log-copy-btn" id="log-copy-smocy" onclick="event.stopPropagation();lcCopyLog('smocy')">COPY</button>
-          <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-smocy').innerHTML=''">CLEAR</button>
+          <button class="log-copy-btn" id="log-copy-smoby" onclick="event.stopPropagation();lcCopyLog('smoby')">COPY</button>
+          <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-smoby').innerHTML=''">CLEAR</button>
         </div>
       </div>
-      <div class="log-body" id="log-body-smocy"></div>
+      <div class="log-body" id="log-body-smoby"></div>
+    </div>
+
+    <div class="log-panel">
+      <div class="log-head" onclick="lcToggleLog('smc')">
+        <span class="log-title" id="log-hdr-smc">▾ SMC (SOL + ETH) — Live Output</span>
+        <div class="log-actions">
+          <button class="log-copy-btn" id="log-copy-smc" onclick="event.stopPropagation();lcCopyLog('smc')">COPY</button>
+          <button class="log-clear-btn" onclick="event.stopPropagation();document.getElementById('log-body-smc').innerHTML=''">CLEAR</button>
+        </div>
+      </div>
+      <div class="log-body" id="log-body-smc"></div>
     </div>
 
   </div><!-- /tab-logs -->
@@ -1273,7 +1293,7 @@
     if (name === 'logs') {
       document.getElementById('logs-tab-dot').classList.remove('on');
       // scroll log bodies to bottom when switching in
-      ['llm', 'sol_momentum', 'smocy'].forEach(n => {
+      ['llm', 'sol_momentum', 'smoby', 'smc'].forEach(n => {
         const el = document.getElementById('log-body-' + n);
         if (el) el.scrollTop = el.scrollHeight;
       });
@@ -1281,8 +1301,8 @@
   }
 
   const _logEs = {};
-  const _logCollapsed = { llm: false, sol_momentum: false, smocy: false };
-  const _logLabels    = { llm: 'LLM Strategy', sol_momentum: 'SOL Momentum', smocy: 'SMOCY (Smoby + SMC)' };
+  const _logCollapsed = { llm: false, sol_momentum: false, smoby: false, smc: false };
+  const _logLabels    = { llm: 'LLM Strategy', sol_momentum: 'SOL Momentum', smoby: 'SMOBY (SOL Momentum)', smc: 'SMC (SOL + ETH)' };
 
   function lcColorLine(line) {
     const l = line.toLowerCase();
@@ -1354,19 +1374,24 @@
       const d = await fetch('/api/status', { credentials: 'include' }).then(r => r.json());
       document.getElementById('launcher-bar').style.display = 'flex';
       connectLog('llm');
-      connectLog('smocy');
+      connectLog('smoby');
+      connectLog('smc');
       connectLog('orb');
 
       const llmR   = d.strategies?.llm?.running;
-      const smocyR = d.strategies?.smocy?.running;
+      const smobyR = d.strategies?.smoby?.running;
+      const smcR   = d.strategies?.smc?.running;
       const orbR   = d.strategies?.orb?.running;
       document.getElementById('llm-dot').style.background   = llmR   ? '#0aab5c' : '#d42f2f';
-      document.getElementById('smocy-dot').style.background = smocyR ? '#0aab5c' : '#d42f2f';
+      document.getElementById('smoby-dot').style.background = smobyR ? '#0aab5c' : '#d42f2f';
+      document.getElementById('smc-dot').style.background   = smcR   ? '#0aab5c' : '#d42f2f';
       document.getElementById('orb-dot').style.background   = orbR   ? '#0aab5c' : '#d42f2f';
       document.getElementById('llm-start-btn').disabled   = llmR;
       document.getElementById('llm-stop-btn').disabled    = !llmR;
-      document.getElementById('smocy-start-btn').disabled = smocyR;
-      document.getElementById('smocy-stop-btn').disabled  = !smocyR;
+      document.getElementById('smoby-start-btn').disabled = smobyR;
+      document.getElementById('smoby-stop-btn').disabled  = !smobyR;
+      document.getElementById('smc-start-btn').disabled   = smcR;
+      document.getElementById('smc-stop-btn').disabled    = !smcR;
       document.getElementById('orb-start-btn').disabled   = orbR;
       document.getElementById('orb-stop-btn').disabled    = !orbR;
     } catch { /* launcher not running */ }
