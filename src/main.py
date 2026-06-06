@@ -2286,12 +2286,13 @@ def main():
             strat = SolMomentum(hyperliquid, risk_pct=risk_pct, dry_run=dry_run)
             await strat.run()
         elif strategy == "smc":
-            from src.strategies.smc import Smc, SOL_SESSION_WINDOWS
+            from src.strategies.smc import Smc, SOL_SESSION_WINDOWS, ETH_SESSION_WINDOWS
             from src.config_loader import CONFIG as _CFG
             dry_run = _CFG.get("dry_run", False)
             await hyperliquid.get_meta_and_ctxs()
-            strat = Smc(hyperliquid, asset="SOL", session_windows=SOL_SESSION_WINDOWS, dry_run=dry_run)
-            await strat.run()
+            sol_smc = Smc(hyperliquid, asset="SOL", session_windows=SOL_SESSION_WINDOWS, dry_run=dry_run)
+            eth_smc = Smc(hyperliquid, asset="ETH", session_windows=ETH_SESSION_WINDOWS, fvg_tf="15m", dry_run=dry_run)
+            await asyncio.gather(sol_smc.run(), eth_smc.run())
         elif strategy == "smocy":
             from src.strategies.sol_momentum import SolMomentum
             from src.strategies.smc import Smc, SOL_SESSION_WINDOWS, ETH_SESSION_WINDOWS

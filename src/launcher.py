@@ -53,8 +53,14 @@ _strategies: dict[str, dict] = {
         "logs": deque(maxlen=300),
         "subscribers": set(),
     },
-    "smocy": {
+    "smoby": {
         "port": 3002,
+        "proc": None,
+        "logs": deque(maxlen=300),
+        "subscribers": set(),
+    },
+    "smc": {
+        "port": 3004,
         "proc": None,
         "logs": deque(maxlen=300),
         "subscribers": set(),
@@ -225,6 +231,8 @@ async def handle_start(request):
     if name not in _strategies:
         return web.json_response({"ok": False, "error": "unknown strategy"}, status=400)
 
+    _strategy_env = {"smoby": "sol_momentum"}  # name → STRATEGY env var when different
+
     if name == "llm":
         assets = body.get("assets", [])
         interval = body.get("interval", "5m")
@@ -233,7 +241,7 @@ async def handle_start(request):
         args = ["--assets"] + assets + ["--interval", interval]
         result = await _start(name, args=args)
     else:
-        result = await _start(name, extra_env={"STRATEGY": name})
+        result = await _start(name, extra_env={"STRATEGY": _strategy_env.get(name, name)})
 
     return web.json_response(result)
 
