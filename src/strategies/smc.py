@@ -501,27 +501,13 @@ class Smc:
         if abs(szi) > 0.001:
             return
 
-        open_orders = await self.hl.get_open_orders()
-        open_oids   = {o.get("oid") for o in open_orders
-                       if self.hl._coin_matches(o.get("coin", ""), self.ASSET)}
-
-        tp_alive = self._tp_oid is not None and self._tp_oid in open_oids
-        sl_alive = self._sl_oid is not None and self._sl_oid in open_oids
-
-        if sl_alive and not tp_alive:
-            outcome, pnl_r = "win", TP_R
-            if not self.dry_run:
-                await self.hl.cancel_order(self.ASSET, self._sl_oid)
-        elif tp_alive and not sl_alive:
-            outcome, pnl_r = "loss", -1.0
-            if not self.dry_run:
-                await self.hl.cancel_order(self.ASSET, self._tp_oid)
+        # Hyperliquid auto-cancels both reduce-only orders when the position closes,
+        # so checking which OID is still alive never works. Go straight to fills.
+        if not self.dry_run:
+            await self.hl.cancel_all_orders(self.ASSET)
+            outcome, pnl_r = await self._infer_outcome_from_fills()
         else:
-            if not self.dry_run:
-                await self.hl.cancel_all_orders(self.ASSET)
-                outcome, pnl_r = await self._infer_outcome_from_fills()
-            else:
-                outcome, pnl_r = "unknown", 0.0
+            outcome, pnl_r = "unknown", 0.0
 
         self._stats["trades"] += 1
         self._stats["total_r"] += pnl_r
