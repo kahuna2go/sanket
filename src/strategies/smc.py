@@ -245,6 +245,7 @@ class Smc:
         self._size       = 0.0
         self._tp_oid     = None
         self._sl_oid     = None
+        self._entry_time = 0  # ms timestamp when entry was placed
 
         self._last_bar_ts = 0
         self._stats = {"trades": 0, "wins": 0, "losses": 0, "total_r": 0.0}
@@ -456,6 +457,7 @@ class Smc:
             self._tp        = tp
             self._sl        = sl
             self._size      = size
+            self._entry_time = int(datetime.now(_UTC).timestamp() * 1000)
             self._state     = "IDLE"
             return
 
@@ -472,15 +474,16 @@ class Smc:
         tp_oids = self.hl.extract_oids(tp_order)
         sl_oids = self.hl.extract_oids(sl_order)
 
-        self._in_trade  = True
-        self._direction = direction
-        self._entry     = entry_px
-        self._tp        = tp
-        self._sl        = sl
-        self._size      = size
-        self._tp_oid    = tp_oids[0] if tp_oids else None
-        self._sl_oid    = sl_oids[0] if sl_oids else None
-        self._state     = "IDLE"
+        self._in_trade   = True
+        self._direction  = direction
+        self._entry      = entry_px
+        self._tp         = tp
+        self._sl         = sl
+        self._size       = size
+        self._tp_oid     = tp_oids[0] if tp_oids else None
+        self._sl_oid     = sl_oids[0] if sl_oids else None
+        self._entry_time = int(datetime.now(_UTC).timestamp() * 1000)
+        self._state      = "IDLE"
 
         logging.info("%s entry placed | tp_oid=%s sl_oid=%s", self._tag, self._tp_oid, self._sl_oid)
 
@@ -514,9 +517,11 @@ class Smc:
             if not self.dry_run:
                 await self.hl.cancel_order(self.ASSET, self._tp_oid)
         else:
-            outcome, pnl_r = "unknown", 0.0
             if not self.dry_run:
                 await self.hl.cancel_all_orders(self.ASSET)
+                outcome, pnl_r = await self._infer_outcome_from_fills()
+            else:
+                outcome, pnl_r = "unknown", 0.0
 
         self._stats["trades"] += 1
         self._stats["total_r"] += pnl_r
@@ -541,7 +546,37 @@ class Smc:
             "size": self._size, "outcome": outcome, "pnl_r": pnl_r,
         })
 
-        self._in_trade  = False
-        self._direction = None
-        self._tp_oid    = None
-        self._sl_oid    = None
+        self._in_trade   = False
+        self._direction  = None
+        self._tp_oid     = None
+        self._sl_oid     = None
+        self._entry_time = 0
+
+    # ------------------------------------------------------------------
+    # Fill-based outcome inference (fallback when OID tracking fails)
+    # ------------------------------------------------------------------
+
+    async def _infer_outcome_from_fills(self) -> tuple[str, float]:
+        fills = await self.hl.get_recent_fills(limit=20)
+        close_side = "B" if self._direction == "short" else "A"
+        for fill in reversed(fills):
+            if fill.get("coin") != self.ASSET:
+                continue
+            if fill.get("side") != close_side:
+                continue
+            if (fill.get("time") or 0) < self._entry_time:
+                continue
+            try:
+                close_px = float(fill["px"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            if self._direction == "long":
+                pnl_r = (close_px - self._entry) / (self._entry - self._sl)
+            else:
+                pnl_r = (self._entry - close_px) / (self._sl - self._entry)
+            pnl_r = round(pnl_r, 2)
+            outcome = "win" if pnl_r > 0 else "loss"
+            logging.info("%s outcome inferred from fill at %.4f → %.2fR", self._tag, close_px, pnl_r)
+            return outcome, pnl_r
+        logging.warning("%s could not infer outcome from fills — marking unknown", self._tag)
+        return "unknown", 0.0
