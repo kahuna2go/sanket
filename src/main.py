@@ -2061,15 +2061,35 @@ def main():
                         pass
             except FileNotFoundError:
                 pass
-            return web.json_response({
-                "status": "running",
-                "uptime_minutes": round((datetime.now(timezone.utc) - start_time).total_seconds() / 60, 1),
-                "invocation_count": invocation_count,
-                "model_usage": model_usage,
-                "llm_paused": llm_paused,
-                "recent_decisions": recent_decisions,
-                **last_state,
-            })
+
+            uptime = round((datetime.now(timezone.utc) - start_time).total_seconds() / 60, 1)
+
+            if last_state:
+                # LLM strategy: return full loop state
+                return web.json_response({
+                    "status": "running",
+                    "uptime_minutes": uptime,
+                    "invocation_count": invocation_count,
+                    "model_usage": model_usage,
+                    "llm_paused": llm_paused,
+                    "recent_decisions": recent_decisions,
+                    **last_state,
+                })
+            else:
+                # Non-LLM strategy: fetch live account state directly from HL
+                hl_state = await hyperliquid.get_user_state()
+                return web.json_response({
+                    "status": "running",
+                    "uptime_minutes": uptime,
+                    "invocation_count": 0,
+                    "model_usage": {},
+                    "llm_paused": llm_paused,
+                    "recent_decisions": recent_decisions,
+                    "balance": round_or_none(hl_state.get("balance"), 2),
+                    "total_value": round_or_none(hl_state.get("total_value"), 2),
+                    "positions": hl_state.get("positions", []),
+                    "account_value": round_or_none(hl_state.get("total_value"), 2),
+                })
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
 
@@ -2268,11 +2288,10 @@ def main():
         await start_api(app)
         from src.config_loader import CONFIG as CFG
         strategy = (CFG.get("strategy") or "llm").lower()
-        if strategy == "llm":
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, CFG.get("api_host"), int(CFG.get("api_port")))
-            await site.start()
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, CFG.get("api_host"), int(CFG.get("api_port")))
+        await site.start()
         if strategy == "hybrid":
             from src.strategies.hybrid.hybrid_manager import HybridManager
             mgr = HybridManager(hyperliquid, risk_mgr)

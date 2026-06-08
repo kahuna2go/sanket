@@ -288,25 +288,27 @@ async def handle_llm_pause(request):
 
 
 async def handle_proxy(request):
-    """Proxy LLM strategy API endpoints to port 3001 so dashboard works unchanged.
-    When LLM is not running, return stub data so the dashboard renders (overlay clears)
-    and the launcher control bar is visible.
+    """Proxy API endpoints to any running strategy subprocess.
+    Tries all running strategies in order; falls back to stub when none are running.
     """
     import aiohttp as _aio
     path = request.path
-    port = _strategies["llm"]["port"]
-    url  = f"http://127.0.0.1:{port}{path}"
-    try:
-        async with _aio.ClientSession() as sess:
-            async with sess.request(request.method, url, timeout=_aio.ClientTimeout(total=5)) as r:
-                body  = await r.read()
-                ctype = r.headers.get("Content-Type", "application/json")
-                return web.Response(body=body, content_type=ctype.split(";")[0].strip(), status=r.status)
-    except Exception:
-        # LLM strategy not running — return stub so dashboard renders
-        if path == "/state":
-            return web.json_response(_STUB_STATE)
-        return web.json_response([] if path in ("/history", "/diary") else {})
+    for name, s in _strategies.items():
+        if not _is_running(name):
+            continue
+        url = f"http://127.0.0.1:{s['port']}{path}"
+        try:
+            async with _aio.ClientSession() as sess:
+                async with sess.request(request.method, url, timeout=_aio.ClientTimeout(total=5)) as r:
+                    body  = await r.read()
+                    ctype = r.headers.get("Content-Type", "application/json")
+                    return web.Response(body=body, content_type=ctype.split(";")[0].strip(), status=r.status)
+        except Exception:
+            continue
+    # Nothing running — return stub so dashboard renders
+    if path == "/state":
+        return web.json_response(_STUB_STATE)
+    return web.json_response([] if path in ("/history", "/diary") else {})
 
 
 async def handle_logs_sse(request):
