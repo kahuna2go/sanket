@@ -97,9 +97,11 @@ class Orb:
 
     async def run(self):
         logging.info("[ORB] Starting. risk=%.1f%% dry_run=%s", self.risk_pct * 100, self.dry_run)
-        # Pre-cache HIP-3 metadata so round_size works for xyz:SP500
+        # Pre-cache HIP-3 metadata so round_size works for xyz:SP500, and
+        # register the dex so the SDK Info object populates name_to_coin for market_open.
         try:
             await self.hl.get_meta_and_ctxs(dex="xyz")
+            self.hl.register_perp_dexs(["xyz"])
         except Exception as e:
             logging.warning("[ORB] HIP-3 meta pre-fetch failed: %s", e)
         while True:
