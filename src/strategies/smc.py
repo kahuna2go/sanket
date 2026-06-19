@@ -462,11 +462,21 @@ class Smc:
             return
 
         if is_long:
-            await self.hl.place_buy_order(self.ASSET, size)
+            await self.hl.place_limit_buy(self.ASSET, size, entry_px, tif="Ioc")
         else:
-            await self.hl.place_sell_order(self.ASSET, size)
+            await self.hl.place_limit_sell(self.ASSET, size, entry_px, tif="Ioc")
 
         await asyncio.sleep(0.5)
+
+        # Confirm fill — IOC either fills at entry_px or cancels; no position = no fill
+        confirm_state = await self.hl.get_user_state()
+        confirm_pos = next(
+            (p for p in confirm_state.get("positions", []) if p.get("coin") == self.ASSET),
+            None,
+        )
+        if abs(float(confirm_pos.get("szi", 0)) if confirm_pos else 0.0) < 0.001:
+            logging.info("%s limit entry not filled (price moved away) — staying in FVG_WAIT", self._tag)
+            return
 
         tp_order = await self.hl.place_take_profit(self.ASSET, is_long, size, tp)
         sl_order = await self.hl.place_stop_loss(self.ASSET, is_long, size, sl)
