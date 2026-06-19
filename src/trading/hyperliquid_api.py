@@ -514,7 +514,7 @@ class HyperliquidAPI:
             else:
                 return []
             if isinstance(fills, list):
-                return fills[-limit:]
+                return fills[:limit]
             return []
         except (RuntimeError, ValueError, KeyError, ConnectionError, AttributeError) as e:
             logging.error("Get recent fills error: %s", e)
