@@ -442,6 +442,12 @@ class Smc:
             return
 
         is_long  = direction == "long"
+        # Reject if SL is on the wrong side of entry (e.g. FVG extends below sweep wick)
+        if (is_long and sl >= trigger) or (not is_long and sl <= trigger):
+            logging.warning("%s SL=%.4f is on wrong side of entry=%.4f (%s) — skipping",
+                            self._tag, sl, trigger, direction)
+            self._state = "IDLE"
+            return
         tp       = self.hl.round_price(trigger + TP_R * risk if is_long else trigger - TP_R * risk)
         sl       = self.hl.round_price(sl)
         entry_px = self.hl.round_price(trigger)
