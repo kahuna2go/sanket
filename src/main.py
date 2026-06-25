@@ -2153,22 +2153,26 @@ def main():
             day_start_ts = now_dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
             week_start_ts = (now_dt - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
-            # Single pass: accumulate fees from all fills; record completed trades from closing fills
+            # Single pass: accumulate fees from all fills; group closing fills by OID into trades.
+            # Hyperliquid splits one closing order into many partial fills — same OID = one trade.
             total_closed_pnl = 0.0
             total_fees = 0.0
             day_closed_pnl = 0.0
             day_fees = 0.0
-            day_trades = 0
+            day_trades_set: set = set()
             week_closed_pnl = 0.0
             week_fees = 0.0
-            week_trades = 0
-            closing_trades = []
+            week_trades_set: set = set()
+            # oid -> accumulated trade data
+            oid_groups: dict = {}
+            oid_order: list = []  # preserve chronological order
 
             for fl in sorted_fills:
                 ts = _fl_ts(fl)
                 if ts < SANKET_START_TS:
                     continue
-                if (fl.get("coin") or fl.get("asset") or "") == "BTC":
+                coin = fl.get("coin") or fl.get("asset") or ""
+                if coin == "BTC":
                     continue
                 fee = float(fl.get("fee") or 0)
                 total_fees += fee
@@ -2180,25 +2184,44 @@ def main():
                 if closed_pnl == 0:
                     continue  # opening fill — counted fee already, no P&L to record
                 total_closed_pnl += closed_pnl
+                oid = fl.get("oid") or fl.get("tid") or id(fl)
+                if oid not in oid_groups:
+                    oid_groups[oid] = {
+                        "ts": ts, "coin": coin,
+                        "dir": fl.get("dir") or "",
+                        "pnl": 0.0, "fee": 0.0,
+                        "sz_sum": 0.0, "px_sz_sum": 0.0,
+                        "entry_fill": open_stacks[coin].popleft() if open_stacks[coin] else None,
+                    }
+                    oid_order.append(oid)
+                g = oid_groups[oid]
+                sz = float(fl.get("sz") or 0)
+                g["pnl"] += closed_pnl
+                g["fee"] += fee
+                g["sz_sum"] += sz
+                g["px_sz_sum"] += float(fl.get("px") or 0) * sz
                 if ts >= week_start_ts:
                     week_closed_pnl += closed_pnl
-                    week_trades += 1
+                    week_trades_set.add(oid)
                 if ts >= day_start_ts:
                     day_closed_pnl += closed_pnl
-                    day_trades += 1
-                coin = fl.get("coin") or fl.get("asset") or ""
-                # Pop the earliest unmatched open fill to get entry price
-                entry_fill = open_stacks[coin].popleft() if open_stacks[coin] else None
+                    day_trades_set.add(oid)
+
+            closing_trades = []
+            for oid in oid_order:
+                g = oid_groups[oid]
+                entry_fill = g["entry_fill"]
                 entry_price = round_or_none(float(entry_fill.get("px") or 0), 4) if entry_fill else None
+                avg_exit = round_or_none(g["px_sz_sum"] / g["sz_sum"], 4) if g["sz_sum"] else None
                 closing_trades.append({
-                    "closed_at": datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(),
-                    "asset": coin,
-                    "dir": fl.get("dir") or "",
+                    "closed_at": datetime.fromtimestamp(g["ts"], tz=timezone.utc).isoformat(),
+                    "asset": g["coin"],
+                    "dir": g["dir"],
                     "entry_price": entry_price,
-                    "exit_price": round_or_none(float(fl.get("px") or 0), 4),
-                    "size": round_or_none(float(fl.get("sz") or 0), 6),
-                    "pnl": round(closed_pnl, 4),
-                    "fee": round(fee, 6),
+                    "exit_price": avg_exit,
+                    "size": round_or_none(g["sz_sum"], 6),
+                    "pnl": round(g["pnl"], 4),
+                    "fee": round(g["fee"], 6),
                 })
 
             return web.json_response({
@@ -2210,13 +2233,13 @@ def main():
                     "net_pnl": round(day_closed_pnl - day_fees, 4),
                     "gross_pnl": round(day_closed_pnl, 4),
                     "fees": round(day_fees, 4),
-                    "trades": day_trades,
+                    "trades": len(day_trades_set),
                 },
                 "weekly": {
                     "net_pnl": round(week_closed_pnl - week_fees, 4),
                     "gross_pnl": round(week_closed_pnl, 4),
                     "fees": round(week_fees, 4),
-                    "trades": week_trades,
+                    "trades": len(week_trades_set),
                 },
                 "trades": closing_trades,
             })
