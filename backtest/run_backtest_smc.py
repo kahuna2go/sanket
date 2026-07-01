@@ -34,7 +34,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from backtest.fetch_history import load_cache, fetch_all, save_cache
-from src.indicators.local_indicators import swing_structure
+from src.indicators.local_indicators import swing_structure, atr, adx
 
 MIN_TRADES    = 20
 TP_R          = 3.0
@@ -133,6 +133,37 @@ def _find_swings(candles: list[dict], lookback: int) -> tuple[list[tuple[int, fl
 
 
 # ---------------------------------------------------------------------------
+# ATR volatility filter (skip sweeps in low-ATR / range-bound regimes)
+# ---------------------------------------------------------------------------
+
+def _atr_ratio(candles: list[dict], atr_period: int, baseline_bars: int) -> list[float | None]:
+    """ratio[i] = atr(i) / trailing average atr over the prior baseline_bars.
+
+    None where atr or the trailing baseline isn't yet defined (no lookahead —
+    baseline uses only bars before i).
+    """
+    atr_series = atr(candles, atr_period)
+    n = len(atr_series)
+    ratio: list[float | None] = [None] * n
+
+    window: list[float] = []
+    window_sum = 0.0
+    for i in range(n):
+        cur = atr_series[i]
+        if window and cur is not None:
+            baseline = window_sum / len(window)
+            if baseline > 0:
+                ratio[i] = cur / baseline
+        val = atr_series[i]
+        if val is not None:
+            window.append(val)
+            window_sum += val
+            if len(window) > baseline_bars:
+                window_sum -= window.pop(0)
+    return ratio
+
+
+# ---------------------------------------------------------------------------
 # Equal highs/lows detection
 # ---------------------------------------------------------------------------
 
@@ -202,6 +233,11 @@ class SmcConfig:
     sweep_mode:       str                            = "any"   # "any" | "eql_prefer" | "eql_only"
     fvg_wait_timeout: int | None                    = None    # None = unlimited; N = bars after CHoCH
     fvg_tf:           str                           = "5m"    # "5m" or "15m"
+    atr_filter_mult:  float | None                  = None    # None = off; else min atr(14)/trailing-avg ratio to allow a sweep
+    atr_baseline_bars: int                          = 288     # trailing window (5m bars) for the ATR baseline, ~24h
+    adx_filter_min:   float | None                  = None    # None = off; else min ADX(14) (5m) to allow a sweep — filters range-bound chop
+    retest_filter_bars: int | None                  = None    # None = off; else lookback (5m bars) to block same-range retest sweeps
+    retest_tolerance_pct: float                     = 0.15    # % tolerance for "same level" comparison
     label:            str                           = "Baseline"
 
 
@@ -264,6 +300,49 @@ def _make_configs(eth_sweep: bool = False) -> list["SmcConfig"]:
     ]
 
 
+def _make_atr_configs(asset: str) -> list["SmcConfig"]:
+    """ATR low-volatility filter sweep, built on top of each asset's live config."""
+    if asset == "ETH":
+        base = dict(session_windows=_WIN_NARROW, fvg_tf="15m")
+    else:
+        base = dict(session_windows=_WIN_NARROW)
+    configs = [SmcConfig(**base, label="Live config (no ATR filter)")]
+    for mult in [0.6, 0.7, 0.8, 0.9, 1.0, 1.2]:
+        configs.append(SmcConfig(**base, atr_filter_mult=mult, label=f"+ ATR filter >= {mult}x 24h avg"))
+    return configs
+
+
+def _make_adx_configs(asset: str) -> list["SmcConfig"]:
+    """ADX trend-strength filter sweep — skips sweeps while the market is range-bound (low ADX)."""
+    if asset == "ETH":
+        base = dict(session_windows=_WIN_NARROW, fvg_tf="15m")
+    else:
+        base = dict(session_windows=_WIN_NARROW)
+    configs = [SmcConfig(**base, label="Live config (no ADX filter)")]
+    for min_adx in [15, 18, 20, 22, 25, 30]:
+        configs.append(SmcConfig(**base, adx_filter_min=min_adx, label=f"+ ADX filter >= {min_adx}"))
+    return configs
+
+
+def _make_retest_configs(asset: str) -> list["SmcConfig"]:
+    """Same-range retest filter sweep — blocks a new sweep when its own swept level
+
+    is within tolerance of the opposite-direction sweep's CHoCH target from the
+    recent lookback window (i.e. the same range is being chopped from both sides).
+    """
+    if asset == "ETH":
+        base = dict(session_windows=_WIN_NARROW, fvg_tf="15m")
+    else:
+        base = dict(session_windows=_WIN_NARROW)
+    configs = [SmcConfig(**base, label="Live config (no retest filter)")]
+    for bars, hours in [(96, "8h"), (144, "12h"), (288, "24h"), (576, "48h")]:
+        configs.append(SmcConfig(**base, retest_filter_bars=bars, label=f"+ Retest filter, lookback={hours}"))
+    for tol in [0.3, 0.5, 1.0]:
+        configs.append(SmcConfig(**base, retest_filter_bars=288, retest_tolerance_pct=tol,
+                                  label=f"+ Retest filter, 24h lookback, tol={tol}%"))
+    return configs
+
+
 ALL_SMC_CONFIGS = _make_configs()  # overridden by --eth-sweep at runtime
 
 
@@ -277,6 +356,8 @@ def _run_simulation(
     cfg: SmcConfig,
     candles_15m: list[dict] | None = None,
     debug: bool = False,
+    atr_ratio: list[float | None] | None = None,
+    adx_series: list[float | None] | None = None,
 ) -> dict:
     n = len(candles_5m)
     if n < 100:
@@ -308,7 +389,10 @@ def _run_simulation(
     # Window-start pointers for O(1) recent-swing lookup (advanced monotonically)
     recent_sl_start = recent_sh_start = 0
 
-    d_sweeps = d_timeout = d_no_fvg = d_inval = d_fvg_timeout = d_opened = 0
+    # Last confirmed sweep (any type) — used by the same-range retest filter
+    last_sweep: tuple[str, float, float, int] | None = None  # (type, sweep_price, choch_target, bar_idx)
+
+    d_sweeps = d_timeout = d_no_fvg = d_inval = d_fvg_timeout = d_opened = d_atr_skip = d_retest_skip = 0
 
     for i in range(n):
         bar = candles_5m[i]
@@ -439,20 +523,44 @@ def _run_simulation(
 
         bias = bias_5m[i]
 
+        atr_ok = True
+        if cfg.atr_filter_mult is not None:
+            r = atr_ratio[i] if atr_ratio else None
+            atr_ok = r is not None and r >= cfg.atr_filter_mult
+        adx_ok = True
+        if cfg.adx_filter_min is not None:
+            a = adx_series[i] if adx_series else None
+            adx_ok = a is not None and a >= cfg.adx_filter_min
+        vol_ok = atr_ok and adx_ok
+
         # Bullish sweep — all visible_swing_highs are confirmed at j+lb<=i, so j<i always
         if candidate_lows and (not cfg.bias_filter or bias == "bull"):
             _, sl_price = candidate_lows[-1]
             if bar["low"] < sl_price and bar["close"] > sl_price:
                 if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
                     if visible_swing_highs:
-                        state          = "SWEPT"
-                        sweep_type     = "bull"
-                        sweep_price    = bar["low"]
-                        sweep_bar_idx  = i
-                        choch_deadline = i + cfg.choch_timeout
-                        choch_target   = visible_swing_highs[-1][1]
-                        d_sweeps      += 1
-                        continue
+                        target = visible_swing_highs[-1][1]
+                        is_retest = False
+                        if cfg.retest_filter_bars is not None and last_sweep is not None:
+                            lt_type, lt_sweep, lt_target, lt_bar = last_sweep
+                            tol = cfg.retest_tolerance_pct / 100
+                            if lt_type != "bull" and i - lt_bar <= cfg.retest_filter_bars:
+                                is_retest = (abs(target - lt_sweep) <= lt_sweep * tol
+                                             or abs(bar["low"] - lt_target) <= lt_target * tol)
+                        if not vol_ok:
+                            d_atr_skip += 1
+                        elif is_retest:
+                            d_retest_skip += 1
+                        else:
+                            state          = "SWEPT"
+                            sweep_type     = "bull"
+                            sweep_price    = bar["low"]
+                            sweep_bar_idx  = i
+                            choch_deadline = i + cfg.choch_timeout
+                            choch_target   = target
+                            last_sweep     = (sweep_type, sweep_price, choch_target, i)
+                            d_sweeps      += 1
+                            continue
 
         # Bearish sweep
         if candidate_highs and (not cfg.bias_filter or bias == "bear"):
@@ -460,13 +568,27 @@ def _run_simulation(
             if bar["high"] > sh_price and bar["close"] < sh_price:
                 if cfg.session_windows is None or _in_session_utc(bar["t"], cfg.session_windows):
                     if visible_swing_lows:
-                        state          = "SWEPT"
-                        sweep_type     = "bear"
-                        sweep_price    = bar["high"]
-                        sweep_bar_idx  = i
-                        choch_deadline = i + cfg.choch_timeout
-                        choch_target   = visible_swing_lows[-1][1]
-                        d_sweeps      += 1
+                        target = visible_swing_lows[-1][1]
+                        is_retest = False
+                        if cfg.retest_filter_bars is not None and last_sweep is not None:
+                            lt_type, lt_sweep, lt_target, lt_bar = last_sweep
+                            tol = cfg.retest_tolerance_pct / 100
+                            if lt_type != "bear" and i - lt_bar <= cfg.retest_filter_bars:
+                                is_retest = (abs(target - lt_sweep) <= lt_sweep * tol
+                                             or abs(bar["high"] - lt_target) <= lt_target * tol)
+                        if not vol_ok:
+                            d_atr_skip += 1
+                        elif is_retest:
+                            d_retest_skip += 1
+                        else:
+                            state          = "SWEPT"
+                            sweep_type     = "bear"
+                            sweep_price    = bar["high"]
+                            sweep_bar_idx  = i
+                            choch_deadline = i + cfg.choch_timeout
+                            choch_target   = target
+                            last_sweep     = (sweep_type, sweep_price, choch_target, i)
+                            d_sweeps      += 1
 
     # Close any still-open trade at end of dataset
     if state == "IN_TRADE":
@@ -483,7 +605,7 @@ def _run_simulation(
     if debug:
         print(f"    [debug] sweeps={d_sweeps}  choch_timeout={d_timeout}"
               f"  no_fvg={d_no_fvg}  fvg_inval={d_inval}  fvg_timeout={d_fvg_timeout}"
-              f"  opened={d_opened}  closed={len(trades)}")
+              f"  atr_skip={d_atr_skip}  retest_skip={d_retest_skip}  opened={d_opened}  closed={len(trades)}")
 
     if not trades:
         return {"trades": 0}
@@ -792,7 +914,7 @@ def smc_warm_up(candles_5m: list[dict], cfg: SmcConfig) -> dict:
 # Entry points
 # ---------------------------------------------------------------------------
 
-async def run_smc_asset(asset: str, years: int, fetch: bool, eth_sweep: bool = False):
+async def run_smc_asset(asset: str, years: int, fetch: bool, eth_sweep: bool = False, atr_sweep: bool = False, adx_sweep: bool = False, retest_sweep: bool = False):
     from src.trading.hyperliquid_api import HyperliquidAPI
 
     cached = load_cache(asset, "5m")
@@ -817,11 +939,35 @@ async def run_smc_asset(asset: str, years: int, fetch: bool, eth_sweep: bool = F
     bias_1h = _compute_1h_bias(candles_1h)
     bias_5m = _align_bias_to_5m(bias_1h, len(candles_5m))
 
-    configs = _make_configs(eth_sweep=eth_sweep) if eth_sweep else ALL_SMC_CONFIGS
-    all_stats = [
-        (cfg, _run_simulation(candles_5m, bias_5m, cfg, candles_15m=candles_15m, debug=(i == 0)))
-        for i, cfg in enumerate(configs)
-    ]
+    if atr_sweep:
+        configs = _make_atr_configs(asset)
+    elif adx_sweep:
+        configs = _make_adx_configs(asset)
+    elif retest_sweep:
+        configs = _make_retest_configs(asset)
+    elif eth_sweep:
+        configs = _make_configs(eth_sweep=True)
+    else:
+        configs = ALL_SMC_CONFIGS
+
+    atr_ratio_cache: dict[int, list[float | None]] = {}
+    adx_series_cache: list[float | None] | None = None
+    all_stats = []
+    for i, cfg in enumerate(configs):
+        atr_ratio = None
+        if cfg.atr_filter_mult is not None:
+            if cfg.atr_baseline_bars not in atr_ratio_cache:
+                atr_ratio_cache[cfg.atr_baseline_bars] = _atr_ratio(candles_5m, 14, cfg.atr_baseline_bars)
+            atr_ratio = atr_ratio_cache[cfg.atr_baseline_bars]
+        adx_series = None
+        if cfg.adx_filter_min is not None:
+            if adx_series_cache is None:
+                adx_series_cache = adx(candles_5m, 14)
+            adx_series = adx_series_cache
+        all_stats.append((cfg, _run_simulation(
+            candles_5m, bias_5m, cfg, candles_15m=candles_15m, debug=(i == 0),
+            atr_ratio=atr_ratio, adx_series=adx_series,
+        )))
     _print_table(asset, candles_5m, all_stats)
     _append_results_md(asset, candles_5m, all_stats)
 
@@ -848,12 +994,12 @@ async def run_warmup_asset(asset: str, fetch: bool):
     smc_warm_up(recent, cfg)
 
 
-async def main_async(assets: list[str], years: int, fetch: bool, warmup: bool, eth_sweep: bool = False):
+async def main_async(assets: list[str], years: int, fetch: bool, warmup: bool, eth_sweep: bool = False, atr_sweep: bool = False, adx_sweep: bool = False, retest_sweep: bool = False):
     for asset in assets:
         if warmup:
             await run_warmup_asset(asset, fetch)
         else:
-            await run_smc_asset(asset, years, fetch, eth_sweep=eth_sweep)
+            await run_smc_asset(asset, years, fetch, eth_sweep=eth_sweep, atr_sweep=atr_sweep, adx_sweep=adx_sweep, retest_sweep=retest_sweep)
 
 
 def main():
@@ -865,8 +1011,14 @@ def main():
                         help="Reconstruct current SMC state from recent bars")
     parser.add_argument("--eth-sweep", action="store_true",
                         help="Run full parameter sweep for ETH (session×bias×CHoCH×entry×sweep)")
+    parser.add_argument("--atr-sweep", action="store_true",
+                        help="Test ATR low-volatility filter thresholds on top of the live config")
+    parser.add_argument("--adx-sweep", action="store_true",
+                        help="Test ADX trend-strength filter thresholds on top of the live config")
+    parser.add_argument("--retest-sweep", action="store_true",
+                        help="Test same-range retest filter (lookback/tolerance) on top of the live config")
     args = parser.parse_args()
-    asyncio.run(main_async(args.assets, args.years, args.fetch, args.warmup, eth_sweep=args.eth_sweep))
+    asyncio.run(main_async(args.assets, args.years, args.fetch, args.warmup, eth_sweep=args.eth_sweep, atr_sweep=args.atr_sweep, adx_sweep=args.adx_sweep, retest_sweep=args.retest_sweep))
 
 
 if __name__ == "__main__":

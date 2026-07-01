@@ -35,6 +35,14 @@ _SWEEP_LOOKBACK = 20   # bars
 _CHOCH_TIMEOUT  = 48   # bars → 4h
 _FVG_ENTRY      = "mid50"
 
+# Same-range retest filter — blocks a new sweep when its own swept level is within
+# tolerance of the opposite-direction sweep's CHoCH target from the recent lookback
+# window (i.e. the same range is being chopped from both sides). Backtested across
+# SOL/ETH: improves win rate and avgR on both assets without materially cutting
+# trade count (unlike ATR/ADX volatility filters, which didn't hold up).
+_RETEST_LOOKBACK_SEC  = 288 * 5 * 60   # 24h, matching backtest's 288-bar (5m) window
+_RETEST_TOLERANCE_PCT = 0.3
+
 RISK_USDC = 50.0
 TP_R      = 3.0
 
@@ -83,6 +91,24 @@ def _find_bullish_fvg(bars: list[dict]) -> tuple[float, float] | None:
     return None
 
 
+def _is_retest(
+    last_sweep: tuple[str, float, float, float] | None,
+    new_type: str,
+    new_sweep_price: float,
+    new_choch_target: float,
+    now_ts: float,
+) -> bool:
+    """True if this sweep re-trades the same range as the last opposite sweep."""
+    if last_sweep is None:
+        return False
+    lt_type, lt_sweep, lt_target, lt_ts = last_sweep
+    if lt_type == new_type or now_ts - lt_ts > _RETEST_LOOKBACK_SEC:
+        return False
+    tol = _RETEST_TOLERANCE_PCT / 100
+    return (abs(new_choch_target - lt_sweep) <= lt_sweep * tol
+            or abs(new_sweep_price - lt_target) <= lt_target * tol)
+
+
 def _find_bearish_fvg(bars: list[dict]) -> tuple[float, float] | None:
     for i in range(len(bars) - 3, -1, -1):
         if bars[i]["low"] > bars[i+2]["high"]:
@@ -122,6 +148,7 @@ def _reconstruct_state(candles: list[dict], session_windows: list[tuple[float, f
     sl_ptr = sh_ptr = 0
     vis_lows:  list[tuple[int, float]] = []
     vis_highs: list[tuple[int, float]] = []
+    last_sweep: tuple[str, float, float, float] | None = None
 
     for i in range(n):
         bar = candles[i]
@@ -174,19 +201,21 @@ def _reconstruct_state(candles: list[dict], session_windows: list[tuple[float, f
             _, sl_px = rec_lows[-1]
             if bar["low"] < sl_px and bar["close"] > sl_px and _in_session(bar["t"], session_windows):
                 hb = [s for s in vis_highs if s[0] < i]
-                if hb:
+                if hb and not _is_retest(last_sweep, "bull", bar["low"], hb[-1][1], bar["t"] / 1000):
                     state = "SWEPT"; sweep_type = "bull"
                     sweep_price = bar["low"]; sweep_idx = i
                     choch_dl = i + _CHOCH_TIMEOUT; choch_tgt = hb[-1][1]
+                    last_sweep = (sweep_type, sweep_price, choch_tgt, bar["t"] / 1000)
                     continue
         if rec_highs:
             _, sh_px = rec_highs[-1]
             if bar["high"] > sh_px and bar["close"] < sh_px and _in_session(bar["t"], session_windows):
                 lb2 = [s for s in vis_lows if s[0] < i]
-                if lb2:
+                if lb2 and not _is_retest(last_sweep, "bear", bar["high"], lb2[-1][1], bar["t"] / 1000):
                     state = "SWEPT"; sweep_type = "bear"
                     sweep_price = bar["high"]; sweep_idx = i
                     choch_dl = i + _CHOCH_TIMEOUT; choch_tgt = lb2[-1][1]
+                    last_sweep = (sweep_type, sweep_price, choch_tgt, bar["t"] / 1000)
 
     bars_remaining_choch    = max(0, choch_dl - (n - 1))
     bars_remaining_fvg_wait = n - 1 - fvg_start if state == "FVG_WAIT" else 0
@@ -200,6 +229,7 @@ def _reconstruct_state(candles: list[dict], session_windows: list[tuple[float, f
         "fvg_hi":           fvg_hi,
         "fvg_lo":           fvg_lo,
         "fvg_bars_elapsed": bars_remaining_fvg_wait,
+        "last_sweep":       last_sweep,
     }
 
 
@@ -235,6 +265,7 @@ class Smc:
         self._fvg_hi       = 0.0
         self._fvg_lo       = 0.0
         self._sweep_bar_ts: float = 0.0
+        self._last_sweep: tuple[str, float, float, float] | None = None
 
         # Trade state
         self._in_trade   = False
@@ -283,6 +314,7 @@ class Smc:
         self._choch_tgt   = s["choch_target"]
         self._fvg_hi      = s["fvg_hi"]
         self._fvg_lo      = s["fvg_lo"]
+        self._last_sweep  = s["last_sweep"]
 
         now_ts = datetime.now(_UTC).timestamp()
         if self._state == "SWEPT":
@@ -394,12 +426,17 @@ class Smc:
             if bar["low"] < sl_px and bar["close"] > sl_px:
                 hb = [p for j, p in vis_highs if j < i]
                 if hb:
+                    if _is_retest(self._last_sweep, "bull", bar["low"], hb[-1], now_ts):
+                        logging.info("%s Bull sweep — low=%.4f — same-range retest, skipping",
+                                     self._tag, bar["low"])
+                        return
                     self._state       = "SWEPT"
                     self._sweep_type  = "bull"
                     self._sweep_price = bar["low"]
                     self._sweep_bar_ts = bar["t"] / 1000
                     self._choch_dl_ts  = now_ts + _CHOCH_TIMEOUT * 5 * 60
                     self._choch_tgt    = hb[-1]
+                    self._last_sweep   = (self._sweep_type, self._sweep_price, self._choch_tgt, now_ts)
                     logging.info("%s Bull sweep — low=%.4f CHoCH target=%.4f",
                                  self._tag, self._sweep_price, self._choch_tgt)
                     return
@@ -409,12 +446,17 @@ class Smc:
             if bar["high"] > sh_px and bar["close"] < sh_px:
                 lb2 = [p for j, p in vis_lows if j < i]
                 if lb2:
+                    if _is_retest(self._last_sweep, "bear", bar["high"], lb2[-1], now_ts):
+                        logging.info("%s Bear sweep — high=%.4f — same-range retest, skipping",
+                                     self._tag, bar["high"])
+                        return
                     self._state       = "SWEPT"
                     self._sweep_type  = "bear"
                     self._sweep_price = bar["high"]
                     self._sweep_bar_ts = bar["t"] / 1000
                     self._choch_dl_ts  = now_ts + _CHOCH_TIMEOUT * 5 * 60
                     self._choch_tgt    = lb2[-1]
+                    self._last_sweep   = (self._sweep_type, self._sweep_price, self._choch_tgt, now_ts)
                     logging.info("%s Bear sweep — high=%.4f CHoCH target=%.4f",
                                  self._tag, self._sweep_price, self._choch_tgt)
 

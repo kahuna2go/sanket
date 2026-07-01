@@ -303,3 +303,134 @@
 | Candidate A (5m FVG) | 118 | 34.7% | 3.00 | +46.0 | +0.390 | -8.0R | GO ✓ |
 | Candidate A (15m FVG) | 77 | 27.3% | 3.00 | +7.0 | +0.091 | -11.0R | NO-GO ✗ |
 | Candidate B | 100 | 33.0% | 3.00 | +32.0 | +0.320 | -11.0R | GO ✓ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-07-01 15:25 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Live config (no ATR filter) | 77 | 40.3% | 3.00 | +47.0 | +0.610 | -6.0R | GO ✓ |
+| + ATR filter >= 0.6x 24h avg | 76 | 38.2% | 3.00 | +40.0 | +0.526 | -6.0R | GO ✓ |
+| + ATR filter >= 0.7x 24h avg | 61 | 39.3% | 3.00 | +35.0 | +0.574 | -4.0R | GO ✓ |
+| + ATR filter >= 0.8x 24h avg | 60 | 40.0% | 3.00 | +36.0 | +0.600 | -7.0R | GO ✓ |
+| + ATR filter >= 0.9x 24h avg | 56 | 41.1% | 3.00 | +36.0 | +0.643 | -7.0R | GO ✓ |
+| + ATR filter >= 1.0x 24h avg | 49 | 40.8% | 3.00 | +31.0 | +0.633 | -6.0R | GO ✓ |
+| + ATR filter >= 1.2x 24h avg | 39 | 33.3% | 3.00 | +13.0 | +0.333 | -9.0R | GO ✓ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-07-01 15:25 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Live config (no ATR filter) | 77 | 40.3% | 3.00 | +47.0 | +0.610 | -6.0R | GO ✓ |
+| + ATR filter >= 0.6x 24h avg | 76 | 38.2% | 3.00 | +40.0 | +0.526 | -6.0R | GO ✓ |
+| + ATR filter >= 0.7x 24h avg | 61 | 39.3% | 3.00 | +35.0 | +0.574 | -4.0R | GO ✓ |
+| + ATR filter >= 0.8x 24h avg | 60 | 40.0% | 3.00 | +36.0 | +0.600 | -7.0R | GO ✓ |
+| + ATR filter >= 0.9x 24h avg | 56 | 41.1% | 3.00 | +36.0 | +0.643 | -7.0R | GO ✓ |
+| + ATR filter >= 1.0x 24h avg | 49 | 40.8% | 3.00 | +31.0 | +0.633 | -6.0R | GO ✓ |
+| + ATR filter >= 1.2x 24h avg | 39 | 33.3% | 3.00 | +13.0 | +0.333 | -9.0R | GO ✓ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-07-01 15:25 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Live config (no ATR filter) | 118 | 34.7% | 3.00 | +46.0 | +0.390 | -8.0R | GO ✓ |
+| + ATR filter >= 0.6x 24h avg | 115 | 34.8% | 3.00 | +45.0 | +0.391 | -8.0R | GO ✓ |
+| + ATR filter >= 0.7x 24h avg | 83 | 26.5% | 3.00 | +5.0 | +0.060 | -8.0R | NO-GO ✗ |
+| + ATR filter >= 0.8x 24h avg | 76 | 26.3% | 3.00 | +4.0 | +0.053 | -7.0R | NO-GO ✗ |
+| + ATR filter >= 0.9x 24h avg | 94 | 33.0% | 3.00 | +30.0 | +0.319 | -8.0R | GO ✓ |
+| + ATR filter >= 1.0x 24h avg | 83 | 24.1% | 3.00 | -3.0 | -0.036 | -15.0R | NO-GO ✗ |
+| + ATR filter >= 1.2x 24h avg | 64 | 25.0% | 3.00 | +0.0 | +0.000 | -14.0R | NO-GO ✗ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-07-01 15:32 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Live config (no ADX filter) | 77 | 40.3% | 3.00 | +47.0 | +0.610 | -6.0R | GO ✓ |
+| + ADX filter >= 15 | 76 | 40.8% | 3.00 | +48.0 | +0.632 | -6.0R | GO ✓ |
+| + ADX filter >= 18 | 38 | 44.7% | 3.00 | +30.0 | +0.789 | -4.0R | GO ✓ |
+| + ADX filter >= 20 | 51 | 35.3% | 3.00 | +21.0 | +0.412 | -11.0R | GO ✓ |
+| + ADX filter >= 22 | 60 | 31.7% | 3.00 | +16.0 | +0.267 | -15.0R | GO ✓ |
+| + ADX filter >= 25 | 52 | 30.8% | 3.00 | +12.0 | +0.231 | -11.0R | GO ✓ |
+| + ADX filter >= 30 | 51 | 27.5% | 3.00 | +5.0 | +0.098 | -12.0R | NO-GO ✗ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-07-01 15:33 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Live config (no ADX filter) | 118 | 34.7% | 3.00 | +46.0 | +0.390 | -8.0R | GO ✓ |
+| + ADX filter >= 15 | 99 | 32.3% | 3.00 | +29.0 | +0.293 | -7.0R | GO ✓ |
+| + ADX filter >= 18 | 82 | 35.4% | 3.00 | +34.0 | +0.415 | -5.0R | GO ✓ |
+| + ADX filter >= 20 | 81 | 24.7% | 3.00 | -1.0 | -0.012 | -15.0R | NO-GO ✗ |
+| + ADX filter >= 22 | 80 | 26.2% | 3.00 | +4.0 | +0.050 | -15.0R | NO-GO ✗ |
+| + ADX filter >= 25 | 74 | 25.7% | 3.00 | +2.0 | +0.027 | -15.0R | NO-GO ✗ |
+| + ADX filter >= 30 | 48 | 27.1% | 3.00 | +4.0 | +0.083 | -13.0R | NO-GO ✗ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-07-01 15:40 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Live config (no retest filter) | 77 | 40.3% | 3.00 | +47.0 | +0.610 | -6.0R | GO ✓ |
+| + Retest filter, lookback=8h | 51 | 41.2% | 3.00 | +33.0 | +0.647 | -6.0R | GO ✓ |
+| + Retest filter, lookback=12h | 51 | 41.2% | 3.00 | +33.0 | +0.647 | -6.0R | GO ✓ |
+| + Retest filter, lookback=24h | 49 | 42.9% | 3.00 | +35.0 | +0.714 | -5.0R | GO ✓ |
+| + Retest filter, lookback=48h | 51 | 41.2% | 3.00 | +33.0 | +0.647 | -5.0R | GO ✓ |
+| + Retest filter, 24h lookback, tol=0.3% | 56 | 41.1% | 3.00 | +36.0 | +0.643 | -5.0R | GO ✓ |
+| + Retest filter, 24h lookback, tol=0.5% | 57 | 40.4% | 3.00 | +35.0 | +0.614 | -5.0R | GO ✓ |
+| + Retest filter, 24h lookback, tol=1.0% | 54 | 42.6% | 3.00 | +38.0 | +0.704 | -5.0R | GO ✓ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-07-01 15:41 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Live config (no retest filter) | 118 | 34.7% | 3.00 | +46.0 | +0.390 | -8.0R | GO ✓ |
+| + Retest filter, lookback=8h | 114 | 36.8% | 3.00 | +54.0 | +0.474 | -8.0R | GO ✓ |
+| + Retest filter, lookback=12h | 114 | 36.8% | 3.00 | +54.0 | +0.474 | -8.0R | GO ✓ |
+| + Retest filter, lookback=24h | 115 | 36.5% | 3.00 | +53.0 | +0.461 | -8.0R | GO ✓ |
+| + Retest filter, lookback=48h | 120 | 35.8% | 3.00 | +52.0 | +0.433 | -8.0R | GO ✓ |
+| + Retest filter, 24h lookback, tol=0.3% | 113 | 38.1% | 3.00 | +59.0 | +0.522 | -8.0R | GO ✓ |
+| + Retest filter, 24h lookback, tol=0.5% | 113 | 36.3% | 3.00 | +51.0 | +0.451 | -8.0R | GO ✓ |
+| + Retest filter, 24h lookback, tol=1.0% | 108 | 35.2% | 3.00 | +44.0 | +0.407 | -10.0R | GO ✓ |
+
+---
+
+**Asset:** ETH  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-07-01 15:48 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Live config (no retest filter) | 77 | 40.3% | 3.00 | +47.0 | +0.610 | -6.0R | GO ✓ |
+| + Retest filter, lookback=8h | 51 | 41.2% | 3.00 | +33.0 | +0.647 | -6.0R | GO ✓ |
+| + Retest filter, lookback=12h | 51 | 41.2% | 3.00 | +33.0 | +0.647 | -6.0R | GO ✓ |
+| + Retest filter, lookback=24h | 49 | 42.9% | 3.00 | +35.0 | +0.714 | -5.0R | GO ✓ |
+| + Retest filter, lookback=48h | 51 | 41.2% | 3.00 | +33.0 | +0.647 | -5.0R | GO ✓ |
+| + Retest filter, 24h lookback, tol=0.3% | 56 | 41.1% | 3.00 | +36.0 | +0.643 | -5.0R | GO ✓ |
+| + Retest filter, 24h lookback, tol=0.5% | 57 | 40.4% | 3.00 | +35.0 | +0.614 | -5.0R | GO ✓ |
+| + Retest filter, 24h lookback, tol=1.0% | 54 | 42.6% | 3.00 | +38.0 | +0.704 | -5.0R | GO ✓ |
