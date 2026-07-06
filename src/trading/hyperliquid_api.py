@@ -561,6 +561,23 @@ class HyperliquidAPI:
             logging.error("Unexpected order response format: %s", order_result)
         return oids
 
+    def extract_filled_size(self, order_result) -> float:
+        """Sum the actually filled size across all statuses in an order response.
+
+        market_open can fill less than requested (insufficient margin, thin book).
+        Callers must track this instead of the requested amount, or downstream
+        reduce-only sizing desyncs from the real exchange position.
+        """
+        total = 0.0
+        try:
+            statuses = order_result["response"]["data"]["statuses"]
+            for st in statuses:
+                if "filled" in st and "totalSz" in st["filled"]:
+                    total += float(st["filled"]["totalSz"])
+        except (KeyError, TypeError, ValueError):
+            logging.error("Unexpected order response format: %s", order_result)
+        return total
+
     async def _enrich_position(self, pos_wrap, coin_prefix=""):
         """Enrich a single assetPositions entry with pnl and notional_entry."""
         pos = dict(pos_wrap["position"])  # copy — we may mutate coin name

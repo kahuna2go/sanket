@@ -29,6 +29,7 @@ _VIENNA     = ZoneInfo("Europe/Vienna")
 _ASSET      = "xyz:SP500"
 _SL_BUF     = 0.05    # 5% of OR range buffer below retest low / above retest high
 _FUND_THRESH = 0.0003  # 0.03% per 8h
+_MAX_LEVERAGE = 3      # cap on entry notional as a multiple of account value
 
 
 def _vhour(ts_ms: int) -> float:
@@ -401,6 +402,18 @@ class Orb:
             logging.warning("[ORB] Computed size is 0 — skipping")
             return
 
+        # Sanity cap: a tight SL relative to price (common for SP500's small OR
+        # ranges) can blow the risk-based formula up to an unfillable notional.
+        # Never request more than the account's configured cross leverage supports.
+        max_amount = self.hl.round_size(self.ASSET, (state["total_value"] * _MAX_LEVERAGE) / current_price)
+        if amount > max_amount:
+            logging.warning("[ORB] Computed size %.4f exceeds leverage cap — clamping to %.4f",
+                             amount, max_amount)
+            amount = max_amount
+        if amount <= 0:
+            logging.warning("[ORB] Computed size is 0 after cap — skipping")
+            return
+
         direction = "LONG" if is_long else "SHORT"
         logging.info("[ORB] ENTRY %s %.4f @ %.2f  TP1=%.2f  SL=%.2f  risk=$%.0f",
                      direction, amount, current_price, tp1, sl_price, risk_usd)
@@ -411,8 +424,16 @@ class Orb:
             return
 
         try:
-            await (self.hl.place_buy_order(self.ASSET, amount)
-                   if is_long else self.hl.place_sell_order(self.ASSET, amount))
+            order  = await (self.hl.place_buy_order(self.ASSET, amount)
+                             if is_long else self.hl.place_sell_order(self.ASSET, amount))
+            filled = self.hl.extract_filled_size(order)
+            if filled <= 0:
+                logging.warning("[ORB] Entry order did not fill — skipping")
+                return
+            if filled != amount:
+                logging.warning("[ORB] Entry filled %.4f vs requested %.4f — tracking actual fill",
+                                 filled, amount)
+            amount = filled
             await asyncio.sleep(0.5)
             sl_order = await self.hl.place_stop_loss(self.ASSET, is_long, amount, sl_price)
             sl_oids  = self.hl.extract_oids(sl_order)
@@ -470,14 +491,14 @@ class Orb:
             if not tp1_hit:
                 return
 
-            # TP1: close 50%, move SL to breakeven, activate trail
+            # TP1: close 50%, move SL to breakeven, activate trail.
+            # Reduce-only close (never flips) — plain buy/sell here previously
+            # blew through the real position and opened one in the opposite
+            # direction whenever self._amount had desynced from the actual fill.
             half = self.hl.round_size(self.ASSET, self._amount / 2)
             if half > 0 and not self.dry_run:
                 try:
-                    if self._is_long:
-                        await self.hl.place_sell_order(self.ASSET, half)
-                    else:
-                        await self.hl.place_buy_order(self.ASSET, half)
+                    await self.hl.place_close_order(self.ASSET, sz=half)
                     self._amount -= half
                 except Exception as e:
                     logging.error("[ORB] TP1 partial close failed: %s", e)
