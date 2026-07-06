@@ -522,9 +522,14 @@ class Smc:
             (p for p in confirm_state.get("positions", []) if p.get("coin") == self.ASSET),
             None,
         )
-        if abs(float(confirm_pos.get("szi", 0)) if confirm_pos else 0.0) < 0.001:
+        filled_size = abs(float(confirm_pos.get("szi", 0))) if confirm_pos else 0.0
+        if filled_size < 0.001:
             logging.info("%s limit entry not filled (price moved away) — staying in FVG_WAIT", self._tag)
             return
+        if abs(filled_size - size) > 0.001:
+            logging.warning("%s entry filled %.4f vs requested %.4f — tracking actual fill",
+                             self._tag, filled_size, size)
+        size = filled_size
 
         tp_order = await self.hl.place_take_profit(self.ASSET, is_long, size, tp)
         sl_order = await self.hl.place_stop_loss(self.ASSET, is_long, size, sl)
