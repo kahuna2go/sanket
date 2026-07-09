@@ -460,6 +460,37 @@ class Orb:
     # Trade management (TP1 / trail)
     # ------------------------------------------------------------------
 
+    async def _place_protective_sl(self, target_sl: float) -> bool:
+        """(Re)place the resting stop-loss at target_sl, replacing any existing one.
+
+        Cancel-then-place is not atomic, so a rejected/failed placement can
+        leave the position with no resting stop at all. Retries once before
+        giving up so a single transient rejection doesn't leave it unprotected
+        silently. Returns True only if the exchange confirmed a resting order.
+        """
+        for attempt in range(2):
+            if self._sl_oid:
+                try:
+                    await self.hl.cancel_order(self.ASSET, self._sl_oid)
+                except Exception as e:
+                    logging.warning("[ORB] SL cancel failed (attempt %d/2): %s", attempt + 1, e)
+                self._sl_oid = None
+            try:
+                sl_order = await self.hl.place_stop_loss(self.ASSET, self._is_long, self._amount, target_sl)
+                oids = self.hl.extract_oids(sl_order)
+                if oids:
+                    self._sl_oid   = oids[0]
+                    self._sl_price = target_sl
+                    return True
+                logging.error("[ORB] SL placement returned no oid (attempt %d/2)", attempt + 1)
+            except Exception as e:
+                logging.error("[ORB] SL placement failed (attempt %d/2): %s", attempt + 1, e)
+        logging.critical(
+            "[ORB] Position UNPROTECTED — SL replacement failed after retry. amount=%.4f entry=%.2f",
+            self._amount, self._entry_px,
+        )
+        return False
+
     async def _manage_trade(self):
         # Detect external close (trail SL hit) when trail is active
         if self._trail_active:
@@ -513,26 +544,23 @@ class Orb:
             elif half > 0:
                 self._amount -= half  # dry run: simulate the close
 
-            be_sl = self.hl.round_price(self._entry_px)
-            if not self.dry_run:
-                try:
-                    if self._sl_oid:
-                        await self.hl.cancel_order(self.ASSET, self._sl_oid)
-                    sl_order = await self.hl.place_stop_loss(self.ASSET, self._is_long, self._amount, be_sl)
-                    oids = self.hl.extract_oids(sl_order)
-                    self._sl_oid   = oids[0] if oids else None
-                    self._sl_price = be_sl
-                except Exception as e:
-                    logging.error("[ORB] SL to BE failed: %s", e)
+            be_sl  = self.hl.round_price(self._entry_px)
+            sl_ok  = await self._place_protective_sl(be_sl) if not self.dry_run else True
+            if self.dry_run:
+                self._sl_price = be_sl
 
             self._trail_active = True
             self._trail_max    = price
-            logging.info("[ORB] TP1 hit @ %.2f — 50%% closed, SL→BE=%.2f, range trail active", price, be_sl)
+            if sl_ok:
+                logging.info("[ORB] TP1 hit @ %.2f — 50%% closed, SL→BE=%.2f, range trail active", price, be_sl)
+            else:
+                logging.error("[ORB] TP1 hit @ %.2f — 50%% closed, but SL→BE FAILED — position is unprotected", price)
             trade_log.append({
                 "strategy": "orb", "asset": self.ASSET,
                 "dir": "long" if self._is_long else "short",
                 "entry": self._entry_px, "tp": self._tp1, "sl": self._sl_price,
                 "size": self._amount, "outcome": "tp1_partial", "pnl_r": 1.0,
+                "sl_confirmed": sl_ok,
             })
 
         else:
@@ -549,17 +577,14 @@ class Orb:
                 return
 
             if not self.dry_run:
-                try:
-                    if self._sl_oid:
-                        await self.hl.cancel_order(self.ASSET, self._sl_oid)
-                    sl_order = await self.hl.place_stop_loss(self.ASSET, self._is_long, self._amount, trail_sl)
-                    oids = self.hl.extract_oids(sl_order)
-                    self._sl_oid   = oids[0] if oids else None
-                    self._sl_price = trail_sl
-                except Exception as e:
-                    logging.error("[ORB] trail SL update failed: %s", e)
-
-            logging.info("[ORB] Trail SL → %.2f (trail_max=%.2f)", trail_sl, new_max)
+                sl_ok = await self._place_protective_sl(trail_sl)
+                if sl_ok:
+                    logging.info("[ORB] Trail SL → %.2f (trail_max=%.2f)", trail_sl, new_max)
+                else:
+                    logging.error("[ORB] Trail SL update FAILED (target=%.2f) — position may be unprotected", trail_sl)
+            else:
+                self._sl_price = trail_sl
+                logging.info("[ORB] Trail SL → %.2f (trail_max=%.2f)", trail_sl, new_max)
 
     # ------------------------------------------------------------------
     # Time stop
