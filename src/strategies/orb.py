@@ -495,13 +495,23 @@ class Orb:
             # Reduce-only close (never flips) — plain buy/sell here previously
             # blew through the real position and opened one in the opposite
             # direction whenever self._amount had desynced from the actual fill.
+            # The close order can be accepted by Hyperliquid but rejected/unfilled
+            # at the application level without raising — verify the actual fill
+            # via extract_filled_size instead of assuming the request succeeded.
             half = self.hl.round_size(self.ASSET, self._amount / 2)
             if half > 0 and not self.dry_run:
                 try:
-                    await self.hl.place_close_order(self.ASSET, sz=half)
-                    self._amount -= half
+                    order  = await self.hl.place_close_order(self.ASSET, sz=half)
+                    filled = self.hl.extract_filled_size(order)
+                    if filled <= 0:
+                        logging.error("[ORB] TP1 partial close did not fill — leaving position/SL untouched")
+                        return
+                    self._amount -= filled
                 except Exception as e:
                     logging.error("[ORB] TP1 partial close failed: %s", e)
+                    return
+            elif half > 0:
+                self._amount -= half  # dry run: simulate the close
 
             be_sl = self.hl.round_price(self._entry_px)
             if not self.dry_run:
