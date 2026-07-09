@@ -396,6 +396,9 @@ def build_app() -> web.Application:
     return app
 
 
+_AUTO_START = ("orb", "smc")
+
+
 async def main():
     app = build_app()
     runner = web.AppRunner(app)
@@ -403,6 +406,12 @@ async def main():
     site = web.TCPSite(runner, "0.0.0.0", 3000)
     await site.start()
     logging.info("Dashboard running at http://localhost:3000")
+    for name in _AUTO_START:
+        result = await _start(name, extra_env={"STRATEGY": name})
+        if result.get("ok"):
+            logging.info("Auto-started %s (pid=%s)", name, result.get("pid"))
+        else:
+            logging.error("Auto-start failed for %s: %s", name, result.get("error"))
     try:
         await asyncio.Event().wait()  # run forever
     finally:
