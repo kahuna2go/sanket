@@ -2136,17 +2136,43 @@ def main():
                 return _parse_ts(fl.get("time") or fl.get("timestamp")) or 0.0
             sorted_fills = sorted(all_fills, key=_fl_ts)
 
-            # Build FIFO open-fill stacks per asset (for entry price recovery)
-            open_stacks: dict = defaultdict(deque)
+            # Build FIFO open-fill stacks per asset (for entry price recovery).
+            # Opening fills are grouped by OID first — a single entry order can
+            # fill across many partial fills at slightly different prices, and
+            # each one used to push its own stack entry while closes only ever
+            # popleft() once per OID. That asymmetry let unpopped entries pile
+            # up and get consumed by unrelated later closes, producing stale
+            # entry prices. Group opens by OID (VWAP) so push:pop is 1:1, same
+            # as the closing side below.
+            open_oid_groups: dict = {}
+            open_oid_order: list = []
             for fl in sorted_fills:
                 ts = _fl_ts(fl)
                 if ts < SANKET_START_TS:
                     continue
-                if (fl.get("coin") or fl.get("asset") or "") == "BTC":
+                coin = fl.get("coin") or fl.get("asset") or ""
+                if coin == "BTC":
                     continue
-                if "Open" in (fl.get("dir") or ""):
-                    coin = fl.get("coin") or fl.get("asset") or ""
-                    open_stacks[coin].append(fl)
+                fl_dir = fl.get("dir") or ""
+                if "Open" not in fl_dir and ">" not in fl_dir:
+                    continue
+                # Flips ("Long > Short" / "Short > Long") both close the old
+                # leg and open a new one in the same fill — count it here too
+                # so the new leg's entry price is recoverable by the next close.
+                oid = fl.get("oid") or fl.get("tid") or id(fl)
+                if oid not in open_oid_groups:
+                    open_oid_groups[oid] = {"ts": ts, "coin": coin, "sz_sum": 0.0, "px_sz_sum": 0.0}
+                    open_oid_order.append(oid)
+                g = open_oid_groups[oid]
+                sz = float(fl.get("sz") or 0)
+                g["sz_sum"] += sz
+                g["px_sz_sum"] += float(fl.get("px") or 0) * sz
+
+            open_stacks: dict = defaultdict(deque)
+            for oid in open_oid_order:
+                g = open_oid_groups[oid]
+                vwap = g["px_sz_sum"] / g["sz_sum"] if g["sz_sum"] else 0.0
+                open_stacks[g["coin"]].append({"px": vwap})
 
             # Time windows for daily / weekly buckets (UTC)
             now_dt = datetime.now(timezone.utc)
