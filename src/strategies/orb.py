@@ -148,8 +148,13 @@ class Orb:
         if not self._bias_done:
             await self._eval_bias()
 
-        # OR formation: collect 15:30–15:45 candles
-        if self._orh is None and hf >= 15.5:
+        # OR formation: collect 15:30–15:45 candles. Wait for the window to
+        # actually close (15.75) — building at 15.5 would fetch a still-forming
+        # candle for "now" (candleSnapshot includes the in-progress bar) and
+        # lock in a range from a few seconds of price action instead of 15
+        # minutes. Confirmed live 2026-07-10: locked OR range=2.00 at hf=15.51,
+        # vs the window's true closed range of 14.00 once it had fully elapsed.
+        if self._orh is None and hf >= 15.75:
             await self._build_or()
 
         # Breakout + retest detection: 15:45–17:30 CET
@@ -191,8 +196,9 @@ class Orb:
         # 1. Bias + funding — always live, re-evaluate
         await self._eval_bias()
 
-        # 2. OR levels — reconstruct from candle history if window has passed
-        if hf >= 15.5:
+        # 2. OR levels — reconstruct from candle history once the window has
+        # actually closed (see _cycle for why 15.5 is too early).
+        if hf >= 15.75:
             await self._build_or()
 
         # 3. Check trades.jsonl: was a trade already taken today?
