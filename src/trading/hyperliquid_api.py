@@ -222,14 +222,38 @@ class HyperliquidAPI:
         return await self._retry(lambda: self.exchange.market_open(asset, False, amount, None, slippage))
 
     async def place_close_order(self, asset, slippage=0.01, sz=None):
-        """Close a position for asset using market_close (reduceOnly, never flips).
+        """Close a position for asset with a reduce-only IOC order (never flips).
 
         sz=None closes the full position; pass a size for partial closes.
+
+        Deliberately does not use the SDK's Exchange.market_close(): it looks
+        up the open position by exact string equality against user_state()'s
+        "coin" field, which for HIP-3 assets comes back as the bare symbol
+        (e.g. "SP500") rather than the "xyz:SP500" name used everywhere else
+        in this codebase. The match silently never fires and market_close()
+        falls through returning None instead of raising — confirmed live
+        2026-07-10, where ORB's TP1 partial close retried every 60s for ~3h
+        against a position market_close() could never see. We resolve the
+        position ourselves via get_user_state() (which already normalizes
+        HIP-3 coin names) and place the reduce-only order directly.
         """
-        if ":" in asset:
-            px = await self.get_current_price(asset)
-            return await self._retry(lambda: self.exchange.market_close(asset, sz, px, slippage))
-        return await self._retry(lambda: self.exchange.market_close(asset, sz, None, slippage))
+        state = await self.get_user_state()
+        pos = next((p for p in state["positions"] if self._coin_matches(p.get("coin", ""), asset)), None)
+        szi = float(pos.get("szi", 0)) if pos else 0.0
+        if abs(szi) < 1e-12:
+            logging.warning("place_close_order: no open position for %s", asset)
+            return None
+
+        is_buy   = szi < 0
+        close_sz = self.round_size(asset, sz if sz else abs(szi))
+        px       = await self.get_current_price(asset) if ":" in asset else None
+
+        def _do_close():
+            limit_px = self.exchange._slippage_price(asset, is_buy, slippage, px)
+            order_type = {"limit": {"tif": "Ioc"}}
+            return self.exchange.order(asset, is_buy, close_sz, limit_px, order_type, True)
+
+        return await self._retry(_do_close)
 
     async def place_limit_buy(self, asset, amount, limit_price, tif="Gtc"):
         """Submit a limit buy order.

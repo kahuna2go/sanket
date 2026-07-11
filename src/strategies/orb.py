@@ -30,6 +30,7 @@ _ASSET      = "xyz:SP500"
 _SL_BUF     = 0.05    # 5% of OR range buffer below retest low / above retest high
 _FUND_THRESH = 0.0003  # 0.03% per 8h
 _MAX_LEVERAGE = 3      # cap on entry notional as a multiple of account value
+RISK_USDC   = 50.0     # fixed dollar risk per trade
 
 
 def _vhour(ts_ms: int) -> float:
@@ -61,9 +62,8 @@ class Orb:
     ASSET         = _ASSET
     LOOP_INTERVAL = 60  # seconds
 
-    def __init__(self, hl: HyperliquidAPI, risk_pct: float = 0.015, dry_run: bool = False):
+    def __init__(self, hl: HyperliquidAPI, dry_run: bool = False):
         self.hl       = hl
-        self.risk_pct = risk_pct
         self.dry_run  = dry_run
 
         # --- daily ORB state (reset each morning) ---
@@ -97,7 +97,7 @@ class Orb:
     # ------------------------------------------------------------------
 
     async def run(self):
-        logging.info("[ORB] Starting. risk=%.1f%% dry_run=%s", self.risk_pct * 100, self.dry_run)
+        logging.info("[ORB] Starting. risk=$%.0f dry_run=%s", RISK_USDC, self.dry_run)
         # Pre-cache HIP-3 metadata so round_size works for xyz:SP500, and
         # register the dex so the SDK Info object populates name_to_coin for market_open.
         try:
@@ -396,8 +396,7 @@ class Orb:
             return
 
         state     = await self.hl.get_user_state()
-        risk_usd  = state["total_value"] * self.risk_pct
-        amount    = self.hl.round_size(self.ASSET, risk_usd / risk_per_unit)
+        amount    = self.hl.round_size(self.ASSET, RISK_USDC / risk_per_unit)
         if amount <= 0:
             logging.warning("[ORB] Computed size is 0 — skipping")
             return
@@ -416,7 +415,7 @@ class Orb:
 
         direction = "LONG" if is_long else "SHORT"
         logging.info("[ORB] ENTRY %s %.4f @ %.2f  TP1=%.2f  SL=%.2f  risk=$%.0f",
-                     direction, amount, current_price, tp1, sl_price, risk_usd)
+                     direction, amount, current_price, tp1, sl_price, RISK_USDC)
 
         if self.dry_run:
             logging.info("[ORB] DRY RUN — order skipped")
