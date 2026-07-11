@@ -43,7 +43,7 @@ _FVG_ENTRY      = "mid50"
 _RETEST_LOOKBACK_SEC  = 288 * 5 * 60   # 24h, matching backtest's 288-bar (5m) window
 _RETEST_TOLERANCE_PCT = 0.3
 
-RISK_USDC = 50.0
+RISK_USDC = 50.0   # default per-trade risk; overridable per instance
 TP_R      = 3.0
 
 _WARMUP_BARS = 200   # ~17h of 5M data
@@ -248,12 +248,14 @@ class Smc:
         session_windows: list[tuple[float, float]] | None = None,
         fvg_tf: str = "5m",
         dry_run: bool = False,
+        risk_usdc: float = RISK_USDC,
     ):
         self.hl               = hl
         self.ASSET            = asset
         self._session_windows = session_windows if session_windows is not None else SOL_SESSION_WINDOWS
         self._fvg_tf          = fvg_tf
         self.dry_run          = dry_run
+        self._risk_usdc       = risk_usdc
         self._tag             = f"[SMC/{asset}]"
 
         # SMC state machine
@@ -286,7 +288,7 @@ class Smc:
     # ------------------------------------------------------------------
 
     async def run(self):
-        logging.info("%s Starting. risk=$%.0f dry_run=%s", self._tag, RISK_USDC, self.dry_run)
+        logging.info("%s Starting. risk=$%.0f dry_run=%s", self._tag, self._risk_usdc, self.dry_run)
         await self._warm_up()
         while True:
             try:
@@ -478,7 +480,7 @@ class Smc:
             self._state = "IDLE"
             return
 
-        size = self.hl.round_size(self.ASSET, RISK_USDC / risk)
+        size = self.hl.round_size(self.ASSET, self._risk_usdc / risk)
         if size <= 0:
             self._state = "IDLE"
             return
@@ -495,7 +497,7 @@ class Smc:
         entry_px = self.hl.round_price(trigger)
 
         logging.info("%s SIGNAL %s | entry=%.4f TP=%.4f SL=%.4f | size=%.4f %s | risk=$%.2f",
-                     self._tag, direction.upper(), entry_px, tp, sl, size, self.ASSET, RISK_USDC)
+                     self._tag, direction.upper(), entry_px, tp, sl, size, self.ASSET, self._risk_usdc)
 
         if self.dry_run:
             logging.info("%s DRY RUN — order skipped", self._tag)
