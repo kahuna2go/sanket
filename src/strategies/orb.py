@@ -88,6 +88,7 @@ class Orb:
         self._or_range     = 0.0
         self._sl_price     = 0.0
         self._sl_oid       = None
+        self._tp1_oid      = None
         self._trail_active = False
         self._trail_max    = 0.0
 
@@ -250,20 +251,25 @@ class Orb:
             tp1 = round(self._orh + 0.5 * or_range, 2) if is_long \
                 else round(self._orl - 0.5 * or_range, 2)
 
-            # Find SL order
+            # Find SL and TP1 trigger orders — distinguish by which side of entry
+            # the trigger price sits on, not by any API-specific order label.
             sl_price = self.hl.round_price(entry_px)  # fallback: treat entry as SL
             sl_oid   = None
+            tp1_oid  = None
             try:
                 orders = await self.hl.get_open_orders()
                 for o in orders:
                     if o.get("coin") in (self.ASSET, short_name) and "triggerPx" in o:
-                        sl_price = float(o["triggerPx"])
-                        sl_oid   = o.get("oid")
-                        break
+                        px = float(o["triggerPx"])
+                        if (px < entry_px) if is_long else (px > entry_px):
+                            sl_price = px
+                            sl_oid   = o.get("oid")
+                        else:
+                            tp1_oid  = o.get("oid")
             except Exception as e:
                 logging.warning("[ORB] Warm-up: could not read open orders: %s", e)
 
-            self._set_trade(is_long, amount, entry_px, tp1, or_range, sl_price, sl_oid)
+            self._set_trade(is_long, amount, entry_px, tp1, or_range, sl_price, sl_oid, tp1_oid)
 
             # Infer trail state: SL at/beyond entry means TP1 was already hit
             trail_active = (sl_price >= entry_px) if is_long else (sl_price <= entry_px)
@@ -425,7 +431,7 @@ class Orb:
 
         if self.dry_run:
             logging.info("[ORB] DRY RUN — order skipped")
-            self._set_trade(is_long, amount, current_price, tp1, or_range, sl_price, None)
+            self._set_trade(is_long, amount, current_price, tp1, or_range, sl_price, None, None)
             return
 
         try:
@@ -442,12 +448,25 @@ class Orb:
             await asyncio.sleep(0.5)
             sl_order = await self.hl.place_stop_loss(self.ASSET, is_long, amount, sl_price)
             sl_oids  = self.hl.extract_oids(sl_order)
+
+            # TP1 as a resting exchange trigger, not a polled price check — the
+            # 60s cycle can't react fast enough to catch an exact TP1 cross.
+            tp1_oid  = None
+            tp1_half = self.hl.round_size(self.ASSET, amount / 2)
+            if tp1_half > 0:
+                tp_order = await self.hl.place_take_profit(self.ASSET, is_long, tp1_half, tp1)
+                tp_oids  = self.hl.extract_oids(tp_order)
+                tp1_oid  = tp_oids[0] if tp_oids else None
+                if not tp1_oid:
+                    logging.error("[ORB] TP1 trigger placement failed — position will only "
+                                   "exit via SL or time stop, no partial/trail")
+
             self._set_trade(is_long, amount, current_price, tp1, or_range, sl_price,
-                            sl_oids[0] if sl_oids else None)
+                            sl_oids[0] if sl_oids else None, tp1_oid)
         except Exception as e:
             logging.error("[ORB] entry failed: %s", e)
 
-    def _set_trade(self, is_long, amount, entry_px, tp1, or_range, sl_price, sl_oid):
+    def _set_trade(self, is_long, amount, entry_px, tp1, or_range, sl_price, sl_oid, tp1_oid):
         self._in_trade     = True
         self._is_long      = is_long
         self._amount       = amount
@@ -456,6 +475,7 @@ class Orb:
         self._or_range     = or_range
         self._sl_price     = sl_price
         self._sl_oid       = sl_oid
+        self._tp1_oid      = tp1_oid
         self._trail_active = False
         self._trail_max    = entry_px
         self._trade_taken  = True
@@ -497,16 +517,21 @@ class Orb:
         return False
 
     async def _manage_trade(self):
-        # Detect external close (trail SL hit) when trail is active
+        if self.dry_run:
+            await self._manage_trade_dry_run()
+            return
+
+        # Live: TP1 is a resting exchange trigger order placed at entry (see
+        # _enter), not a price polled every 60s — the poll can't react fast
+        # enough to catch an exact TP1 cross. Detect its fill (and, once the
+        # trail is active, a full close from the trail SL) by watching the
+        # actual position size instead.
+        state = await self.hl.get_user_state()
+        pos = next((p for p in state["positions"] if self.hl._coin_matches(p.get("coin", ""), self.ASSET)), None)
+        live_amount = abs(float(pos.get("szi", 0)) if pos else 0.0)
+
         if self._trail_active:
-            state = await self.hl.get_user_state()
-            short_name = self.ASSET.split(":", 1)[-1]
-            pos = next(
-                (p for p in state["positions"]
-                 if p.get("coin") in (self.ASSET, short_name)),
-                None,
-            )
-            if abs(float(pos.get("szi", 0)) if pos else 0.0) < 0.001:
+            if live_amount < 0.001:
                 logging.info("[ORB] Trail SL hit — position closed")
                 trade_log.append({
                     "strategy": "orb", "asset": self.ASSET,
@@ -518,58 +543,9 @@ class Orb:
                 self._trail_active = False
                 return
 
-        price = await self.hl.get_current_price(self.ASSET)
-        if not price:
-            return
-
-        if not self._trail_active:
-            tp1_hit = (self._is_long and price >= self._tp1) or (not self._is_long and price <= self._tp1)
-            if not tp1_hit:
+            price = await self.hl.get_current_price(self.ASSET)
+            if not price:
                 return
-
-            # TP1: close 50%, move SL to breakeven, activate trail.
-            # Reduce-only close (never flips) — plain buy/sell here previously
-            # blew through the real position and opened one in the opposite
-            # direction whenever self._amount had desynced from the actual fill.
-            # The close order can be accepted by Hyperliquid but rejected/unfilled
-            # at the application level without raising — verify the actual fill
-            # via extract_filled_size instead of assuming the request succeeded.
-            half = self.hl.round_size(self.ASSET, self._amount / 2)
-            if half > 0 and not self.dry_run:
-                try:
-                    order  = await self.hl.place_close_order(self.ASSET, sz=half)
-                    filled = self.hl.extract_filled_size(order)
-                    if filled <= 0:
-                        logging.error("[ORB] TP1 partial close did not fill — leaving position/SL untouched")
-                        return
-                    self._amount -= filled
-                except Exception as e:
-                    logging.error("[ORB] TP1 partial close failed: %s", e)
-                    return
-            elif half > 0:
-                self._amount -= half  # dry run: simulate the close
-
-            be_sl  = self.hl.round_price(self._entry_px)
-            sl_ok  = await self._place_protective_sl(be_sl) if not self.dry_run else True
-            if self.dry_run:
-                self._sl_price = be_sl
-
-            self._trail_active = True
-            self._trail_max    = price
-            if sl_ok:
-                logging.info("[ORB] TP1 hit @ %.2f — 50%% closed, SL→BE=%.2f, range trail active", price, be_sl)
-            else:
-                logging.error("[ORB] TP1 hit @ %.2f — 50%% closed, but SL→BE FAILED — position is unprotected", price)
-            trade_log.append({
-                "strategy": "orb", "asset": self.ASSET,
-                "dir": "long" if self._is_long else "short",
-                "entry": self._entry_px, "tp": self._tp1, "sl": self._sl_price,
-                "size": self._amount, "outcome": "tp1_partial", "pnl_r": 1.0,
-                "sl_confirmed": sl_ok,
-            })
-
-        else:
-            # Range trail: advance SL as price moves in our favour
             new_max = max(self._trail_max, price) if self._is_long else min(self._trail_max, price)
             self._trail_max = new_max
             trail_sl = self.hl.round_price(
@@ -581,15 +557,77 @@ class Orb:
             if not moved:
                 return
 
-            if not self.dry_run:
-                sl_ok = await self._place_protective_sl(trail_sl)
-                if sl_ok:
-                    logging.info("[ORB] Trail SL → %.2f (trail_max=%.2f)", trail_sl, new_max)
-                else:
-                    logging.error("[ORB] Trail SL update FAILED (target=%.2f) — position may be unprotected", trail_sl)
-            else:
-                self._sl_price = trail_sl
+            sl_ok = await self._place_protective_sl(trail_sl)
+            if sl_ok:
                 logging.info("[ORB] Trail SL → %.2f (trail_max=%.2f)", trail_sl, new_max)
+            else:
+                logging.error("[ORB] Trail SL update FAILED (target=%.2f) — position may be unprotected", trail_sl)
+            return
+
+        if live_amount >= self._amount - 1e-9:
+            return  # TP1 trigger not filled yet
+
+        self._amount = live_amount
+        price = await self.hl.get_current_price(self.ASSET)
+        be_sl = self.hl.round_price(self._entry_px)
+        sl_ok = await self._place_protective_sl(be_sl)
+
+        self._trail_active = True
+        self._trail_max    = price or self._entry_px
+        if sl_ok:
+            logging.info("[ORB] TP1 filled — %.4f remaining, SL→BE=%.2f, range trail active",
+                         self._amount, be_sl)
+        else:
+            logging.error("[ORB] TP1 filled, but SL→BE FAILED — position is unprotected")
+        trade_log.append({
+            "strategy": "orb", "asset": self.ASSET,
+            "dir": "long" if self._is_long else "short",
+            "entry": self._entry_px, "tp": self._tp1, "sl": self._sl_price,
+            "size": self._amount, "outcome": "tp1_partial", "pnl_r": 1.0,
+            "sl_confirmed": sl_ok,
+        })
+
+    async def _manage_trade_dry_run(self):
+        """Simulated TP1/trail management — no real orders, so there's nothing
+        to detect on the exchange; keep the original price-polling behaviour."""
+        price = await self.hl.get_current_price(self.ASSET)
+        if not price:
+            return
+
+        if not self._trail_active:
+            tp1_hit = (self._is_long and price >= self._tp1) or (not self._is_long and price <= self._tp1)
+            if not tp1_hit:
+                return
+
+            half = self.hl.round_size(self.ASSET, self._amount / 2)
+            if half > 0:
+                self._amount -= half
+
+            be_sl = self.hl.round_price(self._entry_px)
+            self._sl_price     = be_sl
+            self._trail_active = True
+            self._trail_max    = price
+            logging.info("[ORB] TP1 hit @ %.2f — 50%% closed, SL→BE=%.2f, range trail active", price, be_sl)
+            trade_log.append({
+                "strategy": "orb", "asset": self.ASSET,
+                "dir": "long" if self._is_long else "short",
+                "entry": self._entry_px, "tp": self._tp1, "sl": self._sl_price,
+                "size": self._amount, "outcome": "tp1_partial", "pnl_r": 1.0,
+                "sl_confirmed": True,
+            })
+        else:
+            new_max = max(self._trail_max, price) if self._is_long else min(self._trail_max, price)
+            self._trail_max = new_max
+            trail_sl = self.hl.round_price(
+                new_max - 0.5 * self._or_range if self._is_long
+                else new_max + 0.5 * self._or_range
+            )
+            moved = (self._is_long and trail_sl > self._sl_price) or \
+                    (not self._is_long and trail_sl < self._sl_price)
+            if not moved:
+                return
+            self._sl_price = trail_sl
+            logging.info("[ORB] Trail SL → %.2f (trail_max=%.2f)", trail_sl, new_max)
 
     # ------------------------------------------------------------------
     # Time stop
@@ -598,6 +636,11 @@ class Orb:
     async def _time_stop(self):
         logging.info("[ORB] Time stop — closing position")
         if not self.dry_run:
+            if self._tp1_oid:
+                try:
+                    await self.hl.cancel_order(self.ASSET, self._tp1_oid)
+                except Exception as e:
+                    logging.warning("[ORB] Time stop: TP1 order cancel failed: %s", e)
             try:
                 await self.hl.place_close_order(self.ASSET)
             except Exception as e:
