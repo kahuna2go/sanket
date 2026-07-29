@@ -355,6 +355,16 @@ class Smc:
     # State machine tick (one completed 5M bar)
     # ------------------------------------------------------------------
 
+    def _sweep_idx_in(self, candles: list[dict]) -> int:
+        """Locate the sweep bar's position in the current candle window by
+        timestamp, so the displacement leg starts at the sweep (matching
+        _reconstruct_state) rather than a fixed lookback from now."""
+        sweep_t = self._sweep_bar_ts * 1000
+        for idx, c in enumerate(candles):
+            if c["t"] == sweep_t:
+                return idx
+        return max(0, len(candles) - 1 - _CHOCH_TIMEOUT)
+
     async def _tick(self, candles: list[dict]):
         bar = candles[-1]
         now_ts = datetime.now(_UTC).timestamp()
@@ -391,8 +401,7 @@ class Smc:
                 logging.info("%s CHoCH timeout — IDLE", self._tag)
                 self._state = "IDLE"
             elif self._sweep_type == "bull" and bar["close"] > self._choch_tgt:
-                disp_start = max(0, n - 1 - _CHOCH_TIMEOUT)
-                disp = candles[disp_start:]
+                disp = candles[self._sweep_idx_in(candles):]
                 fvg = _find_bullish_fvg(_resample_15m(disp) if self._fvg_tf == "15m" else disp)
                 if fvg:
                     self._fvg_hi, self._fvg_lo = fvg
@@ -403,8 +412,7 @@ class Smc:
                     logging.info("%s CHoCH confirmed but no FVG — IDLE", self._tag)
                     self._state = "IDLE"
             elif self._sweep_type == "bear" and bar["close"] < self._choch_tgt:
-                disp_start = max(0, n - 1 - _CHOCH_TIMEOUT)
-                disp = candles[disp_start:]
+                disp = candles[self._sweep_idx_in(candles):]
                 fvg = _find_bearish_fvg(_resample_15m(disp) if self._fvg_tf == "15m" else disp)
                 if fvg:
                     self._fvg_hi, self._fvg_lo = fvg
