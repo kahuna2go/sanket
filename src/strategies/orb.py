@@ -29,7 +29,7 @@ _VIENNA     = ZoneInfo("Europe/Vienna")
 _ASSET      = "xyz:SP500"
 _SL_BUF     = 0.05    # 5% of OR range buffer below retest low / above retest high
 _FUND_THRESH = 0.0003  # 0.03% per 8h
-_MAX_LEVERAGE = 3      # cap on entry notional as a multiple of account value
+_MAX_LEVERAGE = 5      # cap on entry notional as a multiple of account value; exchange max for xyz:SP500
 RISK_USDC   = 50.0     # fixed dollar risk per trade
 
 
