@@ -91,6 +91,7 @@ class Orb:
         self._tp1_oid      = None
         self._trail_active = False
         self._trail_max    = 0.0
+        self._entry_time   = 0
 
 
     # ------------------------------------------------------------------
@@ -480,6 +481,7 @@ class Orb:
         self._trail_max    = entry_px
         self._trade_taken  = True
         self._breakout_pending = None
+        self._entry_time   = int(datetime.now(timezone.utc).timestamp() * 1000)
 
     # ------------------------------------------------------------------
     # Trade management (TP1 / trail)
@@ -567,10 +569,31 @@ class Orb:
         if live_amount >= self._amount - 1e-9:
             return  # TP1 trigger not filled yet
 
+        # Size dropped — but a shrinking position doesn't mean TP1 filled: the
+        # full-size SL closing the position looks identical. Confirmed live
+        # Sept 2026: SL hits were logged as tp1_partial + trail_win. Check
+        # whether a fill actually belongs to the TP1 order.
+        fills = await self._close_fills()
+        if not fills:
+            logging.warning("[ORB] Position size changed but no close fills found yet — retrying next cycle")
+            return
+        tp1_hit = self._tp1_oid is not None and any(f.get("oid") == self._tp1_oid for f in fills)
+
+        if not tp1_hit:
+            if live_amount >= 0.001:
+                logging.warning("[ORB] Position reduced %.4f → %.4f by a non-TP1 fill — tracking",
+                                self._amount, live_amount)
+                self._amount = live_amount
+                return
+            await self._log_sl_close(fills)
+            return
+
         self._amount = live_amount
         price = await self.hl.get_current_price(self.ASSET)
         be_sl = self.hl.round_price(self._entry_px)
-        sl_ok = await self._place_protective_sl(be_sl)
+        # TP1 and the SL can both fill inside one 60s cycle — if flat, there's
+        # nothing left to protect; the trail branch logs the close next cycle.
+        sl_ok = await self._place_protective_sl(be_sl) if live_amount >= 0.001 else True
 
         self._trail_active = True
         self._trail_max    = price or self._entry_px
@@ -586,6 +609,39 @@ class Orb:
             "size": self._amount, "outcome": "tp1_partial", "pnl_r": 1.0,
             "sl_confirmed": sl_ok,
         })
+
+    async def _close_fills(self) -> list[dict]:
+        """Fills since entry that reduced this trade's position."""
+        close_side = "A" if self._is_long else "B"
+        return [
+            f for f in await self.hl.get_recent_fills(limit=50)
+            if self.hl._coin_matches(f.get("coin", ""), self.ASSET)
+            and f.get("side") == close_side
+            and (f.get("time") or 0) >= self._entry_time
+        ]
+
+    async def _log_sl_close(self, fills: list[dict]):
+        """Position went flat before TP1 filled — the initial SL was hit."""
+        if self._tp1_oid:
+            try:
+                await self.hl.cancel_order(self.ASSET, self._tp1_oid)
+            except Exception as e:
+                logging.warning("[ORB] TP1 order cancel after SL failed: %s", e)
+
+        sz = sum(float(f["sz"]) for f in fills)
+        exit_px = sum(float(f["px"]) * float(f["sz"]) for f in fills) / sz
+        risk = abs(self._entry_px - self._sl_price)
+        pnl = (exit_px - self._entry_px) if self._is_long else (self._entry_px - exit_px)
+        pnl_r = round(pnl / risk, 2) if risk > 0 else 0.0
+
+        logging.info("[ORB] SL hit @ %.2f — position closed before TP1 (%.2fR)", exit_px, pnl_r)
+        trade_log.append({
+            "strategy": "orb", "asset": self.ASSET,
+            "dir": "long" if self._is_long else "short",
+            "entry": self._entry_px, "tp": self._tp1, "sl": self._sl_price,
+            "size": self._amount, "outcome": "loss" if pnl_r < 0 else "win", "pnl_r": pnl_r,
+        })
+        self._in_trade = False
 
     async def _manage_trade_dry_run(self):
         """Simulated TP1/trail management — no real orders, so there's nothing
