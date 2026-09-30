@@ -92,6 +92,7 @@ class Orb:
         self._trail_active = False
         self._trail_max    = 0.0
         self._entry_time   = 0
+        self._risk         = 0.0
 
 
     # ------------------------------------------------------------------
@@ -279,6 +280,8 @@ class Orb:
                 self._trail_max = sl_price + 0.5 * or_range if is_long \
                     else sl_price - 0.5 * or_range
             self._trail_active = trail_active
+            if trail_active:
+                self._risk = 0.0  # original SL is gone — only the BE/trail SL is visible
 
             logging.info(
                 "[ORB] Warm-up: restored %s — entry=%.2f tp1=%.2f sl=%.2f trail=%s",
@@ -482,6 +485,7 @@ class Orb:
         self._trade_taken  = True
         self._breakout_pending = None
         self._entry_time   = int(datetime.now(timezone.utc).timestamp() * 1000)
+        self._risk         = abs(entry_px - sl_price)  # per unit, fixed at entry; _sl_price moves later
 
     # ------------------------------------------------------------------
     # Trade management (TP1 / trail)
@@ -534,12 +538,18 @@ class Orb:
 
         if self._trail_active:
             if live_amount < 0.001:
-                logging.info("[ORB] Trail SL hit — position closed")
+                trail_fills = [f for f in await self._close_fills() if f.get("oid") != self._tp1_oid]
+                if not trail_fills:
+                    logging.warning("[ORB] Position flat but no trail close fills found yet — retrying next cycle")
+                    return
+                exit_px, size, pnl_r = self._fill_result(trail_fills)
+                logging.info("[ORB] Trail SL hit @ %.2f — position closed (%sR)", exit_px, pnl_r)
                 trade_log.append({
                     "strategy": "orb", "asset": self.ASSET,
                     "dir": "long" if self._is_long else "short",
                     "entry": self._entry_px, "tp": None, "sl": self._sl_price,
-                    "size": self._amount, "outcome": "trail_win", "pnl_r": None,
+                    "size": size, "exit": exit_px,
+                    "outcome": "trail_win" if (pnl_r or 0) > 0 else "trail_loss", "pnl_r": pnl_r,
                 })
                 self._in_trade = False
                 self._trail_active = False
@@ -589,6 +599,7 @@ class Orb:
             return
 
         self._amount = live_amount
+        tp1_px, tp1_size, tp1_r = self._fill_result([f for f in fills if f.get("oid") == self._tp1_oid])
         price = await self.hl.get_current_price(self.ASSET)
         be_sl = self.hl.round_price(self._entry_px)
         # TP1 and the SL can both fill inside one 60s cycle — if flat, there's
@@ -598,15 +609,15 @@ class Orb:
         self._trail_active = True
         self._trail_max    = price or self._entry_px
         if sl_ok:
-            logging.info("[ORB] TP1 filled — %.4f remaining, SL→BE=%.2f, range trail active",
-                         self._amount, be_sl)
+            logging.info("[ORB] TP1 filled @ %.2f (%sR) — %.4f remaining, SL→BE=%.2f, range trail active",
+                         tp1_px, tp1_r, self._amount, be_sl)
         else:
             logging.error("[ORB] TP1 filled, but SL→BE FAILED — position is unprotected")
         trade_log.append({
             "strategy": "orb", "asset": self.ASSET,
             "dir": "long" if self._is_long else "short",
             "entry": self._entry_px, "tp": self._tp1, "sl": self._sl_price,
-            "size": self._amount, "outcome": "tp1_partial", "pnl_r": 1.0,
+            "size": tp1_size, "exit": tp1_px, "outcome": "tp1_partial", "pnl_r": tp1_r,
             "sl_confirmed": sl_ok,
         })
 
@@ -628,20 +639,27 @@ class Orb:
             except Exception as e:
                 logging.warning("[ORB] TP1 order cancel after SL failed: %s", e)
 
-        sz = sum(float(f["sz"]) for f in fills)
-        exit_px = sum(float(f["px"]) * float(f["sz"]) for f in fills) / sz
-        risk = abs(self._entry_px - self._sl_price)
-        pnl = (exit_px - self._entry_px) if self._is_long else (self._entry_px - exit_px)
-        pnl_r = round(pnl / risk, 2) if risk > 0 else 0.0
+        exit_px, size, pnl_r = self._fill_result(fills)
 
-        logging.info("[ORB] SL hit @ %.2f — position closed before TP1 (%.2fR)", exit_px, pnl_r)
+        logging.info("[ORB] SL hit @ %.2f — position closed before TP1 (%sR)", exit_px, pnl_r)
         trade_log.append({
             "strategy": "orb", "asset": self.ASSET,
             "dir": "long" if self._is_long else "short",
             "entry": self._entry_px, "tp": self._tp1, "sl": self._sl_price,
-            "size": self._amount, "outcome": "loss" if pnl_r < 0 else "win", "pnl_r": pnl_r,
+            "size": size, "exit": exit_px, "outcome": "loss" if (pnl_r or 0) < 0 else "win", "pnl_r": pnl_r,
         })
         self._in_trade = False
+
+    def _fill_result(self, fills: list[dict]) -> tuple[float, float, float | None]:
+        """(VWAP exit price, total size, R per unit vs. the entry risk) for a set of close fills.
+
+        R is None when the entry risk is unknown (warm-up restore after TP1).
+        """
+        size = sum(float(f["sz"]) for f in fills)
+        exit_px = round(sum(float(f["px"]) * float(f["sz"]) for f in fills) / size, 2)
+        pnl = (exit_px - self._entry_px) if self._is_long else (self._entry_px - exit_px)
+        pnl_r = round(pnl / self._risk, 2) if self._risk > 0 else None
+        return exit_px, round(size, 6), pnl_r
 
     async def _manage_trade_dry_run(self):
         """Simulated TP1/trail management — no real orders, so there's nothing
