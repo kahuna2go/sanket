@@ -201,19 +201,17 @@ def _simulate_day(
         return None  # no breakout before 17:30
 
     # --- Determine entry price and bar ---
-    retest_bar_extreme = None  # low (long) or high (short) of the retest candle
+    entry_bar = None
     if entry_mode == "retest":
         entry_px     = None
         entry_bar_t  = None
         post_breakout = [b for b in watch_bars if b["t"] > breakout_bar_t]
         for bar in post_breakout:
             if direction == "long" and bar["low"] <= orh:
-                entry_px, entry_bar_t = orh, bar["t"]
-                retest_bar_extreme = bar["low"]
+                entry_px, entry_bar_t, entry_bar = orh, bar["t"], bar
                 break
             if direction == "short" and bar["high"] >= orl:
-                entry_px, entry_bar_t = orl, bar["t"]
-                retest_bar_extreme = bar["high"]
+                entry_px, entry_bar_t, entry_bar = orl, bar["t"], bar
                 break
         if entry_px is None:
             return None  # no retest within watch window
@@ -224,12 +222,17 @@ def _simulate_day(
 
     # --- Levels ---
     buf = sl_buffer * or_range
-    if sl_mode == "retest_low" and retest_bar_extreme is not None:
-        # Anchor SL to the retest candle's extreme, with a small buffer
+    if sl_mode == "retest_low" and entry_mode == "retest":
+        # Anchor SL to the retest candle's extreme *as known at entry*. Entry
+        # fires intrabar the moment price touches ORH/ORL, so the forming
+        # candle's low/high is the touch level itself — using the completed
+        # bar's extreme (as before 2026-09-30) was lookahead: the retest bar
+        # could never stop the trade out. Matches live orb.py, which reads
+        # the still-forming candle's low/high at the touch.
         if direction == "long":
-            sl_px = retest_bar_extreme - buf
+            sl_px = orh - buf
         else:
-            sl_px = retest_bar_extreme + buf
+            sl_px = orl + buf
     else:  # "or_extreme" — SL outside the opposite OR edge
         if direction == "long":
             sl_px = orl - buf
@@ -272,6 +275,14 @@ def _simulate_day(
 
     # Actual R at TP1 — used for weighted average with runner R
     _r_tp1 = (tp1_px - entry_px) / sl_dist if direction == "long" else (entry_px - tp1_px) / sl_dist
+
+    # Retest entries fill intrabar, so the rest of the entry bar can still
+    # hit the SL. Bar order is unknown — assume the SL came first (conservative).
+    if entry_bar is not None:
+        if (direction == "long" and entry_bar["low"] <= sl_px) or \
+           (direction == "short" and entry_bar["high"] >= sl_px):
+            return Trade(day, direction, entry_px, tp1_px, tp2_px, sl_px,
+                         or_range, sl_px, "sl", -1.0)
 
     # --- Forward simulate bar-by-bar after entry bar ---
     post_entry  = [c for c in day_5m if c["t"] > entry_bar_t]
