@@ -434,3 +434,20 @@
 | + Retest filter, 24h lookback, tol=0.3% | 56 | 41.1% | 3.00 | +36.0 | +0.643 | -5.0R | GO ✓ |
 | + Retest filter, 24h lookback, tol=0.5% | 57 | 40.4% | 3.00 | +35.0 | +0.614 | -5.0R | GO ✓ |
 | + Retest filter, 24h lookback, tol=1.0% | 54 | 42.6% | 3.00 | +38.0 | +0.704 | -5.0R | GO ✓ |
+
+---
+
+**Asset:** SOL  |  **Period:** 2024-05-07 → 2026-05-07  |  **Run:** 2026-10-05 12:55 UTC  |  **Sweep/CHoCH TF:** 5m
+
+**Strategy:** SMC Scalping: Sweep + CHoCH + FVG Fill  [sweep/CHoCH=5m, FVG=5m or 15m, TP=3×risk]
+
+| Config | Trades | Win% | AvgWinR | TotalR | AvgR | MaxDD | Verdict |
+|--------|--------|------|---------|--------|------|-------|---------|
+| Live config (no retest filter) | 118 | 34.7% | 2.80 | +17.3 | +0.147 | -13.0R | GO ✓ |
+| + Retest filter, lookback=8h | 114 | 36.8% | 2.81 | +26.3 | +0.231 | -11.9R | GO ✓ |
+| + Retest filter, lookback=12h | 114 | 36.8% | 2.81 | +26.3 | +0.231 | -11.9R | GO ✓ |
+| + Retest filter, lookback=24h | 115 | 36.5% | 2.81 | +25.1 | +0.218 | -13.2R | GO ✓ |
+| + Retest filter, lookback=48h | 120 | 35.8% | 2.82 | +23.9 | +0.199 | -15.4R | GO ✓ |
+| + Retest filter, 24h lookback, tol=0.3% | 113 | 38.1% | 2.80 | +31.2 | +0.276 | -13.2R | GO ✓ |
+| + Retest filter, 24h lookback, tol=0.5% | 113 | 36.3% | 2.79 | +22.7 | +0.201 | -13.2R | GO ✓ |
+| + Retest filter, 24h lookback, tol=1.0% | 108 | 35.2% | 2.80 | +17.0 | +0.157 | -15.4R | GO ✓ |

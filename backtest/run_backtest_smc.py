@@ -39,6 +39,7 @@ from src.indicators.local_indicators import swing_structure, atr, adx
 MIN_TRADES    = 20
 TP_R          = 3.0
 SL_R          = 1.0
+FEE_RT        = 0.000864  # Hyperliquid taker fee, entry + exit (0.0432%/side, as charged on live fills)
 BIAS_WINDOW    = 50   # 1H bars used for rolling bias computation
 
 _UTC = timezone.utc
@@ -419,7 +420,7 @@ def _run_simulation(
                 elif bar["low"] <= trade_tp:
                     closed_r = TP_R
             if closed_r is not None:
-                trades.append(closed_r)
+                trades.append(closed_r - FEE_RT * trade_entry / abs(trade_entry - trade_sl))
                 durations.append((i - trade_open_bar) * 5 / 60)  # bars → hours
                 state = "IDLE"
             continue
@@ -599,7 +600,7 @@ def _run_simulation(
         else:
             risk = trade_sl - trade_entry
             r = (trade_entry - last_close) / risk if risk > 0 else 0.0
-        trades.append(r)
+        trades.append(r - FEE_RT * trade_entry / risk if risk > 0 else r)
         durations.append((n - 1 - trade_open_bar) * 5 / 60)
 
     if debug:

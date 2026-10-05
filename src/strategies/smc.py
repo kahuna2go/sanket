@@ -45,6 +45,7 @@ _RETEST_TOLERANCE_PCT = 0.3
 
 RISK_USDC = 50.0   # default per-trade risk; overridable per instance
 TP_R      = 3.0
+FEE_RT    = 0.000864  # Hyperliquid taker fee, entry + exit (0.0432%/side, as charged on live fills)
 
 _WARMUP_BARS = 200   # ~17h of 5M data
 
@@ -633,9 +634,11 @@ class Smc:
                 pnl_r = (close_px - self._entry) / (self._entry - self._sl)
             else:
                 pnl_r = (self._entry - close_px) / (self._sl - self._entry)
-            pnl_r = round(pnl_r, 2)
+            fee_r = FEE_RT * self._entry / abs(self._entry - self._sl)
+            pnl_r = round(pnl_r - fee_r, 2)
             outcome = "win" if pnl_r > 0 else "loss"
-            logging.info("%s outcome inferred from fill at %.4f → %.2fR", self._tag, close_px, pnl_r)
+            logging.info("%s outcome inferred from fill at %.4f → %.2fR (after %.2fR fees)",
+                         self._tag, close_px, pnl_r, fee_r)
             return outcome, pnl_r
         logging.warning("%s could not infer outcome from fills — marking unknown", self._tag)
         return "unknown", 0.0
